@@ -245,8 +245,10 @@ vect_flashtoram.noswap:
 	ldi
 	jp	pe, vect_flashtoram.loop
 	
+	ld	b, a
 	pop	af
 	out	(map_bankA_port), a
+	ld	a, b
 	ret
 
 ; brief : reads a byte from flash
