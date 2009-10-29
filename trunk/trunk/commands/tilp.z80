@@ -124,7 +124,7 @@ tilp.infile:
 	inc	hl
 	inc	hl
 	
-	; ensure nul terminator (just in case version field is non zero...)
+	; ensure nul terminator (just in case the name is 8 chars and version field is non zero...)
 	ld	de, 8
 	add	hl, de
 	ld	(hl), 0
@@ -180,11 +180,34 @@ tilp.send_var_header:
 	ld	d, link_VAR
 	jp	zp.send_command
 
+; wait for transfer clearance and ack (size reduction...)
+tilp.transfer.clearance:
+	; wait for transfer clearance
+	call	zp.get_command
+	cp	link_CTS
+	call	nz, zp.throw_link
+	
+	; send acknowledgement
+	ld	d, link_ACK
+	jp	zp.send_command_nodata
+
+; input : hl -> in app header, at field start, preferably at $4000, a -> app page
+; output : b -> app page, c -> page count
+; destroys : hl, de
+app.get_page_count:
+	ld	de, $8080
+	call	zp.find_app_field
+	ld	b, a
+	ld	c, 1
+	ret	nz
+	call	zp.get_field_size
+	ld	b, a
+	jp	zp.deref_paged_byte
+
 
 tilp.RDY:
 	; free VAR header (in case there was one...) [free checks for null pointer]
-	call	zp.free
-	ret
+	jp	zp.free
 
 ;
 ; respond to version information request
@@ -193,14 +216,7 @@ tilp.VER:
 	; free VAR header (in case there was one...) [free checks for null pointer]
 	call	zp.free
 	
-	; wait for clearance
-	call	zp.get_command
-	cp	link_CTS
-	call	nz, zp.throw_link
-	
-	; send acknowledgement
-	ld	d, link_ACK
-	call	zp.send_command_nodata
+	call	tilp.transfer.clearance
 	
 	; fill response data
 	ld	ix, os.scrap
@@ -311,9 +327,7 @@ tilp.DEL:
 	pop	hl
 	
 	; free VAR header
-	call	zp.free
-	
-	ret
+	jp	zp.free
 
 ;
 ; respond to TI->PC transfer request
@@ -331,6 +345,9 @@ tilp.REQ:
 	jr	z, tilp.sendProg
 	cp	tLockedProg
 	jr	z, tilp.sendProg
+	
+	cp	tApp
+	jr	z, tilp.sendApp
 	
 	; handle more data types here
 	
@@ -396,6 +413,7 @@ tilp.sendProg:
 	ld	ix, tilp.sendProg.cb
 	call	zp.file_find
 	
+tilp.transferFailure:
 	; send error
 	ld	d, link_REXIT
 	call	c, zp.send_error
@@ -408,7 +426,120 @@ tilp.sendProg:
 	pop	hl
 	
 	; free VAR header
+	jp	zp.free
+
+tilp.sendApp:
+	push	hl
+	call	tilp.infile
+	
+	call	zp.app_find
+	jr	c, tilp.transferFailure
+	
+	pop	hl
+	push	af
 	call	zp.free
+	
+	; alloc VAR header buffer
+	
+	ld	bc, 10
+	call	zp.malloc
+	pop	af
+	push	hl
+	push	hl
+	pop	ix
+	
+	; fill header
+	ld	(hl), $80
+	inc	hl
+	ld	(hl), $00
+	inc	hl
+	ld	(hl), tApp
+	;inc	hl
+	; copy shortened (3 chars) name now ?
+	
+	; find number of pages
+	ld	hl, $4000
+	call	app.get_page_count
+	
+	ld	hl, $4000
+	ld	b, c
+tilp.sendApp.page:
+	push	bc
+	; 1 page = 128 chunks of 128 bytes each
+	
+	; update page offset in VAR header
+	push	af
+	ld	a, c
+	sub	b
+	ld	(ix + 8), a
+	pop	af
+	
+	ld	b, 128
+tilp.sendApp.chunk:
+	push	bc
+	
+	; update chunk offset in VAR header
+	ld	(ix + 6), l
+	ld	(ix + 7), h
+	
+	push	af
+	
+	; send flash-style header
+	push	ix
+	ex	(sp), hl
+	ld	bc, 10
+	ld	d, link_VAR
+	call	zp.send_command
+	pop	hl
+	
+	; wait for ack
+	call	zp.get_command
+	cp	link_ACK
+	call	nz, zp.throw_link
+	
+	; wait for clearance
+	call	tilp.transfer.clearance
+	
+	pop	af
+	
+	; copy a chunk of data (128 bytes)
+	ld	de, os.scrap
+	ld	bc, $0080
+	call	zp.flashtoram
+	
+	; send chunk
+	push	af
+	push	hl
+	ld	d, link_DATA
+	ld	bc, $0080
+	ld	hl, os.scrap
+	call	zp.send_command
+	pop	hl
+	pop	af
+	
+	; wait for ack
+	call	zp.get_command
+	cp	link_ACK
+	call	nz, zp.throw_link
+	
+	pop	bc
+	djnz	tilp.sendApp.chunk
+	
+	pop	bc
+	dec	a
+	djnz	tilp.sendApp.page
+	
+	pop	hl
+	call	zp.free
+	
+	ld	d, link_EOT
+	call	zp.send_command_nodata
+	
+	; wait for ack
+	call	zp.get_command
+	cp	link_ACK
+	call	nz, zp.throw_link
+	
 	ret
 
 tilp.sendProg.cb:
@@ -427,15 +558,7 @@ tilp.sendProg.cb:
 	; send actual variable header
 	call	tilp.DIRLIST.callback
 	
-	; wait for transfer clearance
-	call	zp.get_command
-	cp	link_CTS
-	call	nz, zp.throw_link
-	
-	; send acknowledgement
-	ld	d, link_ACK
-	call	zp.send_command_nodata
-	
+	call	tilp.transfer.clearance
 	pop	hl
 	
 	ld	d, meta_SIZE
@@ -636,18 +759,13 @@ tilp.DIRLIST.cb_apps:
 	ex	(sp), hl
 	
 	; todo : size onto bc
-	ld	de, $8080
-	call	zp.find_app_field
-	ld	de, $4000
-	jr	nz, tilp.DIRLIST.cb_apps.skip
-	ld	b, a
-	call	zp.deref_paged_byte
-	ld	a, c
-	call	zp.mult_a_de
-	ex	de, hl
-tilp.DIRLIST.cb_apps.skip:
-	ld	b, d
-	ld	c, e
+	; while TILP expects actual size it is obvious that it cannot work
+	; that way since app size can easily overflow the 16 range and it
+	; turns out that TIOS actually returns the number of page (lsb) and
+	; the first app pag (msb)
+	
+	call	app.get_page_count
+	
 	pop	hl
 	push	hl
 	
