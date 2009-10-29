@@ -145,17 +145,6 @@ cmd_RUN.cb.pageend:
 	cp	$81
 	jp	nz, cmd_RUN.cb.error2
 	
-; 	push	hl
-; 	push	de
-; 	push	bc
-; 	ld	hl, _str_16k
-; 	call	zp.cputs
-; 	call	zp.cdisp
-; 	call	zp.getch
-; 	pop	bc
-; 	pop	de
-; 	pop	hl
-	
 	; move to next pgrm page and continue copy
 	ld	a, $83
 	out	(map_bankA_port), a
@@ -177,19 +166,6 @@ cmd_RUN.cb.chunkend:
 	jr	cmd_RUN.cb.pageend
 	
 cmd_RUN.cb.go:
-; 	ld	hl, $4000
-; 	ld	de, os.scrap
-; 	ld	b, 48
-; 	
-; 	call	zp.memdump
-; 	inc	hl
-; 	djnz	$-4
-; 	
-; 	ld	hl, os.scrap
-; 	call	zp.cputs
-; 	call	zp.cdisp
-; 	call	zp.getch
-	
 	; set start of lib section (end of program)
 	ld	hl, $0000
 	in	a, (map_bankA_port)
@@ -276,7 +252,7 @@ cmd_RUN.cb.tios_emul:
 	inc	de
 	push	de
 	
-	ld	de, $9D95
+	ld	de, $9D95-$4000
 	
 cmd_RUN.cb.tios_cpy:
 	ldir
@@ -296,10 +272,15 @@ cmd_RUN.cb.tios_exec:
 	call	zp.compat_start
 	
 	; prepare return ...
+	ld	sp, $0000
 	ld	hl, zp.console
 	push	hl
 	ld	hl, zp.compat_stop
 	push	hl
+	
+	; swap proper RAM page in bank B
+	ld	a, $81
+	out	(map_bankB_port), a
 	
 	; go!
 	jp	$9D95
