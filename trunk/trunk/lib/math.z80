@@ -1,0 +1,421 @@
+.nolist
+;Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+;
+;	NOTE : most of these routines are (partly) unrolled to gain speed
+;	but not totally to avoid wasting space. This part of the code offers
+;	room for space gain if ever necessary to have the kernel fit in 1 page
+;
+
+; brief : 4*4 multiplication
+; input : a (high nibble) -> multiplier, b (low nibble) -> multiplicand
+; output : a -> product
+; destroys : none
+; T-states : 16 + 3 * (12 | 11) + (11 | 9) : n in [[58, 63]] (+17 for the call)
+vect_mult_4_4:
+	add	a, a
+	jr	nc, $+3
+	add	a, b
+	
+	add	a, a
+	jr	nc, $+3
+	add	a, b
+	
+	add	a, a
+	jr	nc, $+3
+	add	a, b
+	
+	add	a, a
+	ret	nc
+	add	a, b
+	
+	ret
+
+; brief : 8*8 multiplication
+; input : h -> multiplier, e -> multiplicand
+; output : hl -> product
+; destroys : none
+vect_mult_h_e:
+	push	de
+	push	bc
+	ld	l, 0
+	ld	d, l
+	
+	sla	h		; optimised 1st iteration
+	jr	nc, $+3
+	ld	l, e
+	
+	add	hl, hl
+	jr	nc, $+3
+	add	hl, de
+	
+	ld	b, 3
+	
+vect_mult_h_e.loop:
+	add	hl, hl
+	jr	nc, $+3
+	add	hl, de
+	
+	add	hl, hl
+	jr	nc, $+3
+	add	hl, de
+	
+	djnz	vect_mult_h_e.loop
+	
+	pop	bc
+	pop	de
+	ret
+
+; brief : 16*8 multiplication
+; input : a -> multiplier, de -> multiplicand
+; output : ahl -> product 
+; destroys : none
+vect_mult_a_de:
+	push	bc
+	ld	c, 0
+	ld	h, c
+	ld	l, h
+	
+	add	a, a
+	jr	nc, $+4
+	ld	h,d
+	ld	l,e
+	
+	add	hl, hl
+	rla
+	jr	nc, $+4
+	add	hl, de
+	adc	a, c
+	
+	ld	b, 3
+vect_mult_a_de.loop:
+	
+	add	hl, hl
+	rla
+	jr	nc, $+4
+	add	hl, de
+	adc	a, c
+	
+	add	hl, hl
+	rla
+	jr	nc, $+4
+	add	hl, de
+	adc	a, c
+	
+	djnz	vect_mult_a_de.loop
+	
+	pop	bc
+	ret
+
+; brief : 16*16 multiplication
+; input : de -> multiplier, bc -> multiplicand
+; output : dehl -> product
+; destroys : a
+vect_mult_de_bc:
+	ld	h, 0
+	ld	l, h
+	
+	sla	e		; optimised 1st iteration
+	rl	d
+	jr	nc, $+4
+	ld	h, b
+	ld	l, c
+	
+	ld	a, 5
+vect_mult_de_bc.loop:
+	add	hl, hl
+	rl	e
+	rl	d
+	jr	nc, $+6
+	add	hl, bc
+	jr	nc, $+3
+	inc	de
+	
+	add	hl, hl
+	rl	e
+	rl	d
+	jr	nc, $+6
+	add	hl, bc
+	jr	nc, $+3
+	inc	de
+	
+	add	hl, hl
+	rl	e
+	rl	d
+	jr	nc, $+6
+	add	hl, bc
+	jr	nc, $+3
+	inc	de
+	
+	dec	a
+	jr	nz,	vect_mult_de_bc.loop
+	
+	ret
+
+; brief : 8/8 division
+; input : d -> dividend, e -> divisor
+; output : d -> quotient, a -> remainder
+; destroys : a
+vect_div_d_e:
+	xor	a
+	
+	push	bc
+	ld	b, 4
+
+vect_div_d_e.loop:
+	sla	d
+	rla
+	cp	e
+	jr	c, $+4
+	sub	e
+	inc	d
+	
+	sla	d
+	rla
+	cp	e
+	jr	c, $+4
+	sub	e
+	inc	d
+	
+	djnz	vect_div_d_e.loop
+	
+	pop	bc
+	ret
+
+; brief : 16/8 division
+; input : hl -> dividend, c -> divisor
+; output : hl -> quotient, a -> remainder
+; destroys : none
+vect_div_hl_c:
+	xor	a
+	
+	push	bc
+	ld	b, 8
+
+vect_div_hl_c.loop:
+	add	hl, hl
+	rla
+	cp	c
+	jr	c, $+4
+	sub	c
+	inc	l
+	
+	add	hl, hl
+	rla
+	cp	c
+	jr	c, $+4
+	sub	c
+	inc	l
+	
+	djnz	vect_div_hl_c.loop
+	
+	pop	bc
+	ret
+
+; brief : 16/16 division
+; input : ac -> dividend, de -> divisor
+; output : ac -> quotient, hl -> remainder
+; destroys : none
+vect_div_ac_de:
+	ld	h, 0
+	ld	l, h
+	
+	push	bc
+	ld	b, 8
+
+vect_div_ac_de.loop:
+	sll	c
+	rla
+	adc	hl, hl
+	sbc	hl, de
+	jr	nc, $+4
+	add	hl, de
+	dec	c
+	
+	sll	c
+	rla
+	adc	hl, hl
+	sbc	hl, de
+	jr	nc, $+4
+	add	hl, de
+	dec	c
+	
+	djnz	vect_div_ac_de.loop
+	
+	pop	bc
+	ret
+
+; brief : 24/8 division
+; input : ehl -> dividend, d -> divisor
+; output : ehl -> quotient, a -> remainder
+; destroys : none
+vect_div_ehl_d:
+	xor	a
+	
+	push	bc
+	ld	b, 12
+
+vect_div_ehl_d.loop:
+	add	hl, hl
+	rl	e
+	rla
+	cp	d
+	jr	c, $+4
+	sub	d
+	inc	l
+	
+	add	hl, hl
+	rl	e
+	rla
+	cp	d
+	jr	c, $+4
+	sub	d
+	inc	l
+	
+	djnz	vect_div_ehl_d.loop
+	
+	pop	bc
+	ret
+
+; brief : 24/16 division
+; input : abc -> dividend, de -> divisor
+; output : abc -> quotient, hl -> remainder
+; destroys : b' (interrupts are disabled and reenabled if needed)
+vect_div_abc_de:
+	ld	h, a
+	
+	; store IFF into P/V flag, save flags
+	ld	a, i
+	push	af
+	
+	; disable interrupts to use b'
+	di
+	
+	ld	a, h
+	ld	h, 0
+	ld	l, h
+	
+	exx
+	ld	b, 12
+vect_div_abc_de.loop:
+	exx
+	
+	sll	c
+	rl	b
+	rla
+	adc	hl,hl
+	sbc	hl,de
+	jr	nc,$+4
+	add	hl,de
+	dec	c
+	
+	sll	c
+	rl	b
+	rla
+	adc	hl,hl
+	sbc	hl,de
+	jr	nc,$+4
+	add	hl,de
+	dec	c
+	
+	exx
+	djnz	vect_div_abc_de.loop
+	
+	exx
+	
+	pop	af
+	
+	ret	po
+	
+	ei
+	
+	ret
+
+; brief : 32/8 division
+; input : dehl -> dividend, c -> divisor
+; output : dehl -> quotient, a -> remainder
+; destroys : none
+vect_div_dehl_c:
+	xor	a
+	
+	push	bc
+	ld	b, 16
+	
+vect_div_dehl_c.loop:
+	add	hl, hl
+	rl	e
+	rl	d
+	rla
+	cp	c
+	jr	c, $+4
+	sub	c
+	inc	l
+	
+	add	hl, hl
+	rl	e
+	rl	d
+	rla
+	cp	c
+	jr	c, $+4
+	sub	c
+	inc	l
+	
+	djnz	vect_div_dehl_c.loop
+	
+	pop	bc
+	ret
+
+; brief : 16-bit integer square root
+; input : la -> radicand
+; output : d -> radix
+; destroys : e, hl
+vect_sqrt_la:
+	ld	de, 0040h	; 40h appends "01" to D
+	ld	h, d
+	
+	push	bc
+	ld	b, 7
+	
+	; need to clear the carry beforehand
+	or	a
+	
+vect_sqrt_la.loop:
+	sbc	hl, de
+	jr	nc, $+3
+	add	hl, de
+	ccf
+	rl	d
+	rla
+	adc	hl, hl
+	rla
+	adc	hl, hl
+	
+	djnz	vect_sqrt_la.loop
+	
+	sbc	hl, de		; optimised last iteration
+	ccf
+	rl	d
+	
+	pop	bc
+	ret

@@ -1,0 +1,5728 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+; This file reuses code from CSX (same licensing terms, see above) :
+;Copyright (c) 2004, Sean McLaughlin.
+.list
+
+.nolist
+#include "xos.inc"
+#include "xos.exp"
+#include "compat.inc"
+#include "page1C.exp"
+.list
+
+PAGE = $01
+
+.org $4000
+
+_JErrorNo:
+       .dw compat.jerrorno
+       .db $00
+;_FontHook		equ $4003
+       .dw $0000
+       .db $00
+;_call_character_hook	equ $4006 ;calls character(localize) hook
+       .dw $0000
+       .db $00
+_ldHLind: 		; equ $4009 ;l=a=(hl),h=(hl+1)
+       .dw zp.deref_hl
+       .db $00
+_CpHLDE:			; equ $400C
+       .dw zp.cmp_hlde
+       .db $00
+;_DivHLBy10		equ $400F
+       .dw $0000
+       .db $00
+_DivHLByA:		; equ $4012
+       .dw compat.div_hl_a
+       .db $00
+;_kdbScan		equ $4015
+       .dw $0000
+       .db $00
+;_GetCSC			equ $4018 ;key board scan codes
+_GetCSC:
+       .dw zp.getkey
+       .db $00
+;_coorMon		equ $401B ;
+       .dw $0000
+       .db $00
+;_Mon			equ $401E ;system monitor, customized through the context vectors
+       .dw $0000
+       .db $0F1
+;_monForceKey		equ $4021 ;
+       .dw $0000
+       .db $00
+;_sendKPress		equ $4024
+       .dw $0000
+       .db $00
+_JForceCmdNoChar:	; equ $4027
+       .dw compat.jforcecmdnochar
+       .db $00
+_JForceCmd:		; equ $402A 
+       .dw compat.jforcecmd
+       .db $00
+;_sysErrHandler		equ $402D ;loads error context? sp=(onSP)
+       .dw $0000
+       .db $00
+;_newContext		equ $4030 ;(kbdKey)=0, loads context, restores page in $4000-$7fff
+       .dw $0000
+       .db $00
+;_newContext0		equ $4033 ;loads context
+       .dw $0000
+       .db $00
+;_cxPutAway		equ $4036 ;
+       .dw $0000
+       .db $00
+;_cxPutAway2		equ $4039 ;same but also does a B_CALL CanAlphIns
+       .dw $0000
+       .db $00
+;_cxPPutAway		equ $403C
+       .dw $0000
+       .db $00
+;_cxSizeWind		equ $403F
+       .dw $0000
+       .db $00
+;_cxErrEP		equ $4042
+       .dw $0000
+       .db $00
+;_cxMain			equ $4045
+       .dw $0000
+       .db $00
+;_monErrHand		equ $4048 ;installs errorhandler to start of ROM call, loads error context, jumps to mon
+       .dw $0000
+       .db $00
+;_AppInit		equ $404B ;loads vector data at hl to cxMain and the rest of the vectors
+       .dw $0000
+       .db $00
+;_resetRam		equ $404E
+       .dw $0000
+       .db $0F3
+_lcd_busy:		; equ $4051 ;wait till bit 1 of port 2 is set
+       .dw compat.lcd_busy
+       .db $00
+;_Min			equ $4054 ;op1 = lowest number between op1 and op2
+       .dw $0000
+       .db $00
+;_Max			equ $4057 ;op1 = highest number between op1 and op2 
+       .dw $0000
+       .db $00
+;$405A
+       .dw $0000
+       .db $00
+;$405D
+       .dw $0000
+       .db $00
+;_Trunc			equ $4060
+       .dw $0000
+       .db $00
+;_InvSub			equ $4063
+       .dw $0000
+       .db $00
+;_Times2			equ $4066
+       .dw $0000
+       .db $00
+;_Plus1			equ $4069 ;op1=op1+1
+       .dw $0000
+       .db $00
+;_Minus1			equ $406C
+       .dw $0000
+       .db $00
+_FPSub			; equ $406F
+       .dw compat.fpsub
+       .db $00
+_FPAdd			; equ $4072
+       .dw compat.fpadd
+       .db $00
+;_DToR			equ $4075
+       .dw $0000
+       .db $00
+;_RToD			equ $4078
+       .dw $0000
+       .db $00
+;_Cube			equ $407B
+       .dw $0000
+       .db $00
+;_TimesPt5		equ $407E
+       .dw $0000
+       .db $00
+;_FPSquare		equ $4081
+       .dw $0000
+       .db $00
+_FPMult:			; equ $4084 ;op1=op1*op2
+       .dw compat.fpmult
+       .db $00
+;_LJRND			equ $4087 ;adjusts op1 if 0s precede the actual number... rounding? when
+       .dw $0000
+       .db $00
+;_InvOP1SC		equ $408A
+       .dw $0000
+       .db $00
+;_InvOP1S		equ $408D
+       .dw $0000
+       .db $00
+;_InvOP2S		equ $4090
+       .dw $0000
+       .db $0F5
+;_frac			equ $4093
+       .dw $0000
+       .db $00
+;_fprecip		equ $4096
+       .dw $0000
+       .db $00
+_fpdiv:			; equ $4099
+       .dw compat.fpdiv
+       .db $00
+;_SqRoot			equ $409C
+       .dw $0000
+       .db $00
+;_RndGuard		equ $409F
+       .dw $0000
+       .db $00
+;_RnFx			equ $40A2
+       .dw $0000
+       .db $00
+;_int			equ $40A5
+       .dw $0000
+       .db $00
+;_Round			equ $40A8
+       .dw $0000
+       .db $00
+;_LnX			equ $40AB
+       .dw $0000
+       .db $00
+;_LogX			equ $40AE
+       .dw $0000
+       .db $0F2
+;_LJNORND		equ $40B1 ;like _LJRND but no rounding
+       .dw $0000
+       .db $00
+;_EToX			equ $40B4
+       .dw $0000
+       .db $00
+;_TenX			equ $40B7
+       .dw $0000
+       .db $00
+;_SinCosRad		equ $40BA
+       .dw $0000
+       .db $00
+;_Sin			equ $40BD
+       .dw $0000
+       .db $00
+;_cos			equ $40C0
+       .dw $0000
+       .db $00
+;_Tan			equ $40C3
+       .dw $0000
+       .db $00
+;_SinHCosH		equ $40C6
+       .dw $0000
+       .db $00
+;_TanH			equ $40C9
+       .dw $0000
+       .db $00
+;_cosh			equ $40CC
+       .dw $0000
+       .db $00
+;_SinH			equ $40CF
+       .dw $0000
+       .db $00
+;_ACosRad		equ $40D2
+       .dw $0000
+       .db $00
+;_ATanRad		equ $40D5
+       .dw $0000
+       .db $00
+;_ATan2Rad		equ $40D8
+       .dw $0000
+       .db $00
+;_ASinRad		equ 40.$db
+       .dw $0000
+       .db $00
+;_ACos			equ $40DE
+       .dw $0000
+       .db $0F4
+;_ATan			equ $40E1
+       .dw $0000
+       .db $00
+;_ASin			equ $40E4
+       .dw $0000
+       .db $00
+;_ATan2			equ $40E7
+       .dw $0000
+       .db $00
+;_ATanH			equ $40EA
+       .dw $0000
+       .db $00
+;_ASinH			equ $40ED
+       .dw $0000
+       .db $00
+;_ACosH			equ $40F0
+       .dw $0000
+       .db $00
+;_PtoR			equ $40F3
+       .dw $0000
+       .db $00
+;_RToP			equ $40F6
+       .dw $0000
+       .db $00
+;_HLTimes9		equ $40F9
+       .dw $0000
+       .db $00
+;_CkOP1Cplx		equ $40FC
+       .dw $0000
+       .db $00
+;_CkOP1Real		equ $40FF
+       .dw $0000
+       .db $00
+;_Angle			equ $4102
+       .dw $0000
+       .db $00
+;_COP1Set0		equ $4105
+       .dw $0000
+       .db $00
+;_CpOP4OP3		equ $4108
+       .dw $0000
+       .db $00
+;_Mov9OP2Cp		equ $410B
+       .dw $0000
+       .db $00
+;_AbsO1O2Cp		equ $410E
+       .dw $0000
+       .db $00
+;_cpop1op2		equ $4111
+       .dw $0000
+       .db $00
+_OP3ToOP4: 		; equ $4114
+       .dw compat.op3toop4
+       .db $00
+_OP1ToOP4:		; equ $4117
+       .dw compat.op1toop4
+       .db $00
+_OP2ToOP4:		; equ $411A
+       .dw compat.op2toop4
+       .db $00
+_OP4ToOP2:		; equ $411D
+       .dw compat.op4toop2
+       .db $00
+;$4120
+       .dw $0000
+       .db $00
+_OP1ToOP3:		; equ $4123
+       .dw compat.op1toop3
+       .db $00
+_OP5ToOP2		; equ $4126
+       .dw compat.op5toop2
+       .db $00
+_OP5ToOP6:		; equ $4129
+       .dw compat.op5toop6
+       .db $00
+_OP5ToOP4:		; equ $412C
+       .dw compat.op5toop4
+       .db $00
+_OP1ToOP2:		; equ $412F
+       .dw compat.op1toop2
+       .db $00
+_OP6ToOP2:		; equ $4132
+       .dw compat.op6toop2
+       .db $00
+_OP6ToOP1:		; equ $4135
+       .dw compat.op6toop1
+       .db $00
+_OP4ToOP1:		; equ $4138
+       .dw compat.op4toop1
+       .db $00
+_OP5ToOP1		; equ $413B
+       .dw compat.op5toop1
+       .db $00
+_OP3ToOP1		; equ $413E
+       .dw compat.op3toop1
+       .db $00
+_OP6ToOP5		; equ $4141
+       .dw compat.op6toop5
+       .db $00
+_OP4ToOP5:		; equ $4144
+       .dw compat.op4toop5
+       .db $00
+_OP3ToOP5:		; equ $4147
+       .dw compat.op3toop5
+       .db $00
+_OP2ToOP5:		; equ $414A
+       .dw compat.op2toop5
+       .db $00
+_OP2ToOP6:		; equ $414D
+       .dw compat.op2toop6
+       .db $00
+_OP1ToOP6:		; equ $4150
+       .dw compat.op1toop6
+       .db $00
+_OP1ToOP5:		; equ $4153
+       .dw compat.op1toop5
+       .db $00
+_OP2ToOP1		; equ $4156
+       .dw compat.op2toop1
+       .db $00
+_Mov11B:		; equ $4159
+       .dw compat.mov11B
+       .db $00
+_Mov10B:		; equ $415C
+       .dw compat.mov10B
+       .db $00
+_Mov9B:			; equ $415F
+       .dw compat.mov9B
+       .db $00
+;_mov9B2			equ $4162 ;points to _mov9B
+       .dw compat.mov9B
+       .db $00
+_Mov8B:			; equ $4165
+       .dw compat.mov8B
+       .db $00
+_Mov7B			; equ $4168
+       .dw compat.mov7B
+       .db $00
+;_Mov7B2			equ $416B ;same pointer as _Mov7B
+       .dw compat.mov7B
+       .db $00
+;_OP2ToOP3		equ $416E
+       .dw compat.op2toop3
+       .db $00
+;_OP4ToOP3		equ $4171
+       .dw compat.op4toop3
+       .db $00
+;_OP5ToOP3		equ $4174
+       .dw compat.op5toop3
+       .db $00
+;_OP4ToOP6		equ $4177
+       .dw compat.op4toop6
+       .db $00
+;_Mov9ToOP1		equ $417A
+       .dw compat.mov9toop1
+       .db $00
+;_Mov9OP1OP2		equ $417D
+       .dw compat.mov9op1op2
+       .db $00
+;_Mov9ToOP2		equ $4180
+       .dw compat.mov9toop2
+       .db $00
+;_MovFrOP1		equ $4183
+       .dw $0000
+       .db $00
+;_OP4Set1		equ $4186
+       .dw $0000
+       .db $00
+;_OP3Set1		equ $4189
+       .dw $0000
+       .db $00
+;_OP2Set8		equ $418C
+       .dw $0000
+       .db $00
+;_OP2Set5		equ $418F
+       .dw $0000
+       .db $00
+;_OP2SetA		equ $4192
+       .dw $0000
+       .db $00
+;_OP2Set4		equ $4195
+       .dw $0000
+       .db $00
+;_OP2Set3		equ $4198
+       .dw $0000
+       .db $00
+;_OP1Set1		equ $419B
+       .dw $0000
+       .db $00
+;_OP1Set4		equ $419E
+       .dw $0000
+       .db $00
+;_OP1Set3		equ $41A1
+       .dw $0000
+       .db $00
+;_OP3Set2		equ $41A4
+       .dw $0000
+       .db $00
+;_OP1Set2		equ $41A7
+       .dw $0000
+       .db $00
+;_OP2Set2		equ $41AA
+       .dw $0000
+       .db $00
+;_OP2Set1		equ $41AD
+       .dw $0000
+       .db $00
+;_Zero16D		equ $41B0
+       .dw $0000
+       .db $00
+;_OP5Set0		equ $41B3
+       .dw $0000
+       .db $00
+;_OP4Set0		equ $41B6
+       .dw $0000
+       .db $00
+;_OP3Set0		equ $41B9
+       .dw $0000
+       .db $00
+;_OP2Set0		equ $41BC
+       .dw $0000
+       .db $00
+;_OP1Set0		equ $41BF
+       .dw $0000
+       .db $00
+;_OPSet0			equ $41C2 ;hl = location to write floating point 0
+       .dw $0000
+       .db $00
+;_ZeroOP1		equ $41C5
+       .dw $0000
+       .db $00
+;_ZeroOP2		equ $41C8
+       .dw $0000
+       .db $00
+;_ZeroOP3		equ $41CB
+       .dw $0000
+       .db $00
+;_ZeroOP			equ $41CE
+       .dw $0000
+       .db $00
+;_ClrLp			equ $41D1
+       .dw $0000
+       .db $00
+;_ShRAcc			equ $41D4 ;move high nibble in a to low nibble
+       .dw $0000
+       .db $00
+;_ShLAcc			equ $41D7 ;move low nibble in a to high nibble
+       .dw $0000
+       .db $00
+;_ShR18			equ $41DA ;insert a 0 nibble at high nibble of (hl), shift 9 bytes 1 nibble to right
+       .dw $0000
+       .db $00
+;_SHR18A			equ $41DD ;insert low nibble in a at high nibble of (hl), shift 9 bytes 1 nibble to right
+       .dw $0000
+       .db $00
+;_SHR16			equ $41E0 ;insert a 0 nibble at highnibble of (hl), shift 8 bytes 1 nibble to right
+       .dw $0000
+       .db $00
+;_SHR14			equ $41E3 ;insert low nibble in a at high nibble of (hl), shift 7 bytes 1 nibble to right
+       .dw $0000
+       .db $00
+;_SHL16			equ $41E6 ;insert nibble of 0 in low nibble of (hl), shift 8 bytes (before and including (hl)) to the left 1 nibble
+       .dw $0000
+       .db $00
+;_SHL14			equ $41E9 ;insert low nibble of a in low nibble of (hl), shift 7 bytes (before and including (hl)) to the left 1 nibble
+       .dw $0000
+       .db $00
+;_SRDO1			equ $41EC
+       .dw $0000
+       .db $00
+;_SHRDRND		equ $41EF
+       .dw $0000
+       .db $00
+;_MANTPA			equ $41F2 ;adds the value of a to hl which points to the end of the bcd 7 bytes long
+       .dw $0000
+       .db $00
+;_ADDPROP		equ $41F5 ;adds the value of a to hl which points to the end of the bcd (b bytes long)
+       .dw $0000
+       .db $00
+;_ADDPROPLP		equ $41F8 ;adds the value of a and carry to hl which points to the end of the bcd (b bytes long)
+       .dw $0000
+       .db $00
+;_ADD16D 		equ $41FB ;adds the bcd numbers at (hl-7) and (de-7)
+       .dw $0000
+       .db $00
+;_ADD14D			equ $41FE ;adds the bcd numbers at (hl-6) and (de-6)
+       .dw $0000
+       .db $00
+;_SUB16D			equ $4201 ;subtracts bcd numbers at (hl-7) and (de-7)
+       .dw $0000
+       .db $00
+;_SUB14D			equ $4204 ;subtracts bcd numbers at (hl-6) and (de-6)
+       .dw $0000
+       .db $00
+;_OP2ExOP6		equ $4207
+       .dw compat.op2exop6
+       .db $00
+;_OP5ExOP6		equ $420A
+       .dw compat.op5exop6
+       .db $00
+;_OP1ExOP5		equ $420D
+       .dw compat.op1exop5
+       .db $00
+;_OP1ExOP6		equ $4210
+       .dw compat.op1exop6
+       .db $00
+;_OP2ExOP4		equ $4213
+       .dw compat.op2exop4
+       .db $00
+;_OP2ExOP5		equ $4216
+       .dw compat.op2exop5
+       .db $00
+;_OP1ExOP3		equ $4219
+       .dw compat.op1exop3
+       .db $00
+;_OP1ExOP4		equ $421C
+       .dw compat.op1exop4
+       .db $00
+;_OP1ExOP2		equ $421F
+       .dw compat.op1exop2
+       .db $00
+;_ExLp			equ $4222
+       .dw $0000
+       .db $00
+;_CkOP1C0		equ $4225
+       .dw $0000
+       .db $00
+;_CkOP1FP0		equ $4228
+       .dw $0000
+       .db $00
+;_CkOP2FP0		equ $422B
+       .dw $0000
+       .db $00
+;_PosNo0Int		equ $422E
+       .dw $0000
+       .db $00
+;_CKPosInt		equ $4231
+       .dw $0000
+       .db $00
+;_CKInt			equ $4234
+       .dw $0000
+       .db $00
+;_CKOdd			equ $4237
+       .dw $0000
+       .db $00
+;_CKOP1M			equ $423A
+       .dw $0000
+       .db $00
+;_GETCONOP1		equ $423D ;a=0 opX=57.29577951308232 (1 radian in degrees)
+       .dw $0000
+       .db $00
+;_GETCONOP2		equ $4240 ;a=1 opX=1.570796326794897 (90 deg = pi/2)
+       .dw $0000
+       .db $00
+;_PIDIV2			equ $4243 ;not code, but a pointer to:	.db $80,$15,$70,$79,$63,$26,$79,$48,$97
+       .dw $0000
+       .db $00
+;_PIDIV4			equ $4246 ;				.db $7f,$78,$53,$98,$16,$33,$97,$44,$83
+       .dw $0000
+       .db $00
+;_PItimes2		equ $4249 ;not code, but a pointer to a 2*pi in non-OP format (no exponent byte)
+       .dw $0000
+       .db $00
+;_PI			equ $424C ;not code, but a pointer to a pi in non-OP format (no exponent byte)
+       .dw $0000
+       .db $00
+;_ExpToHex		equ $424F
+       .dw $0000
+       .db $00
+;_OP1ExpToDec		equ $4252
+       .dw $0000
+       .db $00
+;_ckop2pos		equ $4255
+       .dw $0000
+       .db $00
+;_CkOP1Pos		equ $4258
+       .dw $0000
+       .db $00
+;_ClrOP2S		equ $425B
+       .dw $0000
+       .db $00
+;_ClrOP1S		equ $425E
+       .dw $0000
+       .db $00
+;_FDIV100		equ $4261 ;op1=op1/100
+       .dw $0000
+       .db $00
+;_FDIV10			equ $4264 ;op1=op1/10
+       .dw $0000
+       .db $00
+;_DecO1Exp		equ $4267 ;decrease exponent by 1, this can go from 0 to FF
+       .dw $0000
+       .db $00
+;_INCO1EXP		equ $426A ;op1=op1*10
+       .dw $0000
+       .db $00
+;_INCEXP			equ $426D ;hl points to the floating point's exponent to be multiplied by 10
+       .dw $0000
+       .db $00
+;_CkValidNum		equ $4270
+       .dw $0000
+       .db $00
+;_GETEXP			equ $4273 ;a=OP1's exponent, carry set if negative exponent, Z if e0
+       .dw $0000
+       .db $00
+_HTimesL:		; equ $4276
+       .dw compat.mult_h_l
+       .db $00
+;_EOP1NotReal		equ $4279
+       .dw $0000
+       .db $00
+;_ThetaName		equ $427C
+       .dw $0000
+       .db $00
+;_RName			equ $427F
+       .dw $0000
+       .db $00
+;_REGEQNAME		equ $4282
+       .dw $0000
+       .db $00
+;_RECURNNAME		equ $4285
+       .dw $0000
+       .db $00
+;_XName			equ $4288
+       .dw $0000
+       .db $00
+;_YName			equ $428B
+       .dw $0000
+       .db $00
+;_TName			equ $428E
+       .dw $0000
+       .db $00
+;_REALNAME		equ $4291
+       .dw $0000
+       .db $00
+;_SETesTOfps		equ $4294 ;moves the word at fps to es
+       .dw $0000
+       .db $00
+;_markTableDirty		equ $4297 ;looks up table variable and marks VAT entry as "dirty" or selected
+       .dw $0000
+       .db $00
+;_OP1MOP2EXP		equ $429A ;op1's exponent = op1's expoent - op2's exponent
+       .dw $0000
+       .db $00
+;_OP1EXPMinusE		equ $429D ;a=(op1+1)-e
+       .dw $0000
+       .db $00
+;_CHKERRBREAK		equ $42A0
+       .dw $0000
+       .db $00
+;_isA2ByteTok		equ $42A3
+       .dw $0000
+       .db $00
+;_GETLASTENTRY		equ $42A6
+       .dw $0000
+       .db $00
+;_GETLASTENTRYPTR	equ $42A9
+       .dw $0000
+       .db $00
+;_REGCLRCHNG		equ $42AC
+       .dw $0000
+       .db $00
+;_RESETWINTOP		equ $42AF ;takes into account grfsplitoverride and grfsplit flags
+       .dw $0000
+       .db $00
+;_SetYUp			equ $42B2 ;loads 7 to port 10... what does this do?
+       .dw $0000
+       .db $00
+;_SetXUp			equ $42B5 ;loads 5 to port 10...
+       .dw $0000
+       .db $00
+;_ISO1NONTLSTorPROG	equ $42B8 ;checks if op1 contains a list, program, group, or appvar obj name
+       .dw $0000
+       .db $00
+;_ISO1NONTEMPLST		equ $42BB ;checks if op1 contains a list (why would op1+1 contain 01, or 0d for a var name?)
+       .dw $0000
+       .db $00
+;_IS_A_LSTorCLST		equ $42BE ;checks if a = 1 or $0D
+       .dw $0000
+       .db $00
+;_CHK_HL_999		equ $42C1 ;returns nc if less than 999, throws invalid dim error if greater than or equal to 999
+       .dw $0000
+       .db $00
+;_equ_or_newequ		equ $42C4
+       .dw $0000
+       .db $00
+;_errd_op1notpos		equ $42C7
+       .dw $0000
+       .db $00
+;_ErrD_OP1Not_R		equ $42CA
+       .dw $0000
+       .db $00
+;_ErrD_OP1NotPosInt 	equ $42CD
+       .dw $0000
+       .db $00
+;_ErrD_OP1_LE_0		equ $42D0
+       .dw $0000
+       .db $00
+;_ErrD_OP1_0		equ $42D3
+       .dw $0000
+       .db $00
+;_FINDSYM_GET_SIZE 	equ $42D6 ;like findsym, but on output hl is the size of the variable
+       .dw $0000
+       .db $00
+;_STO_STATVAR		equ $42D9
+       .dw $0000
+       .db $00
+;_Rcl_StatVar		equ $42DC
+       .dw $0000
+       .db $00
+;_CkOP2Real		equ $42DF
+       .dw $0000
+       .db $00
+;_GET_X_INDIRECT		equ $42E2 ;whatever this is, it uses the imathptrX locations
+       .dw $0000
+       .db $00
+;_MemChk			equ $42E5
+       .dw $0000
+       .db $00
+;_CMPPRGNAMLEN1		equ $42E8 ;gets variable name length from HL
+       .dw $0000
+       .db $00
+;_CMPPRGNAMLEN		equ $42EB ;gets variable name length from OP1
+       .dw $0000
+       .db $00
+_FINDPROGSYM:		; equ $42EE ;find the program whose name is in op1 (see chkfindsym in SDK)
+       .dw compat.findprogsym
+       .db $00
+_ChkFindSym:		; equ $42F1
+       .dw compat.chkfindsym
+       .db $00
+_FindSym:		; equ $42F4
+       .dw compat.findsym
+       .db $00
+_InsertMem:		; equ $42F7
+       .dw compat.insertmem
+       .db $00
+;_INSERTMEMA		equ $42FA ;not sure how this differs from insertmem
+       .dw $0000
+       .db $00
+_EnoughMem:		; equ $42FD
+       .dw compat.enoughmem
+       .db $00
+;_CMPMEMNEED		equ $4300
+       .dw $0000
+       .db $00
+;_CREATEPVAR4		equ $4303
+       .dw $0000
+       .db $00
+;_CREATEPVAR3		equ $4306
+       .dw $0000
+       .db $00
+;_CREATEVAR3		equ $4309
+       .dw $0000
+       .db $00
+;_CreateCplx		equ $430C
+       .dw $0000
+       .db $00
+;_CreateReal		equ $430F
+       .dw $0000
+       .db $00
+;_CreateTempRList	equ $4312
+       .dw $0000
+       .db $00
+;_CreateRList		equ $4315
+       .dw $0000
+       .db $00
+;_CREATETCLIST		equ $4318
+       .dw $0000
+       .db $00
+;_CreateCList		equ $431B
+       .dw $0000
+       .db $00
+;_CreateTempRMat		equ $431E
+       .dw $0000
+       .db $00
+;_CreateRMat		equ $4321
+       .dw $0000
+       .db $00
+;_CreateTempString	equ $4324
+       .dw $0000
+       .db $00
+;_CreateStrng		equ $4327
+       .dw $0000
+       .db $00
+;_Create0Equ		equ $432A
+       .dw $0000
+       .db $00
+;_CreateTempEqu		equ $432D
+       .dw $0000
+       .db $00
+;_CreateEqu		equ $4330
+       .dw $0000
+       .db $00
+;_CreatePict		equ $4333
+       .dw $0000
+       .db $00
+;_CreateG.db		equ $4336
+       .dw $0000
+       .db $00
+;_CreateProg		equ $4339
+       .dw $0000
+       .db $00
+;_CHKDEL			equ $433C
+       .dw $0000
+       .db $00
+;_CHKDELA		equ $433F
+       .dw $0000
+       .db $00
+;_ADJPARSER		equ $4342
+       .dw $0000
+       .db $00
+;_ADJMATH		equ $4345
+       .dw $0000
+       .db $00
+;_ADJM7			equ $4348
+       .dw $0000
+       .db $00
+;_DELMEMA		equ $434B
+       .dw $0000
+       .db $00
+;_GET_FORM_NUM		equ $434E
+       .dw $0000
+       .db $00
+_DelVar:			; equ $4351
+       .dw compat.delvar
+       .db $00
+;_DELVARIO		equ $4354
+       .dw $0000
+       .db $00
+_DelMem:			; equ $4357
+       .dw compat.delmem
+       .db $00
+;_DELVAR3D		equ $435A
+       .dw $0000
+       .db $00
+;_DELVAR3C		equ $435D
+       .dw $0000
+       .db $00
+;_DELVAR3DC		equ $4360 ;may be incorrect
+       .dw $0000
+       .db $00
+;_IsFixedName		equ $4363
+       .dw $0000
+       .db $00
+;_DelVarEntry		equ $4366
+       .dw $0000
+       .db $00
+;_DataSizeA		equ $4369
+       .dw $0000
+       .db $00
+;_DataSize		equ $436C
+       .dw $0000
+       .db $00
+;_POPMCPLXO1		equ $436F
+       .dw $0000
+       .db $00
+;_POPMCPLX		equ $4372
+       .dw $0000
+       .db $00
+;_MOVCPLX		equ $4375
+       .dw $0000
+       .db $00
+;_popOP5			equ $4378
+       .dw $0000
+       .db $00
+;_popOP3			equ $437B
+       .dw $0000
+       .db $00
+;_popOP1			equ $437E
+       .dw $0000
+       .db $00
+_PopRealO6:		; equ $4381
+       .dw compat.poprealo6
+       .db $00
+_PopRealO5:		; equ $4384
+       .dw compat.poprealo5
+       .db $00
+_PopRealO4:		; equ $4387
+       .dw compat.poprealo4
+       .db $00
+_PopRealO3:		; equ $438A
+       .dw compat.poprealo3
+       .db $00
+_PopRealO2:		; equ $438D
+       .dw compat.poprealo2
+       .db $00
+_PopRealO1:		; equ $4390
+       .dw compat.poprealo1
+       .db $00
+_PopReal:		; equ $4393
+       .dw compat.popreal
+       .db $00
+;_FPOPCPLX		equ $4396
+       .dw $0000
+       .db $00
+;_FPOPREAL		equ $4399
+       .dw $0000
+       .db $00
+;_FPOPFPS		equ $439C
+       .dw $0000
+       .db $00
+;_DeallocFPS		equ $439F
+       .dw $0000
+       .db $00
+;_DeallocFPS1		equ $43A2
+       .dw $0000
+       .db $00
+;_AllocFPS		equ $43A5
+       .dw $0000
+       .db $00
+;_AllocFPS1		equ $43A8
+       .dw $0000
+       .db $00
+_PushRealO6		; equ $43AB
+       .dw compat.pushrealo6
+       .db $00
+_PushRealO5:	; equ $43AE
+       .dw compat.pushrealo5
+       .db $00
+_PushRealO4:	; equ $43B1
+       .dw compat.pushrealo4
+       .db $00
+_PushRealO3:	; equ $43B4
+       .dw compat.pushrealo3
+       .db $00
+_PushRealO2:	; equ $43B7
+       .dw compat.pushrealo2
+       .db $00
+_PushRealO1:	; equ $43BA
+       .dw compat.pushrealo1
+       .db $00
+_PushReal:		; equ $43BD
+       .dw compat.pushreal
+       .db $00
+;_PushOP5		equ $43C0
+       .dw $0000
+       .db $00
+;_PushOP3		equ $43C3
+       .dw $0000
+       .db $00
+;_PUSHMCPLXO3		equ $43C6
+       .dw $0000
+       .db $00
+;_PushOP1		equ $43C9
+       .dw $0000
+       .db $00
+;_PUSHMCPLXO1		equ $43CC
+       .dw $0000
+       .db $00
+;_PUSHMCPLX		equ $43CF
+       .dw $0000
+       .db $00
+;_ExMCplxO1		equ $43D2
+       .dw $0000
+       .db $00
+;_Exch9			equ $43D5
+       .dw $0000
+       .db $00
+;_CpyTo1FPS11		equ $43D8
+       .dw $0000
+       .db $00
+;_CpyTo2FPS5		equ 43.$db
+       .dw $0000
+       .db $00
+;_CpyTo1FPS5		equ $43DE
+       .dw $0000
+       .db $00
+;_CpyTo2FPS6		equ $43E1
+       .dw $0000
+       .db $00
+;_CpyTo1FPS6		equ $43E4
+       .dw $0000
+       .db $00
+;_CpyTo2FPS7		equ $43E7
+       .dw $0000
+       .db $00
+;_CpyTo1FPS7		equ $43EA
+       .dw $0000
+       .db $00
+;_CpyTo1FPS8		equ $43ED
+       .dw $0000
+       .db $00
+;_CpyTo2FPS8		equ $43F0
+       .dw $0000
+       .db $00
+;_CpyTo1FPS10		equ $43F3
+       .dw $0000
+       .db $00
+;_CpyTo1FPS9		equ $43F6
+       .dw $0000
+       .db $00
+;_CpyTo2FPS4		equ $43F9
+       .dw $0000
+       .db $00
+;_CpyTo6FPS3		equ $43FC
+       .dw $0000
+       .db $0FC
+;_CpyTo6FPS2		equ $43FF
+       .dw $0000
+       .db $00
+;_CpyTo2FPS3		equ $4402
+       .dw $0000
+       .db $00
+;_CPYCTO1FPS3		equ $4405
+       .dw $0000
+       .db $00
+;_CpyTo1FPS3		equ $4408
+       .dw $0000
+       .db $00
+;_CPYFPS3		equ $440B
+       .dw $0000
+       .db $00
+;_CpyTo1FPS4		equ $440E
+       .dw $0000
+       .db $00
+;_CpyTo3FPS2		equ $4411
+       .dw $0000
+       .db $00
+;_CpyTo5FPST		equ $4414
+       .dw $0000
+       .db $00
+;_CpyTo6FPST		equ $4417
+       .dw $0000
+       .db $00
+;_CpyTo4FPST		equ $441A
+       .dw $0000
+       .db $00
+;_CpyTo3FPST		equ $441D
+       .dw $0000
+       .db $00
+;_CpyTo2FPST		equ $4420
+       .dw $0000
+       .db $00
+;_CpyTo1FPST		equ $4423
+       .dw $0000
+       .db $00
+;_CPYFPST		equ $4426
+       .dw $0000
+       .db $00
+;_CpyStack		equ $4429
+       .dw $0000
+       .db $00
+;_CpyTo3FPS1		equ $442C
+       .dw $0000
+       .db $00
+;_CpyTo2FPS1		equ $442F
+       .dw $0000
+       .db $00
+;_CpyTo1FPS1		equ $4432
+       .dw $0000
+       .db $00
+;_CPYFPS1		equ $4435
+       .dw $0000
+       .db $00
+;_CpyTo2FPS2		equ $4438
+       .dw $0000
+       .db $00
+;_CpyTo1FPS2		equ $443B
+       .dw $0000
+       .db $00
+;_CPYFPS2		equ $443E
+       .dw $0000
+       .db $00
+;_CpyO3ToFPST		equ $4441
+       .dw $0000
+       .db $00
+;_CpyO2ToFPST		equ $4444
+       .dw $0000
+       .db $00
+;_CpyO6ToFPST		equ $4447
+       .dw $0000
+       .db $00
+;_CpyO1ToFPST		equ $444A
+       .dw $0000
+       .db $00
+;_CpyToFPST		equ $444D
+       .dw $0000
+       .db $00
+;_CpyToStack		equ $4450
+       .dw $0000
+       .db $00
+;_CpyO3ToFPS1		equ $4453
+       .dw $0000
+       .db $00
+;_CpyO5ToFPS1		equ $4456
+       .dw $0000
+       .db $00
+;_CpyO2ToFPS1		equ $4459
+       .dw $0000
+       .db $00
+;_CpyO1ToFPS1		equ $445C
+       .dw $0000
+       .db $00
+;_CpyToFPS1		equ $445F
+       .dw $0000
+       .db $00
+;_CpyO2ToFPS2		equ $4462
+       .dw $0000
+       .db $00
+;_CpyO3ToFPS2		equ $4465
+       .dw $0000
+       .db $00
+;_CpyO6ToFPS2		equ $4468
+       .dw $0000
+       .db $00
+;_CpyO1ToFPS2		equ $446B
+       .dw $0000
+       .db $00
+;_CpyToFPS2		equ $446E
+       .dw $0000
+       .db $00
+;_CpyO5ToFPS3		equ $4471
+       .dw $0000
+       .db $00
+;_CpyO2ToFPS3		equ $4474
+       .dw $0000
+       .db $00
+;_CpyO1ToFPS3		equ $4477
+       .dw $0000
+       .db $00
+;_CpyToFPS3		equ $447A
+       .dw $0000
+       .db $00
+;_CpyO1ToFPS6		equ $447D
+       .dw $0000
+       .db $00
+;_CpyO1ToFPS7		equ $4480
+       .dw $0000
+       .db $00
+;_CpyO1ToFPS5		equ $4483
+       .dw $0000
+       .db $00
+;_CpyO2ToFPS4		equ $4486
+       .dw $0000
+       .db $00
+;_CpyO1ToFPS4		equ $4489
+       .dw $0000
+       .db $00
+;_ErrNotEnoughMem 	equ $448C ;only if not HL bytes free
+       .dw $0000
+       .db $00
+;_FPSMINUS9		equ $448F
+       .dw $0000
+       .db $00
+;_HLMINUS9		equ $4492
+       .dw $0000
+       .db $00
+;_ErrOverflow		equ $4495
+       .dw $0000
+       .db $00
+;_ErrDivBy0		equ $4498
+       .dw $0000
+       .db $00
+;_ErrSingularMat		equ $449B
+       .dw $0000
+       .db $00
+;_ErrDomain		equ $449E
+       .dw $0000
+       .db $00
+;_ErrIncrement		equ $44A1
+       .dw $0000
+       .db $00
+;_ErrNon_Real		equ $44A4
+       .dw $0000
+       .db $00
+;_ErrSyntax		equ $44A7
+       .dw $0000
+       .db $00
+;_ErrDataType		equ $44AA
+       .dw $0000
+       .db $00
+;_ErrArgument		equ $44AD
+       .dw $0000
+       .db $00
+;_ErrDimMismatch		equ $44B0
+       .dw $0000
+       .db $00
+;_ErrDimension		equ $44B3
+       .dw $0000
+       .db $00
+;_ErrUndefined		equ $44B6
+       .dw $0000
+       .db $00
+;_ErrMemory		equ $44B9
+       .dw $0000
+       .db $00
+;_ErrInvalid		equ $44BC
+       .dw $0000
+       .db $00
+;_ErrBreak		equ $44BF
+       .dw $0000
+       .db $00
+;_ErrStat		equ $44C2
+       .dw $0000
+       .db $00
+;_ErrSignChange		equ $44C5
+       .dw $0000
+       .db $00
+;_ErrIterations		equ $44C8
+       .dw $0000
+       .db $00
+;_ErrBadGuess		equ $44CB
+       .dw $0000
+       .db $00
+;_ErrTolTooSmall		equ $44CE
+       .dw $0000
+       .db $00
+;_ErrStatPlot		equ $44D1
+       .dw $0000
+       .db $00
+;_ErrLinkXmit		equ $44D4
+       .dw $0000
+       .db $00
+;_JError			equ $44D7
+       .dw $0000
+       .db $00
+;_noErrorEntry		equ $44DA
+       .dw $0000
+       .db $00
+;_pushErrorHandleR	equ $44DD
+       .dw $0000
+       .db $00
+;_popErrorHandleR	equ $44E0
+       .dw $0000
+       .db $00
+_strcopy:		; equ $44E3
+       .dw zp.strcpy
+       .db $00
+_strCat:			; equ $44E6
+       .dw zp.strcat
+       .db $00
+;_isInSet		equ $44E9
+       .dw $0000
+       .db $00
+;_sDone			equ $44EC ;this should actually be called _SetEquToOP1
+       .dw $0000
+       .db $00
+;_serrort		equ $44EF
+       .dw $0000
+       .db $00
+;_sNameEq		equ $44F2
+       .dw $0000
+       .db $00
+;_sUnderScr		equ $44F5
+       .dw $0000
+       .db $00
+;_sFAIL			equ $44F8
+       .dw $0000
+       .db $00
+;_sName			equ $44FB
+       .dw $0000
+       .db $00
+;_sOK			equ $44FE
+       .dw $0000
+       .db $00
+_PutMap:			; equ $4501
+       .dw compat.putmap
+       .db $00
+_PutC:			; equ $4504
+       .dw compat.putc
+       .db $00
+_DispHL:			; equ $4507
+       .dw compat.disphl
+       .db $00
+;_PutS			equ $450A
+_PutS:
+       .dw compat.puts
+       .db $00
+;_putpsb			equ $450D
+       .dw $0000
+       .db $00
+;_PutPS			equ $4510
+       .dw $0000
+       .db $00
+;_wputps			equ $4513
+       .dw $0000
+       .db $00
+;_putbuf			equ $4516
+       .dw $0000
+       .db $00
+;_putbuf1		equ $4519
+       .dw $0000
+       .db $00
+;_wputc			equ $451C
+       .dw $0000
+       .db $00
+;_wputs			equ $451F
+       .dw $0000
+       .db $00
+;_wputsEOL		equ $4522 ;displays string in HL in big font, and uses ... if too long
+       .dw $0000
+       .db $00
+;_wdispEOL		equ $4525
+       .dw $0000
+       .db $00
+;_whomeup		equ $4528
+       .dw $0000
+       .db $00
+;_setNumWindow		equ $452B ;based on current cursor position, sets winleft and similar (for input prompts)
+       .dw $0000
+       .db $00
+;_newline		equ $452E
+       .dw $0000
+       .db $00
+;_moveDown		equ $4531
+       .dw $0000
+       .db $00
+;_scrollUp		equ $4534
+       .dw $0000
+       .db $00
+;_shrinkWindow		equ $4537
+       .dw $0000
+       .db $00
+;_moveUp			equ $453A
+       .dw $0000
+       .db $00
+;_scrollDown		equ $453D
+       .dw $0000
+       .db $00
+_ClrLCDFull:
+       .dw zp.clrlcd
+       .db $00
+_ClrLCD:			; equ $4543
+       .dw zp.clrlcd
+       .db $00
+_ClrScrnFull:		; equ $4546
+       .dw compat.clrscrnfull
+       .db $00
+_ClrScrn:			; equ $4549
+       .dw compat.clrscrnfull
+       .db $00
+;_ClrTxtShd		equ $454C
+       .dw $0000
+       .db $00
+;_ClrWindow		equ $454F
+       .dw $0000
+       .db $00
+;_EraseEOL		equ $4552
+       .dw $0000
+       .db $00
+;_EraseEOW		equ $4555
+       .dw $0000
+       .db $00
+_HomeUp:			; equ $4558
+       .dw compat.homeup
+       .db $00
+;_getcurloc		equ $455B
+       .dw $0000
+       .db $00
+_VPutMap		; equ $455E
+       .dw compat.vputmap
+       .db $00
+_VPutS			; equ $4561
+       .dw compat.vputs
+       .db $00
+;_VPutSN			equ $4564
+       .dw $0000
+       .db $00
+;_vputsnG		equ $4567
+       .dw $0000
+       .db $00
+;_vputsnT		equ $456A
+       .dw $0000
+       .db $00
+;_RunIndicOn		equ $456D
+       .dw $0000
+       .db $00
+;_RunIndicOff		equ $4570
+       .dw $0000
+       .db $00
+;_saveCmdShadow		equ $4573
+       .dw $0000
+       .db $00
+;_saveShadow		equ $4576
+       .dw $0000
+       .db $00
+;_rstrShadow		equ $4579
+       .dw $0000
+       .db $00
+;_rstrpartial		equ $457C
+       .dw $0000
+       .db $00
+;_rstrCurRow		equ $457F
+       .dw $0000
+       .db $00
+;_rstrUnderMenu		equ $4582
+       .dw $0000
+       .db $00
+;_rstrbotrow		equ $4585
+       .dw $0000
+       .db $00
+;_saveTR			equ $4588 ;save top right corner of LCD so 2nd arrow can be displayed, indicinuse flag must be set
+       .dw $0000
+       .db $00
+;_restoreTR		equ $458B ;restore top right corner of LCD destroyed by an arrow. indicinuse flag must be set
+       .dw $0000
+       .db $00
+;_GetKeyPress		equ $458E
+       .dw $0000
+       .db $00
+;_GetTokLen		equ $4591 ;input: hl=pointer to token. output: a=lenght of string, hl=pointer to string on page 1
+       .dw $0000
+       .db $00
+;_GET_TOK_STRNG		equ $4594 ;input: hl=pointer to token. output: op3=string of the token, a=length of string
+       .dw $0000
+       .db $00
+;_GETTOKSTRING		equ $4597 ;input: DE=token. output: hl=pointer to the string on page 1
+       .dw $0000
+       .db $00
+;_PUTBPATBUF2		equ $459A
+       .dw $0000
+       .db $00
+;_PUTBPATBUF		equ $459D
+       .dw $0000
+       .db $00
+;_putbPAT		equ $45A0
+       .dw $0000
+       .db $00
+;_putcCheckScrolL	equ $45A3
+       .dw $0000
+       .db $00
+;_DispEOL		equ $45A6
+       .dw $0000
+       .db $00
+;_fdispEOL		equ $45A9
+       .dw $0000
+       .db $00
+;_MAKEROWCMD		equ $45AC
+       .dw $0000
+       .db $00
+;_TOTOSTRP		equ $45AF
+       .dw $0000
+       .db $00
+;_SETVARNAME		equ $45B2
+       .dw $0000
+       .db $00
+;_DispDone		equ $45B5
+       .dw $0000
+       .db $00
+;_finishoutput		equ $45B8
+       .dw $0000
+       .db $00
+;_curBlink		equ $45BB
+       .dw $0000
+       .db $00
+;_CursorOff:
+       .dw $0000
+       .db $00
+;_hideCursor:
+       .dw $0000
+       .db $00
+;_CursorOn:
+       .dw $0000
+       .db $00
+;_showCursor:
+       .dw $0000
+       .db $00
+;_KeyToString		equ $45CA
+       .dw $0000
+       .db $00
+;_PULLDOWNCHK		equ $45CD ;something wrong here
+       .dw $0000
+       .db $00
+;_MenuCatCommon		equ $45D0
+       .dw $0000
+       .db $00
+;_ZIfCatalog		equ $45D3
+       .dw $0000
+       .db $00
+;_ZIfMatrixMenu		equ $45D6 ;_loadCurCat
+       .dw $0000
+       .db $00
+;_LoadMenuNum		equ $45D9
+       .dw $0000
+       .db $00
+;_LoadMenuNumL		equ $45DC
+       .dw $0000
+       .db $00
+;_MenCatRet		equ $45DF ;restores display as though a menu were just cleared (restores some flags too)
+       .dw $0000
+       .db $00
+;_MenuSwitchContext	equ $45E2 ;switches to context in A, calls menu hook with A=3, set 5,(iy+$16) for some sort of override to not make switch
+       .dw $0000
+       .db $00
+;_MenuEdKey		equ $45E5
+       .dw $0000
+       .db $00
+;_BackUpGraphSettings	equ $45E8
+       .dw $0000
+       .db $00
+;_notalphnum		equ $45EB
+       .dw $0000
+       .db $00
+;_SaveSavedFlags		equ $45EE
+       .dw $0000
+       .db $00
+;_SetMenuFlags		equ $45F1
+       .dw $0000
+       .db $00
+;_RstrSomeFlags		equ $45F4
+       .dw $0000
+       .db $00
+;_RstrOScreen		equ $45F7 ;restores saveSScreen to the display
+       .dw $0000
+       .db $00
+;_SaveOScreen		equ $45FA ;stores display in saveSScreen
+       .dw $0000
+       .db $00
+;_dispListName		equ $45FD ;_SeeIfErrorCx
+       .dw $0000
+       .db $00
+;_PrevContext		equ $4600
+       .dw $0000
+       .db $00
+;_CompareContext		equ $4603
+       .dw $0000
+       .db $00
+;_AdrMRow		equ $4606
+       .dw $0000
+       .db $00
+;_AdrMEle		equ $4609
+       .dw $0000
+       .db $00
+;_GETMATOP1A		equ $460C
+       .dw $0000
+       .db $00
+;_GETM1TOOP1		equ $460F
+       .dw $0000
+       .db $00
+;_GETM1TOP1A		equ $4612
+       .dw $0000
+       .db $00
+;_GetMToOP1		equ $4615
+       .dw $0000
+       .db $00
+;_PUTTOM1A		equ $4618
+       .dw $0000
+       .db $00
+;_PUTTOMA1		equ $461B
+       .dw $0000
+       .db $00
+;_PutToMat		equ $461E
+       .dw $0000
+       .db $00
+;_MAT_EL_DIV		equ $4621
+       .dw $0000
+       .db $00
+;_CMATFUN		equ $4624
+       .dw $0000
+       .db $00
+;_ROWECH_POLY		equ $4627
+       .dw $0000
+       .db $00
+;_ROWECHELON		equ $462A
+       .dw $0000
+       .db $00
+;_AdrLEle		equ $462D
+       .dw $0000
+       .db $00
+;_GETL1TOOP1		equ $4630
+       .dw $0000
+       .db $00
+;_GETL1TOP1A		equ $4633
+       .dw $0000
+       .db $00
+;_GetLToOP1		equ $4636
+       .dw $0000
+       .db $00
+;_GETL1TOOP2		equ $4639
+       .dw $0000
+       .db $00
+;_GETL1TOP2A		equ $463C
+       .dw $0000
+       .db $00
+;_GETL2TOP1A		equ $463F
+       .dw $0000
+       .db $00
+;_PUTTOLA1		equ $4642
+       .dw $0000
+       .db $00
+;_PutToL			equ $4645
+       .dw $0000
+       .db $00
+;_MAXMINLST		equ $4648
+       .dw $0000
+       .db $00
+;_LLOW			equ $464B
+       .dw $0000
+       .db $00
+;_LHIGH			equ $464E
+       .dw $0000
+       .db $00
+;_LSUM			equ $4651
+       .dw $0000
+       .db $00
+;CUMSUM			equ $4654
+       .dw $0000
+       .db $00
+;_ToFrac			equ $4657
+       .dw $0000
+       .db $00
+;_SEQSET			equ $465A
+       .dw $0000
+       .db $00
+;_SEQSOLVE		equ $465D
+       .dw $0000
+       .db $00
+;_CMP_NUM_INIT		equ $4660
+       .dw $0000
+       .db $00
+;_BinOPExec		equ $4663
+       .dw $0000
+       .db $00
+;_EXMEAN1		equ $4666
+       .dw $0000
+       .db $00
+;_SET2MVLPTRS		equ $4669
+       .dw $0000
+       .db $00
+;_SETMAT1		equ $466C
+       .dw $0000
+       .db $00
+;_CREATETLIST		equ $466F
+       .dw $0000
+       .db $00
+;_UnOPExec		equ $4672
+       .dw $0000
+       .db $00
+;_ThreeExec		equ $4675
+       .dw $0000
+       .db $00
+;_RESTOREERRNO		equ $4678
+       .dw $0000
+       .db $00
+;_FourExec		equ $467B
+       .dw $0000
+       .db $00
+;_FiveExec		equ $467E
+       .dw $0000
+       .db $00
+;_CPYTO2ES1		equ $4681
+       .dw $0000
+       .db $00
+;_CPYTO6ES1		equ $4684
+       .dw $0000
+       .db $00
+;_CPYTO1ES1		equ $4687
+       .dw $0000
+       .db $00
+;_CPYTO3ES1		equ $468A
+       .dw $0000
+       .db $00
+;_CPYTO3ES2		equ $468D
+       .dw $0000
+       .db $00
+;_CPYTO2ES2		equ $4690
+       .dw $0000
+       .db $00
+;_CPYTO1ES2		equ $4693
+       .dw $0000
+       .db $00
+;_CPYTO2ES3		equ $4696
+       .dw $0000
+       .db $00
+;_CPYTO1ES3		equ $4699
+       .dw $0000
+       .db $00
+;_CPYTO3ES4		equ $469C
+       .dw $0000
+       .db $00
+;_CPYTO6ES3		equ $469F
+       .dw $0000
+       .db $00
+;_CPYTO2ES4		equ $46A2
+       .dw $0000
+       .db $00
+;_CPYTO1ES4		equ $46A5
+       .dw $0000
+       .db $00
+;_CPYTO2ES5		equ $46A8
+       .dw $0000
+       .db $00
+;_CPYTO1ES5		equ $46AB
+       .dw $0000
+       .db $00
+;_CPYTO4EST		equ $46AE
+       .dw $0000
+       .db $00
+;_CPYTO2EST		equ $46B1
+       .dw $0000
+       .db $00
+;_CPYTO1EST		equ $46B4
+       .dw $0000
+       .db $00
+;_CPYTO2ES6		equ $46B7
+       .dw $0000
+       .db $00
+;_CPYTO1ES6		equ $46BA
+       .dw $0000
+       .db $00
+;_CPYTO2ES7		equ $46BD
+       .dw $0000
+       .db $00
+;_CPYTO1ES7		equ $46C0
+       .dw $0000
+       .db $00
+;_CPYTO2ES8		equ $46C3
+       .dw $0000
+       .db $00
+;_CPYTO1ES8		equ $46C6
+       .dw $0000
+       .db $00
+;_CPYTO1ES9		equ $46C9
+       .dw $0000
+       .db $00
+;_CPYTO2ES9		equ $46CC
+       .dw $0000
+       .db $00
+;_CPYTO2ES10		equ $46CF
+       .dw $0000
+       .db $00
+;_CPYTO1ES10		equ $46D2
+       .dw $0000
+       .db $00
+;_CPYTO2ES11		equ $46D5
+       .dw $0000
+       .db $00
+;_CPYTO1ES11		equ $46D8
+       .dw $0000
+       .db $00
+;_CPYTO2ES12		equ 46.$db
+       .dw $0000
+       .db $00
+;_CPYTO1ES12		equ $46DE
+       .dw $0000
+       .db $00
+;_CPYTO2ES13		equ $46E1
+       .dw $0000
+       .db $00
+;_CPYTO1ES13		equ $46E4
+       .dw $0000
+       .db $00
+;_CPYTO1ES14		equ $46E7
+       .dw $0000
+       .db $00
+;_CPYTO1ES16		equ $46EA
+       .dw $0000
+       .db $00
+;_CPYTO1ES17		equ $46ED
+       .dw $0000
+       .db $00
+;_CPYTO1ES18		equ $46F0
+       .dw $0000
+       .db $00
+;_CPYTO1ES15		equ $46F3
+       .dw $0000
+       .db $00
+;_CPYTO2ES15		equ $46F6
+       .dw $0000
+       .db $00
+;_CPYO1TOEST		equ $46F9
+       .dw $0000
+       .db $00
+;_CPYO1TOES1		equ $46FC
+       .dw $0000
+       .db $00
+;_CPYO6TOES1		equ $46FF
+       .dw $0000
+       .db $00
+;_CPYO6TOES3		equ $4702
+       .dw $0000
+       .db $00
+;_CPYO1TOES2		equ $4705
+       .dw $0000
+       .db $00
+;_CPYO2TOES2		equ $4708
+       .dw $0000
+       .db $00
+;_CPYO1TOES3		equ $470B
+       .dw $0000
+       .db $00
+;_CPYO1TOES4		equ $470E
+       .dw $0000
+       .db $00
+;_CPYO1TOES5		equ $4711
+       .dw $0000
+       .db $00
+;_CPYO1TOES6		equ $4714
+       .dw $0000
+       .db $00
+;_CPYO1TOES7		equ $4717
+       .dw $0000
+       .db $00
+;_CPYO2TOES4		equ $471A
+       .dw $0000
+       .db $00
+;_CPYO2TOES5		equ $471D
+       .dw $0000
+       .db $00
+;_CPYO2TOES6		equ $4720
+       .dw $0000
+       .db $00
+;_CPYO2TOES7		equ $4723
+       .dw $0000
+       .db $00
+;_CPYO2TOES8		equ $4726
+       .dw $0000
+       .db $00
+;_CPYO2TOES9		equ $4729
+       .dw $0000
+       .db $00
+;_CPYO1TOES8		equ $472C
+       .dw $0000
+       .db $00
+;_CPYO1TOES9		equ $472F
+       .dw $0000
+       .db $00
+;_CPYO1TOES10		equ $4732
+       .dw $0000
+       .db $00
+;_CPYO1TOES11		equ $4735
+       .dw $0000
+       .db $00
+;_CPYO1TOES12		equ $4738
+       .dw $0000
+       .db $00
+;_CPYO1TOES13		equ $473B
+       .dw $0000
+       .db $00
+;_CPYO1TOES14		equ $473E
+       .dw $0000
+       .db $00
+;_CPYO1TOES15		equ $4741
+       .dw $0000
+       .db $00
+;_EVALF3A		equ $4744
+       .dw $0000
+       .db $00
+;_GetK			equ $4747 ;?
+       .dw $0000
+       .db $00
+;_setTitle               equ $474A
+       .dw $0000
+       .db $00
+;_dispVarVal		equ $474D
+       .dw $0000
+       .db $00
+;_RecallEd		equ $4750 ;_setupBuffer
+       .dw $0000
+       .db $00
+;_createNumEditBuf	equ $4753
+       .dw $0000
+       .db $00
+;_ProcessBufKeys		equ $4756 ;may be default key processing like [CLEAR], etc. especially for an edit buffer.
+       .dw $0000
+       .db $00
+;_CallCommon		equ $4759
+       .dw $0000
+       .db $00
+;_CommonKeys		equ $475C
+       .dw $0000
+       .db $00
+;_Leftmore		equ $475F
+       .dw $0000
+       .db $00
+;_fDel			equ $4762
+       .dw $0000
+       .db $00
+;_fClear			equ $4765
+       .dw $0000
+       .db $00
+;_finsDisp		equ $4768 ;Michael says _FinsDisp02 equ $4768 (something's not right)
+       .dw $0000
+       .db $00
+;_FinsDisp02		equ $476B ;_setIndicator
+       .dw $0000
+       .db $00
+;_closeeditbufnor	equ $476E
+       .dw $0000
+       .db $00
+;_releaseBuffer		equ $4771
+       .dw $0000
+       .db $00
+;_varnameToOP1hl		equ $4774
+       .dw $0000
+       .db $00
+;_nameToOP1		equ $4777
+       .dw $0000
+       .db $00
+;_numPPutAway		equ $477A
+       .dw $0000
+       .db $00
+;_numRedisp		equ $477D
+       .dw $0000
+       .db $00
+;_numError02		equ $4780
+       .dw $0000
+       .db $00
+;_Load_SFont		equ $4783
+       .dw $0000
+       .db $00
+;_SFont_Len		equ $4786
+       .dw $0000
+       .db $00
+;_InitNumVec		equ $4789 ;inits window settings/table setup/finance solver context (dialog-like)
+       .dw $0000
+       .db $00
+;_SetXXOP1		equ $478C
+       .dw $0000
+       .db $00
+;_SetXXOP2		equ $478F
+       .dw $0000
+       .db $00
+;_SetXXXXOP2		equ $4792
+       .dw $0000
+       .db $00
+;_UCLineS		equ $4795
+       .dw $0000
+       .db $00
+;_CLine			equ $4798
+       .dw $0000
+       .db $00
+;_CLineS			equ $479B
+       .dw $0000
+       .db $00
+;_XRootY			equ $479E
+       .dw $0000
+       .db $00
+;_YToX			equ $47A1
+       .dw $0000
+       .db $00
+;_ZmStats		equ $47A4
+       .dw $0000
+       .db $00
+;_POINT_STAT_HLP		equ $47A7
+       .dw $0000
+       .db $00
+;_DRAWSPLOT		equ $47AA
+       .dw $0000
+       .db $00
+;_INITNEWTRACEP		equ $47AD ;A is input here, goes to ($8E63)
+       .dw $0000
+       .db $00
+;_SPLOTCOORD		equ $47B0
+       .dw $0000
+       .db $00
+;_SPLOTRIGHT		equ $47B3
+       .dw $0000
+       .db $00
+;_SPLOTLEFT		equ $47B6
+       .dw $0000
+       .db $00
+;_CMPBOXINFO		equ $47B9
+       .dw $0000
+       .db $00
+;_NEXTPLOT		equ $47BC
+       .dw $0000
+       .db $00
+;_PREVPLOT		equ $47BF
+       .dw $0000
+       .db $00
+;_CLRPREVPLOT		equ $47C2
+       .dw $0000
+       .db $00
+;_PUT_INDEX_LST		equ $47C5
+       .dw $0000
+       .db $00
+;_GET_INDEX_LST		equ $47C8
+       .dw $0000
+       .db $00
+;_HEAP_SORT		equ $47CB
+       .dw $0000
+       .db $00
+;_StoG.db2		equ $47CE
+       .dw $0000
+       .db $00
+;_RclG.db2		equ $47D1
+       .dw $0000
+       .db $00
+;_CircCmd		equ $47D4
+       .dw $0000
+       .db $00
+_GrphCirc:		; equ $47D7
+       .dw compat.grphcirc
+       .db $00
+;_Mov18B			equ $47DA
+       .dw $0000
+       .db $00
+_DarkLine:		; equ $47DD
+       .dw compat.darkline
+       .db $00
+_ILine:			; equ $47E0
+       .dw compat.iline
+       .db $00
+_IPoint:			; equ $47E3
+       .dw compat.ipoint
+       .db $00
+;_XYRN.dbOTH		equ $47E6
+       .dw $0000
+       .db $00
+;_XYRND			equ $47E9
+       .dw $0000
+       .db $00
+;_CheckTOP		equ $47EC
+       .dw $0000
+       .db $00
+;_CheckXY		equ $47EF
+       .dw $0000
+       .db $00
+_DarkPnt:		; equ $47F2
+       .dw compat.darkpoint
+       .db $00
+;_CPointS		equ $47F5
+       .dw $0000
+       .db $00
+;_WTOV			equ $47F8
+       .dw $0000
+       .db $00
+;_VtoWHLDE		equ $47FB
+       .dw $0000
+       .db $00
+;_Xitof			equ $47FE
+       .dw $0000
+       .db $00
+;_YftoI			equ $4801
+       .dw $0000
+       .db $00
+;_XftoI			equ $4804
+       .dw $0000
+       .db $00
+;_TraceOff		equ $4807
+       .dw $0000
+       .db $00
+;_GrRedisp		equ $480A
+       .dw $0000
+       .db $00
+;_GDISPTOKEN		equ $480D
+       .dw $0000
+       .db $00
+;_GRDECODA		equ $4810
+       .dw $0000
+       .db $00
+;_LABCOOR		equ $4813 ;draws labels with _GRLABELS and X/Y/whatever coordinates, including stat plot stuff
+       .dw $0000
+       .db $00
+;_COORDISP		equ $4816 ;draws X & Y coordinates (or R and theta if PolarGC)
+       .dw $0000
+       .db $00
+;_TMPEQUNOSRC		equ $4819
+       .dw $0000
+       .db $00
+;_GRLABELS		equ $481C
+       .dw $0000
+       .db $00
+;_YPIXSET		equ $481F
+       .dw $0000
+       .db $00
+;_XPIXSET		equ $4822
+       .dw $0000
+       .db $00
+;_COPYRNG		equ $4825
+       .dw $0000
+       .db $00
+;_VALCUR			equ $4828 ;just sets/resets three flags, enables graph cursor
+       .dw $0000
+       .db $00
+;_GRPUTAWAY		equ $482B
+       .dw $0000
+       .db $00
+;_RSTGFLAGS		equ $482E
+       .dw $0000
+       .db $00
+;_GRReset		equ $4831
+       .dw $0000
+       .db $00
+;_XYCENT			equ $4834
+       .dw $0000
+       .db $00
+;_ZOOMXYCMD		equ $4837
+       .dw $0000
+       .db $00
+;_CPTDELY		equ $483A
+       .dw $0000
+       .db $00
+;_CPTDELX		equ $483D
+       .dw $0000
+       .db $00
+;_SetFuncM		equ $4840
+       .dw $0000
+       .db $00
+;_SetSeqM		equ $4843
+       .dw $0000
+       .db $00
+;_SetPolM		equ $4846
+       .dw $0000
+       .db $00
+;_SetParM		equ $4849
+       .dw $0000
+       .db $00
+;_ZmInt			equ $484C
+       .dw $0000
+       .db $00
+;_ZmDecml		equ $484F
+       .dw $0000
+       .db $00
+;_ZmPrev			equ $4852
+       .dw $0000
+       .db $00
+;_ZmUsr			equ $4855
+       .dw $0000
+       .db $00
+;_SETUZM			equ $4858
+       .dw $0000
+       .db $00
+;_ZmFit			equ $485B
+       .dw $0000
+       .db $00
+;_ZmSquare		equ $485E
+       .dw $0000
+       .db $00
+;_ZmTrig			equ $4861
+       .dw $0000
+       .db $00
+;_SetXMinMax		equ $4864
+       .dw $0000
+       .db $00
+;_ZooDefault		equ $4867
+       .dw $0000
+       .db $00
+_GrBufCpy:		; equ $486A
+       .dw zp.vbufdisp
+       .db $00
+;_DRAWSPLITLINE		equ $486D
+       .dw $0000
+       .db $00
+;_RestoreDisp		equ $4870
+       .dw $0000
+       .db $00
+;_FND.db			equ $4873
+       .dw $0000
+       .db $00
+;_AllEq			equ $4876
+       .dw $0000
+       .db $00
+;_fndallseleq		equ $4879
+       .dw $0000
+       .db $00
+;_NEXTEQ			equ $487C
+       .dw $0000
+       .db $00
+;_PREVEQ			equ $487F
+       .dw $0000
+       .db $00
+;_BLINKGCUR		equ $4882
+       .dw $0000
+       .db $00
+;_NBCURSOR		equ $4885
+       .dw $0000
+       .db $00
+;_STATMARK		equ $4888
+       .dw $0000
+       .db $00
+;_CHKTEXTCURS		equ $488B
+       .dw $0000
+       .db $00
+;_Regraph		equ $488E
+       .dw $0000
+       .db $00
+;_DOREFFLAGS02		equ $4891 ;something wrong here
+       .dw $0000
+       .db $00
+;INITNSEQ		equ $4894
+       .dw $0000
+       .db $00
+;_YRES			equ $4897 ;_PLOTPTXY2
+       .dw $0000
+       .db $00
+;_Ceiling		equ $489A ;ceil(OP1)
+       .dw $0000
+       .db $00
+;_PutXY			equ $489D ;draws X & Y coordinates (regardless of PolarGC)
+       .dw $0000
+       .db $00
+;_PUTEQUNO		equ $48A0
+       .dw $0000
+       .db $00
+;_PDspGrph		equ $48A3
+       .dw $0000
+       .db $00
+;_HorizCmd		equ $48A6
+       .dw $0000
+       .db $00
+;_VertCmd		equ $48A9
+       .dw $0000
+       .db $00
+;_LineCmd		equ $48AC
+       .dw $0000
+       .db $00
+;_UnLineCmd		equ $48AF
+       .dw $0000
+       .db $00
+;_PointCmd		equ $48B2
+       .dw $0000
+       .db $00
+;_PixelTest		equ $48B5
+       .dw $0000
+       .db $00
+;_PixelCmd  		equ $48B8
+       .dw $0000
+       .db $00
+;_TanLnF			equ $48BB
+       .dw $0000
+       .db $00
+;_DRAWCMD_INIT		equ $48BE
+       .dw $0000
+       .db $00
+;_DrawCmd		equ $48C1
+       .dw $0000
+       .db $00
+;_SHADECMD		equ $48C4
+       .dw $0000
+       .db $00
+;_InvCmd			equ $48C7
+       .dw $0000
+       .db $00
+;_STATSHADE		equ $48CA
+       .dw $0000
+       .db $00
+;_dspmattable		equ $48CD
+       .dw $0000
+       .db $00
+;_dsplsts		equ $48D0
+       .dw $0000
+       .db $00
+;_closeEditBuf		equ $48D3
+       .dw $0000
+       .db $00
+;_parseEditBuf		equ $48D6
+       .dw $0000
+       .db $00
+;_putsm			equ $48D9
+       .dw $0000
+       .db $00
+;_DspCurTbl		equ $48DC
+       .dw $0000
+       .db $00
+;_DSPGRTBL		equ $48DF
+       .dw $0000
+       .db $00
+;_zeroTemplate		equ $48E2
+       .dw $0000
+       .db $00
+;_settblrefs		equ $48E5
+       .dw $0000
+       .db $00
+;_dispTblBot		equ $48E8
+       .dw $0000
+       .db $00
+;_DispTblTop		equ $48EB
+       .dw $0000
+       .db $00
+;_dispTblbody		equ $48EE
+       .dw $0000
+       .db $00
+;_VPUTBLANK		equ $48F1
+       .dw $0000
+       .db $00
+;_TBLTRACE		equ $48F4
+       .dw $0000
+       .db $00
+;_dispListNameY		equ $48F7
+       .dw $0000
+       .db $00
+;_CurNameLength		equ $48FA
+       .dw $0000
+       .db $00
+;_NameToBuf		equ $48FD
+       .dw $0000
+       .db $00
+;_jpromptcursor		equ $4900
+       .dw $0000
+       .db $00
+;_BufLeft		equ $4903
+       .dw $0000
+       .db $00
+;_BufRight		equ $4906
+       .dw $0000
+       .db $00
+;_bufInsert		equ $4909
+       .dw $0000
+       .db $00
+;_bufQueueChar		equ $490C
+       .dw $0000
+       .db $00
+;_BufReplace		equ $490F
+       .dw $0000
+       .db $00
+;_BufDelete		equ $4912
+       .dw $0000
+       .db $00
+;_BUFPEEK		equ $4915
+       .dw $0000
+       .db $00
+;_BUFPEEK1		equ $4918
+       .dw $0000
+       .db $00
+;_BUFPEEK2		equ $491B
+       .dw $0000
+       .db $00
+;_BUFPEEK3		equ $491E
+       .dw $0000
+       .db $00
+;_BufToBtm		equ $4921
+       .dw $0000
+       .db $00
+;_setupEditEqu		equ $4924
+       .dw $0000
+       .db $00
+;_BufToTop		equ $4927
+       .dw $0000
+       .db $00
+;_isEditFull		equ $492A
+       .dw $0000
+       .db $00
+;_IsEditEmpty		equ $492D
+       .dw $0000
+       .db $00
+;_IsAtTop		equ $4930
+       .dw $0000
+       .db $00
+;_IsAtBtm		equ $4933
+       .dw $0000
+       .db $00
+;_BufClear		equ $4936
+       .dw $0000
+       .db $00
+;_JcursorFirst		equ $4939
+       .dw $0000
+       .db $00
+;_JcursorLast		equ $493C
+       .dw $0000
+       .db $00
+;_CursorLeft		equ $493F
+       .dw $0000
+       .db $00
+;_cursorRight		equ $4942
+       .dw $0000
+       .db $00
+;_cursorUp		equ $4945
+       .dw $0000
+       .db $00
+;_CursorDown		equ $4948
+       .dw $0000
+       .db $00
+;_cursorToOffset		equ $494B
+       .dw $0000
+       .db $00
+;_InsDisp		equ $494E
+       .dw $0000
+       .db $00
+;_FDISPBOL1		equ $4951
+       .dw $0000
+       .db $00
+;_FDISPBOL		equ $4954
+       .dw $0000
+       .db $00
+;_DispEOW		equ $4957
+       .dw $0000
+       .db $00
+;_DispHead		equ $495A
+       .dw $0000
+       .db $00
+;_DispTail		equ $495D
+       .dw $0000
+       .db $00
+;_PutTokString		equ $4960
+       .dw $0000
+       .db $00
+;_setupEditCmd		equ $4963
+       .dw $0000
+       .db $00
+;_setEmptyEditEqu	equ $4966
+       .dw $0000
+       .db $00
+;_SetEmptyEditPtr	equ $4969
+       .dw $0000
+       .db $00
+;_CloseEditEqu		equ $496C
+       .dw $0000
+       .db $00
+;_GetPrevTok		equ $496F
+       .dw $0000
+       .db $00
+_GetKey:
+       .dw compat.getkey
+       .db $01
+;_canIndic		equ $4975
+       .dw $0000
+       .db $00
+;_LCD_DRIVERON		equ $4978 
+       .dw $0000
+       .db $00
+;_DFMIN2			equ $497B
+       .dw $0000
+       .db $00
+;_formDisp		equ $497E ;this is directly what the OS calls on the homescreen to display a result
+       .dw $0000
+       .db $00
+;_formMatrix		equ $4981
+       .dw $0000
+       .db $00
+;_wscrollLeft		equ $4984
+       .dw $0000
+       .db $00
+;_wscrollUp		equ $4987
+       .dw $0000
+       .db $00
+;_wscrollDown		equ $498A
+       .dw $0000
+       .db $00
+;_wscrollRight		equ $498D
+       .dw $0000
+       .db $00
+;_FormEReal		equ $4990
+       .dw $0000
+       .db $00
+;_formERealTOK		equ $4993
+       .dw $0000
+       .db $00
+;_FormDCplx		equ $4996
+       .dw $0000
+       .db $00
+;_FormReal		equ $4999
+       .dw $0000
+       .db $00
+;_formScrollUp		equ $499C
+       .dw $0000
+       .db $00
+;_setwinabove		equ $499F
+       .dw $0000
+       .db $00
+;_disarmScroll		equ $49A2
+       .dw $0000
+       .db $00
+;_OP1toEdit		equ $49A5
+       .dw $0000
+       .db $00
+;_MinToEdit		equ $49A8
+       .dw $0000
+       .db $00
+;_rclVarToEdit		equ $49AB
+       .dw $0000
+       .db $00
+;_rclVarToEditPtR	equ $49AE
+       .dw $0000
+       .db $00
+;_RCLENTRYTOEDIT		equ $49B1
+       .dw $0000
+       .db $00
+;_rclToQueue		equ $49B4 ;recalls bytes at OP1 into edit buffer
+       .dw $0000
+       .db $00
+;_FORMTOTOK		equ $49B7
+       .dw $0000
+       .db $00
+;_DISP_INTERVAL		equ $49BA
+       .dw $0000
+       .db $00
+;_DisplstName		equ $49BD
+       .dw $0000
+       .db $00
+;_dispSLstNameHL		equ $49C0
+       .dw $0000
+       .db $00
+;_EditEqu		equ $49C3
+       .dw $0000
+       .db $00
+;_closeEquField		equ $49C6
+       .dw $0000
+       .db $00
+;_AutoSelect		equ $49C9
+       .dw $0000
+       .db $00
+;_DISPYEOS		equ $49CC
+       .dw $0000
+       .db $00
+;_dispNumEOS		equ $49CF
+       .dw $0000
+       .db $00
+;_setupdispeq		equ $49D2
+       .dw $0000
+       .db $00
+;_DispForward		equ $49D5
+       .dw $0000
+       .db $00
+;_DispYPrompt2		equ $49D8
+       .dw $0000
+       .db $00
+;_stringwidth		equ 49.$db
+       .dw $0000
+       .db $00
+;_dispErrorScreen	equ $49DE ;displays top row of error screen (error message)
+       .dw $0000
+       .db $00
+;_POPCX			equ $49E1 ;moves 14 bytes at cxPrev to cxMain, 15th byte goes to replace appflags
+       .dw $0000
+       .db $00
+;_loadnoeentry		equ $49E4
+       .dw $0000
+       .db $00
+;_SaveScreen		equ $49E7
+       .dw $0000
+       .db $00
+;_RETSCREEN		equ $49EA
+       .dw $0000
+       .db $00
+;_RetScreenErr		equ $49ED
+       .dw $0000
+       .db $00
+;_CheckSplitFlag		equ $49F0
+       .dw $0000
+       .db $00
+;_SolveRedisp		equ $49F3
+       .dw $0000
+       .db $00
+;_SolveDisp		equ $49F6
+       .dw $0000
+       .db $00
+;_itemName		equ $49F9
+       .dw $0000
+       .db $00
+;_SetNorm_Vals		equ $49FC
+       .dw $0000
+       .db $00
+;_SetYOffset		equ $49FF ;sets up YOffset and next 4 bytes (possibly specialized for the table editor)
+       .dw $0000
+       .db $00
+;_ConvKeyToTok		equ $4A02
+       .dw $0000
+       .db $00
+;_ConvFCKeyToTok		equ $4A05
+       .dw $0000
+       .db $00
+;_ConvFEKeyToTok		equ $4A08
+       .dw $0000
+       .db $00
+;_TokToKey		equ $4A0B
+       .dw $0000
+       .db $00
+;_SendSkipExitPacket	equ $4A0E
+       .dw $0000
+       .db $00
+;_GETVARCMD		equ $4A11
+       .dw $0000
+       .db $00
+;_SendVarCmd		equ $4A14
+       .dw $0000
+       .db $00
+;_SendScreenshot		equ $4A17
+       .dw $0000
+       .db $00
+;_keyscnlnk:
+       .dw $0000
+       .db $7C
+;_DeselectAllVars	equ $4A1D
+       .dw $0000
+       .db $00
+;_DelRes			equ $4A20
+       .dw $0000
+       .db $00
+;_ConvLcToLr		equ $4A23
+       .dw $0000
+       .db $00
+;_RedimMat		equ $4A26
+       .dw $0000
+       .db $00
+;_IncLstSize		equ $4A29
+       .dw $0000
+       .db $00
+;_InsertList		equ $4A2C
+       .dw $0000
+       .db $00
+;_dellistel		equ $4A2F
+       .dw $0000
+       .db $00
+;_EditProg		equ $4A32
+       .dw $0000
+       .db $00
+;_CloseProg		equ $4A35
+       .dw $0000
+       .db $00
+;_ClrGraphRef		equ $4A38
+       .dw $0000
+       .db $00
+;_FixTempCnt		equ $4A3B
+       .dw $0000
+       .db $00
+;_SAVEDATA		equ $4A3E
+       .dw $0000
+       .db $00
+;_RESTOREDATA		equ $4A41
+       .dw $0000
+       .db $00
+;_FindAlphaUp		equ $4A44
+       .dw $0000
+       .db $00
+;_FindAlphaDn		equ $4A47
+       .dw $0000
+       .db $00
+;_CmpSyms		equ $4A4A
+       .dw $0000
+       .db $00
+;_CREATETEMP		equ $4A4D
+       .dw $0000
+       .db $00
+;_CleanAll		equ $4A50
+       .dw $0000
+       .db $00
+;_MoveToNextSym		equ $4A53 ;input: hl=pointer to type byte of VAT entry. output: hl = pointer to next entry's type byte
+       .dw $0000
+       .db $00
+;_ConvLrToLc		equ $4A56
+       .dw $0000
+       .db $00
+;_TblScreenDn		equ $4A59 ;something is not right here
+       .dw $0000
+       .db $00
+;_TblScreenUp		equ $4A5C
+       .dw $0000
+       .db $00
+;_SCREENUP		equ $4A5F
+       .dw $0000
+       .db $00
+;_ScreenUpDown		equ $4A62
+       .dw $0000
+       .db $00
+;_ZifRclHandler		equ $4A65
+       .dw $0000
+       .db $00
+;_zifrclkapp		equ $4A68
+       .dw $0000
+       .db $00
+;_RCLKEY			equ $4A6B
+       .dw $0000
+       .db $00
+;_RCLREGEQ_CALL		equ $4A6E
+       .dw $0000
+       .db $00
+;_RCLREGEQ		equ $4A71
+       .dw $0000
+       .db $00
+;_initNamePrompt		equ $4A74
+       .dw $0000
+       .db $00
+;_NamePrompt2		equ $4A77
+       .dw $0000
+       .db $00
+;_CATALOGCHK		equ $4A7A
+       .dw $0000
+       .db $00
+;_clrTR			equ $4A7D
+       .dw $0000
+       .db $00
+;_QUAD			equ $4A80
+       .dw $0000
+       .db $00
+;_GRAPHQUAD		equ $4A83
+       .dw $0000
+       .db $00
+;_BC2NOREAL		equ $4A86
+       .dw $0000
+       .db $00
+;_ErrNonReal_FPST_FPS1	equ $4A89
+       .dw $0000
+       .db $00
+;_ErrNonReal		equ $4A8C ;ERR:DATA TYPE if top B numers from FPS are non-real
+       .dw $0000
+       .db $00
+;_WRITE_TEXT		equ $4A8F
+       .dw $0000
+       .db $00
+;_FORSEQINIT		equ $4A92
+       .dw $0000
+       .db $00
+;_GRPHPARS		equ $4A95
+       .dw $0000
+       .db $00
+;_PLOTPARS		equ $4A98
+       .dw $0000
+       .db $00
+;_ParseInp		equ $4A9B
+       .dw $0000
+       .db $00
+;_PARSEOFF		equ $4A9E
+       .dw $0000
+       .db $00
+;_PARSESCAN		equ $4AA1
+       .dw $0000
+       .db $00
+;_GETPARSE		equ $4AA4
+       .dw $0000
+       .db $00
+;_SAVEPARSE		equ $4AA7
+       .dw $0000
+       .db $00
+;_InitPFlgs		equ $4AAA
+       .dw $0000
+       .db $00
+;_CKENDLINERR		equ $4AAD
+       .dw $0000
+       .db $00
+;_OP2Set60		equ $4AB0
+       .dw $0000
+       .db $00
+;_GETSTATPTR		equ $4AB3
+       .dw $0000
+       .db $00
+;_CMP_STATPTR		equ $4AB6
+       .dw $0000
+       .db $00
+;_VARSYSADR		equ $4AB9
+       .dw $0000
+       .db $00
+;_StoSysTok		equ $4ABC
+       .dw $0000
+       .db $00
+;_StoAns			equ $4ABF
+       .dw $0000
+       .db $00
+;_StoTheta		equ $4AC2
+       .dw $0000
+       .db $00
+;_StoR			equ $4AC5
+       .dw $0000
+       .db $00
+;_StoY			equ $4AC8
+       .dw $0000
+       .db $00
+;_StoN			equ $4ACB
+       .dw $0000
+       .db $00
+;_StoT			equ $4ACE
+       .dw $0000
+       .db $00
+;_StoX			equ $4AD1
+       .dw $0000
+       .db $00
+;_StoOther		equ $4AD4
+       .dw $0000
+       .db $00
+;_RclAns			equ $4AD7
+       .dw $0000
+       .db $00
+;_RclY			equ $4ADA
+       .dw $0000
+       .db $00
+;_RclN			equ $4ADD
+       .dw $0000
+       .db $00
+;_RclX			equ $4AE0
+       .dw $0000
+       .db $00
+;_RclVarSym		equ $4AE3
+       .dw $0000
+       .db $00
+;_RclSysTok		equ $4AE6
+       .dw $0000
+       .db $00
+;_StMatEl		equ $4AE9
+       .dw $0000
+       .db $00
+;_STLSTVECEL		equ $4AEC
+       .dw $0000
+       .db $00
+;_ConvOP1		equ $4AEF
+       .dw $0000
+       .db $00
+;_Find_Parse_Formula	equ $4AF2
+       .dw $0000
+       .db $00
+;_PARSE_FORMULA		equ $4AF5
+       .dw $0000
+       .db $00
+;_FetchQuotedString	equ $4AF8
+       .dw $0000
+       .db $00
+;_FetchNumLine		equ $4AFB
+       .dw $0000
+       .db $00
+;_ParseNameTokens	equ $4AFE
+       .dw $0000
+       .db $00
+;_ParseInpGraph		equ $4B01 ;same as _ParseInp except 3,(iy+$1F) is graph/split screen override, or something
+       .dw $0000
+       .db $00
+;_ParseInpGraphReset	equ $4B04 ;_ParseInpGraph except zeroes out iy+6/7, resets 3,(iy+$1A) & 0,(iy+$1F), fmtFlags->fmtOverride, parse within ParseInp?
+       .dw $0000
+       .db $00
+;_ParseInpLastEnt	equ $4B07 ;ParseInp on program $05,$23,$00
+       .dw $0000
+       .db $00
+;_ErrOnCertainTypes	equ $4B0A ;ERR:DATA TYPE if A is one of a couple of values...subroutine in ParseInp, somehow
+       .dw $0000
+       .db $00
+;_CreatePair		equ $4B0D
+       .dw $0000
+       .db $00
+;_PUSHNUM		equ $4B10
+       .dw $0000
+       .db $00
+;_INCCURPCERREND		equ $4B13
+       .dw $0000
+       .db $00
+;_ERREND			equ $4B16
+       .dw $0000
+       .db $00
+;_COMMAERRF		equ $4B19
+       .dw $0000
+       .db $00
+;_COMMAERR		equ $4B1C
+       .dw $0000
+       .db $00
+;_STEQARG2		equ $4B1F
+       .dw $0000
+       .db $00
+;_STEQARG		equ $4B22
+       .dw $0000
+       .db $00
+;_INPARG			equ $4B25
+       .dw $0000
+       .db $00
+;_STEQARG3		equ $4B28
+       .dw $0000
+       .db $00
+;_NXTFETCH		equ $4B2B
+       .dw $0000
+       .db $00
+;_CKFETCHVAR		equ $4B2E
+       .dw $0000
+       .db $00
+;_FETCHVARA		equ $4B31
+       .dw $0000
+       .db $00
+;_FETCHVAR		equ $4B34
+       .dw $0000
+       .db $00
+;_CKENDLIN		equ $4B37 ;gets parse byte in A and then _CKENDEXP
+       .dw $0000
+       .db $00
+;_CKENDEXP		equ $4B3A ;checks A for $3E or $3F
+       .dw $0000
+       .db $00
+;_CKPARSEND		equ $4B3D
+       .dw $0000
+       .db $00
+;_STOTYPEARG		equ $4B40
+       .dw $0000
+       .db $00
+;_ConvDim		equ $4B43
+       .dw $0000
+       .db $00
+;_ConvDim00		equ $4B46
+       .dw $0000
+       .db $00
+;_AHEADEQUAL		equ $4B49
+       .dw $0000
+       .db $00
+;_PARSAHEADS		equ $4B4C
+       .dw $0000
+       .db $00
+;_PARSAHEAD              equ $4B4F
+       .dw $0000
+       .db $00
+;_AnsName		equ $4B52
+       .dw $0000
+       .db $00
+;_STOCMPREALS		equ $4B55
+       .dw $0000
+       .db $00
+;_GETDEPTR		equ $4B58
+       .dw $0000
+       .db $00
+;_PUSH2BOPER		equ $4B5B ;push the value in bc onto the operator stack
+       .dw $0000
+       .db $00
+;_POP2BOPER		equ $4B5E ;pop 2 bytes on the operator stack to bc
+       .dw $0000
+       .db $00
+;_PUSHOPER		equ $4B61 ;push the value in a onto the operator stack
+       .dw $0000
+       .db $00
+;_POPOPER		equ $4B64 ;pop 1 byte on the operator stack to a
+       .dw $0000
+       .db $00
+;_FIND_E_UNDEF		equ $4B67
+       .dw $0000
+       .db $00
+;_STTMPEQ		equ $4B6A
+       .dw $0000
+       .db $00
+;_FINDEOL		equ $4B6D
+       .dw $0000
+       .db $00
+;_BRKINC			equ $4B70
+       .dw $0000
+       .db $00
+;_INCFETCH		equ $4B73
+       .dw $0000
+       .db $00
+;_CURFETCH		equ $4B76
+       .dw $0000
+       .db $00
+;_Random			equ $4B79
+       .dw $0000
+       .db $00
+;_StoRand		equ $4B7C
+       .dw $0000
+       .db $00
+;_RandInit		equ $4B7F
+       .dw $0000
+       .db $00
+;_resetStacks		equ $4B82 ;(onsp)->(errsp), (fpbase)->(fps), (opbase)->(ops)
+       .dw $0000
+       .db $00
+;_Factorial		equ $4B85
+       .dw $0000
+       .db $00
+;_YONOFF			equ $4B88
+       .dw $0000
+       .db $00
+;_EQSELUNSEL		equ $4B8B
+       .dw $0000
+       .db $00
+;_ITSOLVER		equ $4B8E
+       .dw $0000
+       .db $00
+;_GRITSOLVER		equ $4B91
+       .dw $0000
+       .db $00
+;_ITSOLVERB		equ $4B94
+       .dw $0000
+       .db $00
+;_ITSOLVERNB		equ $4B97
+       .dw $0000
+       .db $00
+;_ExTest_INT		equ $4B9A
+       .dw $0000
+       .db $00
+;_DIST_FUN		equ $4BAD
+       .dw $0000
+       .db $00
+;_LogGamma		equ $4BA0
+       .dw $0000
+       .db $00
+;_OneVar			equ $4BA3
+       .dw $0000
+       .db $00
+;_ONEVARS_0		equ $4BA6
+       .dw $0000
+       .db $00
+;_ORDSTAT		equ $4BA9
+       .dw $0000
+       .db $00
+;_INITSTATANS2		equ $4BAC
+       .dw $0000
+       .db $00
+;_ANOVA_SPEC		equ $4BAF
+       .dw $0000
+       .db $00
+;_OutputExpr		equ $4BB2
+       .dw $0000
+       .db $00
+;_CentCursor		equ $4BB5
+       .dw $0000
+       .db $00
+;_TEXT			equ $4BB8
+       .dw $0000
+       .db $00
+;_FINISHSPEC		equ $4BBB
+       .dw $0000
+       .db $00
+;_TRCYFUNC		equ $4BBE
+       .dw $0000
+       .db $00
+;_RCL_SEQ_X		equ $4BC1
+       .dw $0000
+       .db $00
+;_RCLSEQ2		equ $4BC4
+       .dw $0000
+       .db $00
+;_GRPPutAway		equ $4BC7
+       .dw $0000
+       .db $00
+;_CKVALDELX		equ $4BCA
+       .dw $0000
+       .db $00
+;_CKVALDELTA		equ $4BCD
+       .dw $0000
+       .db $00
+_GrBufClr:		; equ $4BD0
+       .dw zp.vbufclr
+       .db $00
+;_GRBUFCPY_V		equ $4BD3
+       .dw $0000
+       .db $00
+;_FNDSELEQ		equ $4BD6
+       .dw $0000
+       .db $00
+;_CLRGRAPHXY		equ $4BD9
+       .dw $0000
+       .db $00
+;_NEDXT_Y_STYLE		equ $4BDC
+       .dw $0000
+       .db $00
+;_PLOTPT			equ $4BDF
+       .dw $0000
+       .db $00
+;_NEWINDEP		equ $4BE2
+       .dw $0000
+       .db $00
+;_Axes			equ $4BE5
+       .dw $0000
+       .db $00
+;_setPenX		equ $4BE8
+       .dw $0000
+       .db $00
+;_setPenY		equ $4BEB
+       .dw $0000
+       .db $00
+;_setPenT		equ $4BEE
+       .dw $0000
+       .db $00
+;_TAN_EQU_DISP		equ $4BF1
+       .dw $0000
+       .db $00
+;_PutAns			equ $4BF4
+       .dw $0000
+       .db $00
+;_DispOP1A		equ $4BF7
+       .dw $0000
+       .db $00
+;_MATHTANLN		equ $4BFA
+       .dw $0000
+       .db $00
+;_ENDDRAW		equ $4BFD
+       .dw $0000
+       .db $00
+;_SetTblGraphDraw	equ $4C00
+       .dw $0000
+       .db $00
+;_StartDialog		equ $4C03
+       .dw $0000
+       .db $00
+;_DialogInit		equ $4C06
+       .dw $0000
+       .db $00
+;_GetDialogNumOP1	equ $4C09
+       .dw $0000
+       .db $00
+;_SetDialogNumOP1	equ $4C0C
+       .dw $0000
+       .db $00
+;_GetDialogNumHL		equ $4C0F
+       .dw $0000
+       .db $00
+;_ErrArgumentO123	equ $4C12 ;ERR:ARGUMENT if OP2>OP1 or OP1>OP3
+       .dw $0000
+       .db $00
+;_SetDialogKeyOverride	equ $4C15
+       .dw $0000
+       .db $00
+;_ResDialogKeyOverride	equ $4C18
+       .dw $0000
+       .db $00
+;_ForceDialogKeypress	equ $4C1B
+       .dw $0000
+       .db $00
+;_DialogStartGetKey	equ $4C1E
+       .dw $0000
+       .db $00
+;_StartDialog_Override	equ $4C21
+       .dw $0000
+       .db $00
+;_CallDialogCallback	equ $4C24
+       .dw $0000
+       .db $00
+;_SetDialogCallback	equ $4C27
+       .dw $0000
+       .db $00
+;_ResDialogCallback	equ $4C2A
+       .dw $0000
+       .db $00
+;_CopyDialogNum		equ $4C2D
+       .dw $0000
+       .db $00
+;_MemClear:
+       .dw $0000
+       .db $00
+_MemSet:			; equ $4C33
+       .dw compat.memset
+       .db $00
+;_ReloadAppEntryVecs	equ $4C36
+       .dw $0000
+       .db $00
+;_PointOn		equ $4C39
+       .dw $0000
+       .db $00
+;_ExecuteNewPrgm		equ $4C3C
+       .dw $0000
+       .db $00
+;_StrLength		equ $4C3F
+       .dw $0000
+       .db $00
+;_VPutMapRec		equ $4C42
+       .dw $0000
+       .db $00
+;_getRomPage		equ $4C45
+       .dw $0000
+       .db $00
+;_FindAppUp		equ $4C48
+       .dw $0000
+       .db $00
+;_FindAppDn		equ $4C4B
+       .dw $0000
+       .db $00
+;_FindApp		equ $4C4E
+       .dw $0000
+       .db $00
+;_ExecuteApp		equ $4C51
+       .dw $0000
+       .db $00
+;_MonReset		equ $4C54
+       .dw $0000
+       .db $00
+;_ClearParseVar		equ $4C57
+       .dw $0000
+       .db $00
+;_SetParseVarProg	equ $4C5A
+       .dw $0000
+       .db $00
+;_isContextKey		equ $4C5D
+       .dw $0000
+       .db $00
+;_IBounds		equ $4C60
+       .dw $0000
+       .db $00
+;_IOffset		equ $4C63
+       .dw $0000
+       .db $00
+;_DrawCirc2		equ $4C66
+       .dw $0000
+       .db $00
+;_CanAlphIns		equ $4C69
+       .dw $0000
+       .db $00
+;cxRedisp		equ $4C6C
+       .dw $0000
+       .db $00
+_GetBaseVer		; equ $4C6F
+       .dw compat.getbasever
+       .db $00
+;_OPSet0DE		equ $4C72 ;loads a floating point 0 to location de 
+       .dw $0000
+       .db $00
+;_AppGetCbl		equ $4C75
+       .dw $0000
+       .db $00
+;_AppGetCalc		equ $4C78
+       .dw $0000
+       .db $00
+;_SaveDisp		equ $4C7B
+       .dw $0000
+       .db $00
+;_SetIgnoreKey  		equ $4C7E ;set 1,(iy+$28) / ret
+       .dw $0000
+       .db $00
+;_SetSendThisKeyBack	equ $4C81 ;set 2,(iy+$28) / ld (kbdKey),a / ret
+       .dw $0000
+       .db $00
+_DisableApd:		; equ $4C84
+       .dw compat.apd_disable
+       .db $00
+_EnableApd:		; equ $4C87 ;set apdable,(iy+apdflags)
+       .dw compat.apd_enable
+       .db $00
+;_JForceCmdNoChar2	equ $4C8A ;2.41 at least
+       .dw $0000
+       .db $00
+;_set2IY34		equ $4C8D ;set 2,(iy+34) / ret
+       .dw $0000
+       .db $00
+;_forcecmd		equ $4C90
+       .dw $0000
+       .db $00
+;_ApdSetup		equ $4C93
+       .dw $0000
+       .db $00
+;_Get_NumKey		equ $4C96
+       .dw $0000
+       .db $00
+;_AppSetup		equ $4C99 ;or _AppCleanup, or something
+       .dw $0000
+       .db $00
+;_HandleLinkKeyActivity	equ $4C9C
+       .dw $0000
+       .db $00
+;_JForceCmdNoChar3	equ $4C9F ;2.41 at least
+       .dw $0000
+       .db $00
+;_ReleaseSedit		equ $4CA2
+       .dw $0000
+       .db $00
+;_initsmalleditline	equ $4CA5
+       .dw $0000
+       .db $00
+;_startsmalledit		equ $4CA8
+       .dw $0000
+       .db $00
+;;$4CAB
+       .dw $0000
+       .db $00
+;_SGetTokString		equ $4CAE
+       .dw $0000
+       .db $00
+;_LoadPattern	 	equ $4CB1
+       .dw $0000
+       .db $00
+;_SStringLength		equ $4CB4
+       .dw $0000
+       .db $00
+;_RestorePenCol		equ $4CB7
+       .dw $0000
+       .db $00
+;;$4CBA
+       .dw $0000
+       .db $00
+;_DoNothing		equ $4CBD
+       .dw $0000
+       .db $00
+;_ForceSmallEditReturn	equ $4CC0
+       .dw $0000
+       .db $00
+;;$4CC3 ;saves context
+       .dw $0000
+       .db $00
+;;$4CC6
+       .dw $0000
+       .db $00
+;;$4CC9
+       .dw $0000
+       .db $00
+;;$4CCC
+       .dw $0000
+       .db $00
+;_VEraseEOL		equ $4CCF
+       .dw $0000
+       .db $00
+;;$4CD2
+       .dw $0000
+       .db $00
+;;$4CD5
+       .dw $0000
+       .db $00
+;_GoToErr		equ $4CD8
+       .dw $0000
+       .db $00
+;_initsmalleditBox	equ 4C.$db
+       .dw $0000
+       .db $00
+;;$4CDE
+       .dw $0000
+       .db $00
+;_EmptyHook		equ $4CE1
+       .dw $0000
+       .db $00
+;_ForceSmallEditReturn2	equ $4CE4
+       .dw $0000
+       .db $00
+;;$4CE7 ;same as $4CC3
+       .dw $0000
+       .db $00
+;;$4CEA
+       .dw $0000
+       .db $00
+;_ClearRow		equ $4CED
+       .dw $0000
+       .db $00
+;;$4CF0
+       .dw $0000
+       .db $00
+;;$4CF3
+       .dw $0000
+       .db $00
+;;$4CF6
+       .dw $0000
+       .db $00
+;;$4CF9
+       .dw $0000
+       .db $00
+;;$4CFC
+       .dw $0000
+       .db $00
+;;$4CFF
+       .dw $0000
+       .db $00
+;;$4D02
+       .dw $0000
+       .db $00
+;;$4D05
+       .dw $0000
+       .db $00
+;;$4D08
+       .dw $0000
+       .db $00
+;;$4D0B
+       .dw $0000
+       .db $00
+;;$4D0E
+       .dw $0000
+       .db $00
+;;$4D11
+       .dw $0000
+       .db $00
+;;$4D14
+       .dw $0000
+       .db $00
+;;$4D17
+       .dw $0000
+       .db $00
+;;$4D1A
+       .dw $0000
+       .db $00
+;;$4D1D
+       .dw $0000
+       .db $00
+;;$4D20
+       .dw $0000
+       .db $00
+;;$4D23
+       .dw $0000
+       .db $00
+;_AppScreenUpDown	equ $4D26 ;shifts screen up/down, A is LCD row, H is number of lines to shift, (OP1)-(OP1+3) are something
+       .dw $0000
+       .db $00
+;_AppScreenUpDown1	equ $4D29 ;shifts screen up/down, but really no clue what the inputs are (all registers and (OP1)-(OP1+3))
+       .dw $0000
+       .db $00
+;;$4D2C
+       .dw $0000
+       .db $00
+;_initsmalleditlinevar	equ $4D2F
+       .dw $0000
+       .db $00
+;_initsmalleditlineop1	equ $4D32
+       .dw $0000
+       .db $00
+;_initsmalleditboxvar	equ $4D35
+       .dw $0000
+       .db $00
+;_initsmalleditboxop1	equ $4D38
+       .dw $0000
+       .db $00
+;;$4D3B
+       .dw $0000
+       .db $00
+;_RestartDialog		equ $4D3E
+       .dw $0000
+       .db $00
+;_ErrCustom1		equ $4D41
+       .dw $0000
+       .db $00
+;_ErrCustom2		equ $4D44
+       .dw $0000
+       .db $00
+;_AppStartMouse		equ $4D47
+       .dw $0000
+       .db $00
+;_AppStartMouseNoSetup	equ $4D4A
+       .dw $0000
+       .db $00
+;_AppMouseGetKey		equ $4D4D
+       .dw $0000
+       .db $00
+;_AppDispMouse		equ $4D50
+       .dw $0000
+       .db $00
+;_AppEraseMouse		equ $4D53
+       .dw $0000
+       .db $00
+;_AppSetupMouseMem	equ $4D56
+       .dw $0000
+       .db $00
+;_GetDispRowOffset	equ $4D59 ;HL=A*12 (intended for A to be row and HL becomes offset into plotSScreen)
+       .dw $0000
+       .db $00
+;_ClearRect		equ $4D5C
+       .dw $0000
+       .db $00
+;_InvertRect		equ $4D5F
+       .dw $0000
+       .db $00
+;_FillRect		equ $4D62
+       .dw $0000
+       .db $00
+;_AppUpdateMouse		equ $4D65
+       .dw $0000
+       .db $00
+;_AppDispPrevMouse	equ $4D68 ;might bring previous keypress's movement to current coordinates with flags to not display
+       .dw $0000
+       .db $00
+;;$4D6B ;restores some cursor flags and stuff
+       .dw $0000
+       .db $00
+;_initcellbox		equ $4D6E
+       .dw $0000
+       .db $00
+;_drawcell		equ $4D71
+       .dw $0000
+       .db $00
+;;$4D74
+       .dw $0000
+       .db $00
+;_invertcell		equ $4D77
+       .dw $0000
+       .db $00
+;_setcelloverride	equ $4D7A
+       .dw $0000
+       .db $00
+;_DrawRectBorder		equ $4D7D
+       .dw $0000
+       .db $00
+;_ClearCell		equ $4D80
+       .dw $0000
+       .db $00
+;_covercell		equ $4D83
+       .dw $0000
+       .db $00
+;_EraseRectBorder	equ $4D86
+       .dw $0000
+       .db $00
+;_FillRectPattern	equ $4D89
+       .dw $0000
+       .db $00
+;_DrawRectBorderClear	equ $4D8C
+       .dw $0000
+       .db $00
+;;$4D8F ;mouse subroutine
+       .dw $0000
+       .db $00
+;;$4D92
+       .dw $0000
+       .db $00
+;_VerticalLine		equ $4D95
+       .dw $0000
+       .db $00
+;_IBoundsFull		equ $4D98
+       .dw $0000
+       .db $00
+;_DisplayImage		equ $4D9B
+       .dw $0000
+       .db $00
+;:$4D9E ;does something dumb with ports $10/$11
+       .dw $0000
+       .db $00
+;;$4DA1 ;mouse subroutine
+       .dw $0000
+       .db $00
+;_AppUpdateMouseCoords	equ $4DA4
+       .dw $0000
+       .db $00
+;_ShiftBitsLeft		equ $4DA7 ;mouse subroutine, shifts B bits left from DE sprite to HL one
+       .dw $0000
+       .db $00
+;;$4DAA ;mouse subroutine
+       .dw $0000
+       .db $00
+;;$4DAD ;mouse subroutine
+       .dw $0000
+       .db $00
+;;4.$db0 ;mouse subroutine
+       .dw $0000
+       .db $00
+;;4.$db3 ;mouse subroutine
+       .dw $0000
+       .db $00
+;;4.$db6 ;mouse subroutine
+       .dw $0000
+       .db $00
+;;4.$db9 ;mouse subroutine
+       .dw $0000
+       .db $00
+;;4.$dbC ;mouse subroutine
+       .dw $0000
+       .db $00
+;_AppUpdateMouseRow	equ 4.$dbF
+       .dw $0000
+       .db $00
+;_AppDrawMouse		equ $4DC2 ;set 2,(iy+$2C) for AppEraseMouse, reset for AppDispMouse
+       .dw $0000
+       .db $00
+;_AppDrawMouseDirect	equ $4DC5 ;pretty much _AppDrawMouse, but you pass LCD column in A
+       .dw $0000
+       .db $00
+;_CPoint			equ $4DC8
+       .dw $0000
+       .db $00
+;_DeleteApp		equ $4DCB
+       .dw $0000
+       .db $00
+;_AppUpdateMouseXY	equ $4DCE
+       .dw $0000
+       .db $00
+;_setmodecellflag	equ $4DD1
+       .dw $0000
+       .db $00
+;_resetmodecellflag	equ $4DD4
+       .dw $0000
+       .db $00
+;_ismodecellset		equ $4DD7
+       .dw $0000
+       .db $00
+;_getmodecellflag	equ $4DDA
+       .dw $0000
+       .db $00
+;;$4DDD
+       .dw $0000
+       .db $00
+;_CellBoxManager		equ $4DE0
+       .dw $0000
+       .db $00
+;_startnewcell		equ $4DE3
+       .dw $0000
+       .db $00
+;;$4DE6
+       .dw $0000
+       .db $00
+;_CellCursorHandle	equ $4DE9
+       .dw $0000
+       .db $00
+;;$4DEC
+       .dw $0000
+       .db $00
+;;$4DEF
+       .dw $0000
+       .db $00
+;_ClearCurCell		equ $4DF2
+       .dw $0000
+       .db $00
+;_drawcurcell		equ $4DF5
+       .dw $0000
+       .db $00
+;_invertcurcell		equ $4DF8
+       .dw $0000
+       .db $00
+;_covercurcell		equ $4DFB
+       .dw $0000
+       .db $00
+;_BlinkCell		equ $4DFE
+       .dw $0000
+       .db $00
+;_BlinkCellNoLookUp	equ $4E01
+       .dw $0000
+       .db $00
+;_BlinkCurCell		equ $4E04
+       .dw $0000
+       .db $00
+;_BlinkCellToOn		equ $4E07
+       .dw $0000
+       .db $00
+;_BlinkCellToOnNoLookUp	equ $4E0A
+       .dw $0000
+       .db $00
+;_BlinkCurCellToOn	equ $4E0D
+       .dw $0000
+       .db $00
+;_BlinkCellToOff		equ $4E10
+       .dw $0000
+       .db $00
+;_BlinkCellToOffNoLookUp equ $4E13
+       .dw $0000
+       .db $00
+;_BlinkCurCellToOff	equ $4E16
+       .dw $0000
+       .db $00
+;_getcurmodecellflag	equ $4E19
+       .dw $0000
+       .db $00
+;;$4E1C
+       .dw $0000
+       .db $00
+;_startsmalleditreturn	equ $4E1F
+       .dw $0000
+       .db $00
+;;$4E22
+       .dw $0000
+       .db $00
+;;$4E25
+       .dw $0000
+       .db $00
+;_CellkHandle		equ $4E28
+       .dw $0000
+       .db $00
+;_errchkalphabox		equ $4E2B
+       .dw $0000
+       .db $00
+;;$4E2E
+       .dw $0000
+       .db $00
+;;$4E31
+       .dw $0000
+       .db $00
+;;$4E34
+       .dw $0000
+       .db $00
+;;$4E37
+       .dw $0000
+       .db $00
+;_eraseallcells		equ $4E3A
+       .dw $0000
+       .db $00
+;_iscurmodecellset	equ $4E3D
+       .dw $0000
+       .db $00
+;;$4E40
+       .dw $0000
+       .db $00
+;_initalphabox		equ $4E43
+       .dw $0000
+       .db $00
+;;$4E46
+       .dw $0000
+       .db $00
+;;$4E49
+       .dw $0000
+       .db $00
+;_drawblnkcell		equ $4E4C
+       .dw $0000
+       .db $00
+;_ClearBlnkCell		equ $4E4F
+       .dw $0000
+       .db $00
+;_invertblnkcell		equ $4E52
+       .dw $0000
+       .db $00
+;_AppMouseForceKey	equ $4E55
+       .dw $0000
+       .db $00
+;_AppSetupMouseMemCoords	equ $4E58 ;this is _AppSetupMouseMem except you pass starting coordinates in HL
+       .dw $0000
+       .db $00
+;_AppMoveMouse		equ $4E5B ;this is _AppMouseForceKey and then updating coordinates
+       .dw $0000
+       .db $00
+;_GetStringInput		equ $4E5E
+       .dw $0000
+       .db $00
+;_GetStringInput2	equ $4E61
+       .dw $0000
+       .db $00
+;_WaitEnterKeyValue	equ $4E64
+       .dw $0000
+       .db $00
+;_HorizontalLine		equ $4E67
+       .dw $0000
+       .db $00
+_CreateAppVar:		; equ $4E6A
+       .dw compat.createappvar
+       .db $00
+_CreateProtProg:		; equ $4E6D
+       .dw compat.createprotprog
+       .db $00
+;_CreateVar		equ $4E70
+       .dw $0000
+       .db $00
+;_AsmComp		equ $4E73
+       .dw $0000
+       .db $00
+;_GetAsmSize		equ $4E76
+       .dw $0000
+       .db $00
+;_SquishPrgm		equ $4E79
+       .dw $0000
+       .db $00
+;_ExecutePrgm		equ $4E7C
+       .dw $0000
+       .db $00
+;_ChkFindSymAsm		equ $4E7F
+       .dw $0000
+       .db $00
+;_ParsePrgmName		equ $4E82
+       .dw $0000
+       .db $00
+;_CSub			equ $4E85
+       .dw $0000
+       .db $00
+;_CAdd			equ $4E88
+       .dw $0000
+       .db $00
+;_CSqaure		equ $4E8B
+       .dw $0000
+       .db $00
+;_CMult			equ $4E8E
+       .dw $0000
+       .db $00
+;_CRecip			equ $4E91
+       .dw $0000
+       .db $00
+;_CDiv			equ $4E94
+       .dw $0000
+       .db $00
+;_CAbs			equ $4E97
+       .dw $0000
+       .db $00
+;_AddSquares		equ $4E9A
+       .dw $0000
+       .db $00
+;_CSqRoot		equ $4E9D
+       .dw $0000
+       .db $00
+;_CLN			equ $4EA0
+       .dw $0000
+       .db $00
+;_CLog			equ $4EA3
+       .dw $0000
+       .db $00
+;_CTenX			equ $4EA6
+       .dw $0000
+       .db $00
+;_CEtoX			equ $4EA9
+       .dw $0000
+       .db $00
+;_CXrootY		equ $4EAC
+       .dw $0000
+       .db $00
+;;$4EAF
+       .dw $0000
+       .db $00
+;_CYtoX			equ $4EB2
+       .dw $0000
+       .db $00
+;_InvertNonReal		equ $4EB5
+       .dw $0000
+       .db $00
+;_CplxMult		equ $4EB8
+       .dw $0000
+       .db $00
+;_CplxDiv		equ $4EBB
+       .dw $0000
+       .db $00
+;_CplxTrunc		equ $4EBE
+       .dw $0000
+       .db $00
+;_CplxFrac		equ $4EC1
+       .dw $0000
+       .db $00
+;_CplxFloor		equ $4EC4
+       .dw $0000
+       .db $00
+;_SendHeaderPacket	equ $4EC7
+       .dw $0000
+       .db $00
+;_CancelTransmission	equ $4ECA
+       .dw $0000
+       .db $00
+;_SendScreenContents	equ $4ECD
+       .dw $0000
+       .db $00
+;_SendRAMVarData		equ $4ED0
+       .dw $0000
+       .db $00
+;_SendRAMCmd		equ $4ED3
+       .dw $0000
+       .db $00
+;_SendPacket		equ $4ED6
+       .dw $0000
+       .db $00
+;_ReceiveAck		equ $4ED9
+       .dw $0000
+       .db $00
+;_Send4BytePacket	equ $4EDC
+       .dw $0000
+       .db $00
+;_SendDataByte		equ $4EDF
+       .dw $0000
+       .db $00
+;_Send4Bytes		equ $4EE2
+       .dw $0000
+       .db $00
+_SendAByte:		; equ $4EE5
+       .dw compat.sendabyte
+       .db $00
+;_SendCByte		equ $4EE8
+       .dw $0000
+       .db $00
+;_GetSmallPacket		equ $4EEB
+       .dw $0000
+       .db $00
+;_GetDataPacket		equ $4EEE
+       .dw $0000
+       .db $00
+;_SendAck		equ $4EF1
+       .dw $0000
+       .db $00
+;_Get4Bytes		equ $4EF4
+       .dw $0000
+       .db $00
+;_Get3Bytes		equ $4EF7
+       .dw $0000
+       .db $00
+_Rec1stByte:		; equ $4EFA
+       .dw compat.recfirstbyte
+       .db $00
+_Rec1stByteNC:
+       .dw compat.recfirstbytenc
+       .db $00
+;_ContinueGetByte	equ $4F00
+       .dw $0000
+       .db $00
+_RecAByteIO:
+       .dw compat.recabyte
+       .db $00
+;_ReceiveVar		equ $4F06
+       .dw $0000
+       .db $00
+;_ReceiveVarDataExists	equ $4F09
+       .dw $0000
+       .db $00
+;_ReceiveVarData		equ $4F0C
+       .dw $0000
+       .db $00
+;_SrchVLstUp		equ $4F0F
+       .dw $0000
+       .db $00
+;_SrchVLstDn		equ $4F12
+       .dw $0000
+       .db $00
+;_SendVariable		equ $4F15
+       .dw $0000
+       .db $00
+;_Get4BytesCursor	equ $4F18
+       .dw $0000
+       .db $00
+;_Get4BytesNC		equ $4F1B
+       .dw $0000
+       .db $00
+;_Convert85List		equ $4F1E
+       .dw $0000
+       .db $00
+;_SendDirectoryContents	equ $4F21
+       .dw $0000
+       .db $00
+;_SendReadyPacket	equ $4F24
+       .dw $0000
+       .db $00
+;_Convert85Real		equ $4F27
+       .dw $0000
+       .db $00
+;_ret_6			equ $4F2A
+       .dw $0000
+       .db $00
+;_SendCertificate	equ $4F2D ;sends certificate in header/data packets, Flash must be unlocked, used with sending an application in LINK menu
+       .dw $0000
+       .db $00
+;_SendApplication	equ $4F30
+       .dw $0000
+       .db $00
+;_SendOSHeader		equ $4F33
+       .dw $0000
+       .db $00
+;_SendOSPage		equ $4F36
+       .dw $0000
+       .db $00
+;_SendOS			equ $4F39
+       .dw $0000
+       .db $00
+;_FlashWriteDisable	equ $4F3C
+       .dw $0000
+       .db $00
+;_SendCmd		equ $4F3F
+       .dw $0000
+       .db $00
+;_SendOSValidationData	equ $4F42
+       .dw $0000
+       .db $00
+;_Disp			equ $4F45
+       .dw $0000
+       .db $00
+;_SendGetkeyPress	equ $4F48
+       .dw $0000
+       .db $00
+;_RejectCommand		equ $4F4B
+       .dw $0000
+       .db $00
+;_CheckLinkLines		equ $4F4E
+       .dw $0000
+       .db $00
+;_GetHookByte		equ $4F51
+       .dw $0000
+       .db $00
+;_GetBytePaged		equ $4F54
+       .dw $0000
+       .db $00
+;_cursorhook		equ $4F57
+       .dw $0000
+       .db $00
+;_call_library_hook	equ $4F5A
+       .dw $0000
+       .db $00
+;_call_rawkey_hook	equ $4F5D
+       .dw $0000
+       .db $00
+;_setCursorHook		equ $4F60 ;enable cursor hook
+       .dw $0000
+       .db $00
+;_EnableLibraryHook	equ $4F63
+       .dw $0000
+       .db $00
+;_SetGetKeyHook		equ $4F66
+       .dw $0000
+       .db $00
+;_ClrCursorHook		equ $4F69
+       .dw $0000
+       .db $00
+;_DisableLibraryHook	equ $4F6C
+       .dw $0000
+       .db $00
+;_ClrRawKeyHook  	equ $4F6F
+       .dw $0000
+       .db $00
+;_ResetHookBytes		equ $4F72
+       .dw $0000
+       .db $00
+;_AdjustAllHooks		equ $4F75
+       .dw $0000
+       .db $00
+;_getkeyhook		equ $4F78
+       .dw $0000
+       .db $00
+;_SetGetcscHook		equ $4F7B
+       .dw $0000
+       .db $00
+;_ClrGetKeyHook		equ $4F7E
+       .dw $0000
+       .db $00
+;_call_linkactivity_hook	equ $4F81
+       .dw $0000
+       .db $00
+;_EnableLinkActivityHook	equ $4F84
+       .dw $0000
+       .db $00
+;_DisableLinkHook	equ $4F87
+       .dw $0000
+       .db $00
+;_GetSmallPacket2	equ $4F8A
+       .dw $0000
+       .db $00
+;_EnableCatalog2Hook	equ $4F8D
+       .dw $0000
+       .db $00
+;_DisableCatalog2Hook	equ $4F90
+       .dw $0000
+       .db $00
+;_EnableLocalizeHook	equ $4F93
+       .dw $0000
+       .db $00
+;_DisableLocalizeHook	equ $4F96
+       .dw $0000
+       .db $00
+;_SetTokenHook		equ $4F99
+       .dw $0000
+       .db $00
+;_ClearTokenHook		equ $4F9C
+       .dw $0000
+       .db $00
+;;$4F9F ld hl,92c6 / ld a,(92c5) / res 2,a / cp (hl) / ret
+       .dw $0000
+       .db $00
+;;$4FA2 hl=11*(92fc)+92c9 / ld a,(hl) / and $F / cp 2 / ret ; I can almost guarantee this is stat plot related
+       .dw $0000
+       .db $00
+;_DispListElementOffLA	equ $4FA5
+       .dw $0000
+       .db $00
+;_Bit_VertSplit		equ $4FA8
+       .dw $0000
+       .db $00
+;_SetHomescreenHook	equ $4FAB
+       .dw $0000
+       .db $00
+;_ClrHomeScreenHook	equ $4FAE
+       .dw $0000
+       .db $00
+;_SetWindowHook		equ $4FB1
+       .dw $0000
+       .db $00
+;_DisableWindowHook	equ $4FB4
+       .dw $0000
+       .db $00
+;_SetGraphModeHook	equ $4FB7
+       .dw $0000
+       .db $00
+;_DisableGraphHook	equ $4FBA
+       .dw $0000
+       .db $00
+;_ParseAndStoreSysVar	equ $4FBD
+       .dw $0000
+       .db $00
+;_DisplayEditSysVar	equ $4FC0
+       .dw $0000
+       .db $00
+;_JForceWindowSettings	equ $4FC3
+       .dw $0000
+       .db $00
+;_DelVarArc		equ $4FC6
+       .dw $0000
+       .db $00
+;_DelVarNoArc		equ $4FC9
+       .dw $0000
+       .db $00
+;_SetAllPlots		equ $4FCC
+       .dw $0000
+       .db $00
+;_SetYeditHook     	equ $4FCF
+       .dw $0000
+       .db $00
+;_DisableYEquHook	equ $4FD2
+       .dw $0000
+       .db $00
+;_JForceYEqu		equ $4FD5
+       .dw $0000
+       .db $00
+_Arc_Unarc:		; equ $4FD8 ;checks for low battery
+       .dw compat.arc_unarc
+       .db $00
+;_ArchiveVar		equ 4F.$db ;set 0,(iy+$24) to check for low battery first
+       .dw $0000
+       .db $00
+;_UnarchiveVar		equ $4FDE
+       .dw $0000
+       .db $00
+;_DialogKeyHook		equ $4FE1 ;rawkey hook used by OS for dialog context
+       .dw $0000
+       .db $00
+;_SetFontHook		equ $4FE4
+       .dw $0000
+       .db $00
+;_ClrFontHook		equ $4FE7
+       .dw $0000
+       .db $00
+;_SetRegraphHook		equ $4FEA
+       .dw $0000
+       .db $00
+;_DisableRegraphHook	equ $4FED
+       .dw $0000
+       .db $00
+;_RunGraphingHook	equ $4FF0
+       .dw $0000
+       .db $00
+;_SetTraceHook		equ $4FF3
+       .dw $0000
+       .db $00
+;_DisableTraceHook	equ $4FF6
+       .dw $0000
+       .db $00
+;_RunTraceHook		equ $4FF9
+       .dw $0000
+       .db $00
+;_NDeriv			equ $4FFC
+       .dw $0000
+       .db $00
+;_PolarDerivative	equ $4FFF
+       .dw $0000
+       .db $00
+;_JForceGraphNoKey	equ $5002
+       .dw $0000
+       .db $00
+;_JForceGraphKey		equ $5005
+       .dw $0000
+       .db $00
+;_PowerOff		equ $5008
+       .dw $0000
+       .db $00
+;_GetKeyRetOff		equ $500B ;same as getkey, only returns kOff if 2nd+on is pressed 
+       .dw $0000
+       .db $00
+;_FindGroupSym		equ $500E
+       .dw $0000
+       .db $00
+;_FillBasePageTable	equ $5011
+       .dw $0000
+       .db $00
+;_ArcChk			equ $5014
+       .dw $0000
+       .db $00
+_FlashToRam:		; equ $5017
+       .dw compat.flashtoram
+       .db $00
+_LoadDEIndPaged:		; equ $501A
+       .dw compat.loaddeindpaged
+       .db $00
+_LoadCIndPaged:		; equ $501D
+       .dw compat.loadcindpaged
+       .db $00
+_SetupPagedPtr:		; equ $5020
+       .dw compat.setuppagedptr
+       .db $00
+_PagedGet:		; equ $5023
+       .dw compat.pagedget
+       .db $00
+;_SetParserHook		equ $5026
+       .dw $0000
+       .db $00
+;_ClearParserHook	equ $5029
+       .dw $0000
+       .db $00
+;_SetAppChangeHook 	equ $502C
+       .dw $0000
+       .db $00
+;_ClearAppChangeHook	equ $502F
+       .dw $0000
+       .db $00
+;_EnableGraphicsHook	equ $5032
+       .dw $0000
+       .db $00
+;_DisableGraphicsHook	equ $5035
+       .dw $0000
+       .db $00
+;_IPointNoGraphicsHook	equ $5038
+       .dw $0000
+       .db $00
+;_ILineNoHook		equ $503B
+       .dw $0000
+       .db $00
+;;$503E
+       .dw $0000
+       .db $00
+;_DeleteTempPrograms	equ $5041
+       .dw $0000
+       .db $00
+;_EnableCatalog1Hook	equ $5044
+       .dw $0000
+       .db $00
+;_DisableCatalog1Hook	equ $5047
+       .dw $0000
+       .db $00
+;_EnableHelpHook		equ $504A
+       .dw $0000
+       .db $00
+;_DisableHelpHook	equ $504D
+       .dw $0000
+       .db $00
+;_DispCatalogEnd		equ $5050
+       .dw $0000
+       .db $00
+;_GetMenuKeypress	equ $5053
+       .dw $0000
+       .db $00
+;_GetCatalogItem		equ $5056
+       .dw $0000
+       .db $00
+;_RunCatalog2Hook	equ $5059
+       .dw $0000
+       .db $00
+;_RunCatalog1Hook	equ $505C
+       .dw $0000
+       .db $00
+;;$505F
+       .dw $0000
+       .db $00
+;;$5062
+       .dw $0000
+       .db $00
+;_dispMenuTitle		equ $5065
+       .dw $0000
+       .db $00
+;;$5068
+       .dw $0000
+       .db $00
+;_EnablecxRedispHook	equ $506B
+       .dw $0000
+       .db $00
+;_DisablecxRedispHook	equ $506E
+       .dw $0000
+       .db $00
+;_BufCpy			equ $5071
+       .dw $0000
+       .db $00
+;_BufClr			equ $5074
+       .dw $0000
+       .db $00
+;_UnOPExec2		equ $5077
+       .dw $0000
+       .db $00
+;_BinOPExec2		equ $507A
+       .dw $0000
+       .db $00
+;_LoadMenuB		equ $507D ;clears screen and loads menu from B, plus a couple flag changes
+       .dw $0000
+       .db $00
+;_DisplayVarInfo		equ $5080
+       .dw $0000
+       .db $00
+;_SetMenuHook		equ $5083
+       .dw $0000
+       .db $00
+;_ClearMenuHook		equ $5086
+       .dw $0000
+       .db $00
+;_getBCOffsetIX		equ $5089
+       .dw $0000
+       .db $00
+;_GetBCOffsetIX2		equ $508C
+       .dw $0000
+       .db $00
+;_ForceFullScreen	equ $508F
+       .dw $0000
+       .db $00
+;_GetVariableData	equ $5092
+       .dw $0000
+       .db $00
+;_FindSwapSector		equ $5095
+       .dw $0000
+       .db $00
+;_CopyFlashPage		equ $5098
+       .dw $0000
+       .db $00
+;_FindAppNumPages	equ $509B
+       .dw $0000
+       .db $00
+;_HLMinus5		equ $509E
+       .dw $0000
+       .db $00
+;_SendArcPacket		equ $50A1
+       .dw $0000
+       .db $00
+;_ForceGraphKeypress	equ $50A4
+       .dw $0000
+       .db $00
+;_DoNothing3		equ $50A7
+       .dw $0000
+       .db $00
+;_FormBase		equ $50AA
+       .dw $0000
+       .db $00
+;;$50AD
+       .dw $0000
+       .db $00
+;_IsFragmented		equ $50B0
+       .dw $0000
+       .db $00
+_Chk_Batt_Low:		; equ $50B3
+       .dw compat.chkbattlow
+       .db $00
+;_Chk_Batt_Low_2		equ $50B6
+       .dw $0000
+       .db $00
+;_Arc_Unarc2		equ $50B9 ;identical to _Arc_Unarc, except you can choose to res 0,(iy+$24) to skip low battery check
+       .dw $0000
+       .db $00
+_GetAppBasePage:		; equ $50BC ;input: a=one of an app's pages. output: a=app's first page
+       .dw compat.getappbasepage
+       .db $00
+_SetExSpeed:		; equ $50BF
+       .dw compat.setexspeed
+       .db $00
+;_RclExit		equ $50C2
+       .dw $0000
+       .db $00
+;_GroupAllVars		equ $50C5
+       .dw $0000
+       .db $00
+;_UngroupVar		equ $50C8
+       .dw $0000
+       .db $00
+;_WriteToFlash		equ $50CB ;ReceiveApplication or something like that on OSes below 2.40
+       .dw $0000
+       .db $00
+;_SetSilentLinkHook	equ $50CE
+       .dw $0000
+       .db $00
+;_DisableSilentLinkHook	equ $50D1
+       .dw $0000
+       .db $00
+;_TwoVarSet		equ $50D4
+       .dw $0000
+       .db $00
+;_ExecClassCToken	equ $50D7
+       .dw $0000
+       .db $00
+;_ExecClass3Token	equ $50DA
+       .dw $0000
+       .db $00
+;_GetSysInfo		equ $50DD
+       .dw $0000
+       .db $00
+_NZIf83Plus:		; equ $50E0
+       .dw compat.nzif83plus
+       .db $00
+;_LinkStatus		equ $50E3
+       .dw $0000
+       .db $00
+;_DoNothing2		equ $50E6 ;originally for TI-Navigator
+       .dw $0000
+       .db $00
+;_KeyboardGetKey		equ $50E9
+       .dw $0000
+       .db $00
+;_RunAppLib		equ $50EC
+       .dw $0000
+       .db $00
+;_FindSpecialAppHeader	equ $50EF
+       .dw $0000
+       .db $00
+;_SendUSBData		equ $50F2
+       .dw $0000
+       .db $00
+;_AppGetCBLUSB		equ $50F5
+       .dw $0000
+       .db $00
+;_AppGetCalcUSB		equ $50F8
+       .dw $0000
+       .db $00
+;_GetVarCmdUSB		equ $50FB
+       .dw $0000
+       .db $00
+;;$50FE
+       .dw $0000
+       .db $00
+;_TenX2			equ $5101
+       .dw $0000
+       .db $00
+;;$5104
+       .dw $0000
+       .db $00
+;;$5107
+       .dw $0000
+       .db $00
+;_GetVarVersion		equ $510A
+       .dw $0000
+       .db $00
+;;$510D
+       .dw $0000
+       .db $00
+;;$5110
+       .dw $0000
+       .db $00
+;_DeleteTempEditEqu	equ $5113
+       .dw $0000
+       .db $00
+;_JcursorFirst2		equ $5116
+       .dw $0000
+       .db $00
+;;$5119
+       .dw $0000
+       .db $00
+;_PromptMoveBackLeft	equ $511C
+       .dw $0000
+       .db $00
+;_wputsEOL2		equ $511F ;same except res 0,(iy+$0E) first
+       .dw $0000
+       .db $00
+;_InvertTextInsMode	equ $5122
+       .dw $0000
+       .db $00
+;;$5125
+       .dw $0000
+       .db $00
+;_ResetDefaults		equ $5128
+       .dw $0000
+       .db $00
+;_ZeroFinanceVars	equ $512B
+       .dw $0000
+       .db $00
+;_DispHeader		equ $512E
+       .dw $0000
+       .db $00
+;_JForceGroup		equ $5131
+       .dw $0000
+       .db $00
+;;$5134
+       .dw $0000
+       .db $00
+;;$5137
+       .dw $0000
+       .db $00
+;_DispCoords		equ $513A
+       .dw $0000
+       .db $00
+;;$513D
+       .dw $0000
+       .db $00
+;;$5140
+       .dw $0000
+       .db $00
+;_chkTmr			equ $5143
+       .dw $0000
+       .db $00
+;;$5146
+       .dw $0000
+       .db $00
+;;$5149
+       .dw $0000
+       .db $00
+;;$514C
+       .dw $0000
+       .db $00
+;_getDate		equ $514F
+       .dw $0000
+       .db $00
+;_GetDateString		equ $5152
+       .dw $0000
+       .db $00
+;_getDtFmt		equ $5155
+       .dw $0000
+       .db $00
+;_getDtStr		equ $5158
+       .dw $0000
+       .db $00
+;_getTime		equ $515B
+       .dw $0000
+       .db $00
+;_GetTimeString		equ $515E
+       .dw $0000
+       .db $00
+;_getTmFmt		equ $5161
+       .dw $0000
+       .db $00
+;_getTmStr		equ $5164
+       .dw $0000
+       .db $00
+;_SetZeroOne		equ $5167
+       .dw $0000
+       .db $00
+;_setDate		equ $516A
+       .dw $0000
+       .db $00
+;_IsOneTwoThree		equ $516D
+       .dw $0000
+       .db $00
+;_setTime		equ $5170
+       .dw $0000
+       .db $00
+;_IsOP112or24		equ $5173
+       .dw $0000
+       .db $00
+;_chkTimer0		equ $5176
+       .dw $0000
+       .db $00
+;_timeCnv		equ $5179
+       .dw $0000
+       .db $00
+;_GetLToOP1Extra		equ $517C
+       .dw $0000
+       .db $00
+;_ClrWindowAndFlags	equ $517F
+       .dw $0000
+       .db $00
+;_SetMachineID		equ $5182
+       .dw $0000
+       .db $00
+;_ResetLists		equ $5185
+       .dw $0000
+       .db $00
+;_DispValue		equ $5188
+       .dw $0000
+       .db $00
+;;$518B
+       .dw $0000
+       .db $00
+;;$518E
+       .dw $0000
+       .db $00
+;_ExecLib		equ $5191
+       .dw $0000
+       .db $00
+;;$5194
+       .dw $0000
+       .db $00
+;_CPOP1OP2Rounded	equ $5197
+       .dw $0000
+       .db $00
+;_CPOP1OP2Rounded2	equ $519A
+       .dw $0000
+       .db $00
+;_OpenLib		equ $519D
+       .dw $0000
+       .db $00
+;;$51A0
+       .dw $0000
+       .db $00
+;;$51A3
+       .dw $0000
+       .db $00
+;_ResetIOPrompt		equ $51A6
+       .dw $0000
+       .db $00
+;_StrCpyVarData		equ $51A9
+       .dw $0000
+       .db $00
+;_SetUpEditor		equ $51AC
+       .dw $0000
+       .db $00
+;_SortA			equ $51AF
+       .dw $0000
+       .db $00
+;_SortD			equ $51B2
+       .dw $0000
+       .db $00
+;;$51B5
+       .dw $0000
+       .db $00
+;_IsOP1ResID		equ $51B8
+       .dw $0000
+       .db $00
+;_ListEdNameCxMain	equ $51BB
+       .dw $0000
+       .db $00
+;_ListEdEnterNewName	equ $51BE
+       .dw $0000
+       .db $0FD
+;;$51C1
+       .dw $0000
+       .db $00
+;_ForceModeKeypress	equ $51C4 ;forces a keypress (and calls help hook) on any of several mode-setting contexts
+       .dw $0000
+       .db $00
+;_DispAboutScreen	equ $51C7
+       .dw $0000
+       .db $00
+;_ChkHelpHookVer		equ $51CA
+       .dw $0000
+       .db $00
+;_Disp32			equ $51CD
+       .dw $0000
+       .db $00
+;;$51D0
+       .dw $0000
+       .db $00
+;;$51D3
+       .dw $0000
+       .db $00
+;;$51D6
+       .dw $0000
+       .db $00
+;;$51D9
+       .dw $0000
+       .db $00
+;_DrawTableEditor	equ $51DC ;draws table editor lines
+       .dw $0000
+       .db $00
+;_DisplayListNameEquals	equ $51DF
+       .dw $0000
+       .db $00
+;_DisplayListHeader	equ $51E2
+       .dw $0000
+       .db $00
+;_DispMatrixDimensions	equ $51E5
+       .dw $0000
+       .db $00
+;_HighlightListEdItem	equ $51E8
+       .dw $0000
+       .db $00
+;;$51EB
+       .dw $0000
+       .db $00
+;;$51EE
+       .dw $0000
+       .db $00
+;_MatrixName		equ $51F1
+       .dw $0000
+       .db $00
+;;$51F4
+       .dw $0000
+       .db $00
+;;$51F7
+       .dw $0000
+       .db $00
+;;$51FA
+       .dw $0000
+       .db $00
+;;$51FD
+       .dw $0000
+       .db $00
+;;$5200
+       .dw $0000
+       .db $00
+;;$5203
+       .dw $0000
+       .db $00
+;;$5206
+       .dw $0000
+       .db $00
+;;$5209
+       .dw $0000
+       .db $00
+;;$520C
+       .dw $0000
+       .db $00
+;;$520F
+       .dw $0000
+       .db $00
+;_SetupEmptyEditTempEqu	equ $5212
+       .dw $0000
+       .db $00
+;_ExecClass1Token	equ $5215
+       .dw $0000
+       .db $00
+;_HandleMathTokenParse	equ $5218
+       .dw $0000
+       .db $00
+;_MaybePushMultiplyOp	equ $521B
+       .dw $0000
+       .db $00
+;_RestartParseOP1Result	equ $521E
+       .dw $0000
+       .db $00
+;_Chk_Batt_Level		equ $5221
+       .dw $0000
+       .db $00
+;;$5224
+       .dw $0000
+       .db $00
+;;$5227
+       .dw $0000
+       .db $00
+;;$522A
+       .dw $0000
+       .db $00
+;_DisplayListEquals	equ $522D
+       .dw $0000
+       .db $00
+;_GetCurPlotListOffset	equ $5230
+       .dw $0000
+       .db $00
+;_GoToLastRow		equ $5233
+       .dw $0000
+       .db $00
+;_RectBorder		equ $5236
+       .dw $0000
+       .db $00
+;;$5239
+       .dw $0000
+       .db $00
+;;$523C
+       .dw $0000
+       .db $00
+;;$523F
+       .dw $0000
+       .db $00
+;_LoadA5			equ $5242
+       .dw $0000
+       .db $00
+;;$5245
+       .dw $0000
+       .db $00
+;_NamedListToOP1		equ $5248
+       .dw $0000
+       .db $00
+;;$524B
+       .dw $0000
+       .db $00
+;;$524E
+       .dw $0000
+       .db $00
+;;$5251
+       .dw $0000
+       .db $00
+;_InitUSBDeviceCallback	equ $5254
+       .dw $0000
+       .db $00
+;_KillUSBDevice		equ $5257 ;this actually recycles the USB connection and re-inits it (I think)
+       .dw $0000
+       .db $00
+;_SetUSBConfiguration	equ $525A
+       .dw $0000
+       .db $00
+;_RequestUSBData		equ $525D
+       .dw $0000
+       .db $00
+;_StopReceivingUSBData	equ $5260
+       .dw $0000
+       .db $00
+;_FindAppHeaderByPage	equ $5263
+       .dw $0000
+       .db $00
+;_FindNextHeaderByPage	equ $5266
+       .dw $0000
+       .db $00
+;_IsMatchingLaunchApp	equ $5269
+       .dw $0000
+       .db $00
+;_InitTimer		equ $526C
+       .dw $0000
+       .db $00
+;_KillTimer		equ $526F
+       .dw $0000
+       .db $00
+;_StartTimer		equ $5272
+       .dw $0000
+       .db $00
+;_RestartTimer		equ $5275
+       .dw $0000
+       .db $00
+;_StopTimer		equ $5278
+       .dw $0000
+       .db $00
+;_WaitTimer		equ $527B
+       .dw $0000
+       .db $00
+;_CheckTimer		equ $527E
+       .dw $0000
+       .db $00
+;_CheckTimerRestart	equ $5281
+       .dw $0000
+       .db $00
+;_SetVertGraphActive	equ $5284
+       .dw $0000
+       .db $00
+;_ClearVertGraphActive	equ $5287
+       .dw $0000
+       .db $00
+;_EnableUSBHook		equ $528A
+       .dw $0000
+       .db $00
+;_DisableUSBHook		equ $528D
+       .dw $0000
+       .db $00
+;_InitUSBDevice		equ $5290
+       .dw $0000
+       .db $00
+;_KillUSBPeripheral	equ $5293
+       .dw $0000
+       .db $00
+;_GetCurPlotListOffset	equ $5296
+       .dw $0000
+       .db $00
+;;$5299
+       .dw $0000
+       .db $00
+;_GraphLine		equ $529C
+       .dw $0000
+       .db $00
+;;$529F
+       .dw $0000
+       .db $00
+;;$52A2
+       .dw $0000
+       .db $00
+;;$52A5
+       .dw $0000
+       .db $00
+;;$52A8
+       .dw $0000
+       .db $00
+;;$52AB
+       .dw $0000
+       .db $00
+;;$52AE
+       .dw $0000
+       .db $00
+;_ZifTableEditor		equ $52B1
+       .dw $0000
+       .db $00
+;;$52B4
+       .dw $0000
+       .db $00
+;_GetCurPlotOffset	equ $52B7
+       .dw $0000
+       .db $00
+;;$52BA
+       .dw $0000
+       .db $00
+;_FindAppName		equ $52BD
+       .dw $0000
+       .db $00
+;;$52C0
+       .dw $0000
+       .db $00
+;;$52C3
+       .dw $0000
+       .db $00
+;_UpdateStatPlotLists	equ $52C6
+       .dw $0000
+       .db $00
+;_GrBufCpyCustom		equ $52C9
+       .dw $0000
+       .db $00
+;;$52CC
+       .dw $0000
+       .db $00
+;;$52CF
+       .dw $0000
+       .db $00
+;;$52D2
+       .dw $0000
+       .db $00
+;_VDispRealOP1		equ $52D5
+       .dw $0000
+       .db $00
+;_DispXEqualsNum		equ $52D8
+       .dw $0000
+       .db $00
+;_ResetGraphSettings	equ 52.$db
+       .dw $0000
+       .db $00
+;_InitializeVariables	equ $52DE
+       .dw $0000
+       .db $00
+;;$52E1 ;bit 4,($9C75) (this is DEFINITELY returning the status of something when acting as a TI-SmartView Input Pad...this bit is bit 1 of the data byte from a PC HID Set Report request)
+       .dw $0000
+       .db $00
+;_DelVarSym		equ $52E4
+       .dw $0000
+       .db $00
+;_FindAppUpNoCase	equ $52E7
+       .dw $0000
+       .db $00
+;_FindAppDnNoCase	equ $52EA
+       .dw $0000
+       .db $00
+;_DeleteInvalidApps	equ $52ED
+       .dw $0000
+       .db $00
+;_DeleteApp_Link		equ $52F0
+       .dw $0000
+       .db $0FE
+;_CmpSymsNoCase		equ $52F3
+       .dw $0000
+       .db $00
+;_SetAppRestrictions	equ $52F6
+       .dw $0000
+       .db $00
+;_RemoveAppRestrictions	equ $52F9
+       .dw $0000
+       .db $00
+;_QueryAppRestrictions	equ $52FC
+       .dw $0000
+       .db $00
+;_DispAppRestrictions	equ $52FF
+       .dw $0000
+       .db $00
+;_SetupHome		equ $5302
+       .dw $0000
+       .db $00
+;_GRPUTAWAYFull		equ $5305 ;same as _GRPUTAWAY except it assumes no split screen
+       .dw $0000
+       .db $00
+;_SendSmartPadKeypress	equ $5308 ;B and A are the inputs
+       .dw $0000
+       .db $00
+;_ToggleUSBSmartPadInput	equ $530B ;A is input, 0 or 1 to enable/disable
+       .dw $0000
+       .db $00
+;_IsUSBDeviceConnected	equ $530E ;bit 4,($81) \ ret, this is just a guess on its purpose but it seems to work
+       .dw $0000
+       .db $00
+;_RecycleUSB		equ $5311 ;identical to $5257
+       .dw $0000
+       .db $00
+;_PolarEquToOP1		equ $5314
+       .dw $0000
+       .db $00
+;_ParamXEquToOP1		equ $5317
+       .dw $0000
+       .db $00
+;_ParamYEquToOP1		equ $531A
+       .dw $0000
+       .db $00
+;_GetRestrictionsOptions	equ $531D
+       .dw $0000
+       .db $00
+;_DispResetComplete	equ $5320
+       .dw $0000
+       .db $00
+;_PTTReset		equ $5323
+       .dw $0000
+       .db $00
+;_FindAppCustom		equ $5326
+       .dw $0000
+       .db $00
+;_ClearGraphStyles	equ $5329
+       .dw $0000
+       .db $00
+
+; XOS bcalls
+.org	$5600
+	
+
+; page0 compat calls are beyond the syscall jump table but not exported
+; current  valid values :
+;	0 : mkvatnode (hl : file address, de : file size)
+#define ccall(n) call zp.end + (3*n)
+
+compat.div_hl_a:
+	ld	c, a
+	jp	zp.div_hl_c
+
+compat.mult_h_l:
+	ld	e, l
+	jp	zp.mult_h_e
+
+compat.clrscrnfull:
+	call	zp.vbufclr
+	jp	zp.vbufdisp
+
+compat.darkline:
+	ld	h, 1
+compat.iline:
+	push	af
+	push	bc
+	push	de
+	push	hl
+	push	ix
+	; draw line from (b, c) to (d, e) according to h {0:light, 1:dark, 2:invert}
+	ld	a, h
+	ld	h, b
+	ld	l, c
+	ex	de, hl
+	call	zp.draw_line
+	pop	ix
+	pop	hl
+	pop	de
+	pop	bc
+	pop	af
+
+compat.darkpoint:
+	ret
+
+compat.ipoint:
+	push	af
+	push	bc
+	push	de
+	push	hl
+	ld	hl, compat.ipoint.return
+	ex	(sp), hl
+	
+	ld	a, b
+	ld	l, c
+	
+	inc	d
+	dec	d
+	jp	z, zp.res_pixel
+	dec	d
+	jp	z, zp.set_pixel
+	dec	d
+	jp	z, zp.flip_pixel
+
+compat.ipoint.return:
+	pop	hl
+	pop	de
+	pop	bc
+	pop	af
+	ret
+
+compat.grphcirc:
+	
+	ret
+
+compat.findprogsym:
+	ret
+
+compat.chkfindsym:
+	; data in OP1
+	
+	ld	hl, (progPtr)
+	ld	de, (pTemp)
+	ld	bc, -6
+	
+compat.cfs.loop:
+	ex	de, hl
+	cmp_hlde
+	ex	de, hl
+	ccf
+	ret	c
+	
+	ld	a, (OP1)
+	cp	(hl)
+	jr	nz, compat.cfs.invalid
+	add	hl, bc
+	ld	b, (hl)
+	
+	push	hl
+	push	de
+	
+	dec	hl
+	ld	de, OP1 + 1
+	
+compat.cfs.cmp:
+	ld	a, (de)
+	inc	de
+	cp	(hl)
+	dec	hl
+	jr	nz, compat.cfs.skip
+	djnz	compat.cfs.cmp
+	
+	pop	de
+	pop	hl
+	
+	push	hl
+	
+	dec	hl
+	dec	hl
+	ld	e, (hl)
+	dec	hl
+	ld	d, (hl)
+	dec	hl
+	ld	a, (hl)
+	
+	pop	hl
+	or	a
+	ret
+	
+compat.cfs.skip:
+	pop	de
+	pop	hl
+	
+	jr	$+3
+	
+compat.cfs.invalid:
+	add	hl, bc
+	
+	; skip name
+	ld	a, (hl)
+	ld	a, l
+	sub	(hl)
+	ld	l, a
+	jr	nc, compat.cfs.loop
+	dec	h
+	jr	compat.cfs.loop
+
+compat.findsym:
+	scf
+	ret
+
+compat.insertmem:
+	ret
+	
+compat.enoughmem:
+	call	zp.file_meminfo
+	ld	d, b
+	ld	e, c
+	ex	de, hl
+	or	a
+	sbc	hl, de
+	add	hl, de
+	ex	de, hl
+	ret
+
+compat.delvar:
+	ret
+compat.delmem:
+	ret
+
+compat.arc_unarc:
+	; OP1 = $8478
+	call	compat.chkfindsym
+	ret	c
+	
+	push	hl
+	pop	ix
+	
+	in	a, (map_bankB_port)
+	push	af
+	ld	a, b
+	out	(map_bankB_port), a
+	
+	ex	de, hl
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	dec	hl
+	
+	; todo copy data to some free space...
+	
+	pop	af
+	out	(map_bankB_port), a
+	
+	ret
+
+compat.createappvar:
+	; data in OP1
+	ret
+	
+	push	ix
+	push	iy
+	
+	ld	b, h
+	ld	c, l
+	ld	hl, OP1 + 1
+	ld	ix, compat.cav.cb
+	call	zp.file_create
+	
+	push	hl
+	push	de
+	; create VAT entry
+	ccall(0)
+	pop	de
+	pop	hl
+	
+	pop	iy
+	pop	ix
+	
+	ret
+
+compat.cav.cb:
+	; update VAT
+	ex	de, hl
+	call	zp.file_node_info
+	;call	compat.mkvat
+	ret
+
+compat.createprotprog:
+	ret
+
+compat.putmap:
+	ld	bc, (curRow)
+	call	zp.putch_6x8
+	ret
+compat.putc:
+	ld	bc, (curRow)
+	call	zp.putch_6x8
+	ld	(curRow), bc
+	ret
+compat.puts:
+	ld	bc, (curRow)
+	call	zp.puts_6x8
+	ld	(curRow), bc
+	ret
+
+compat.vputmap:
+	ld	bc, (penCol)
+	call	zp.putch_con
+	ret
+	
+compat.vputs:
+	ld	bc, (penCol)
+	call	zp.puts_con
+	ld	(penCol), bc
+	ret
+
+compat.getkey:
+	push	hl
+	push	de
+	push	bc
+	; e -> flags
+	ld	e, 0
+_poll:
+	ei
+	halt
+	call	zp.getkey
+	
+	or	a
+	jr	z, _poll
+	
+	; update flags
+	; todo : emulate TIOS flags behavior...
+	cp	sk_2nd
+	jr	nz, _not_shift
+	ld	a, e
+	xor	$02
+	ld	e, a
+	jr	_poll
+_not_shift:
+	cp	sk_alpha
+	jr	nz, _not_alpha
+	ld	a, e
+	xor	$01
+	ld	e, a
+	jr	_poll
+_not_alpha:
+	
+	ld	h, $38
+	call	zp.mult_h_e
+	
+	ld	bc, gk_table
+	add	hl, bc
+	offset_hl
+	
+	ld	a, (hl)
+	or	a
+	jp	z, _poll
+	
+_end:
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+; getcsc -> getkey mapping
+; sk_down,  sk_left,  sk_right, sk_up,     sk_null,   sk_null,  sk_null,  sk_null
+; sk_enter, sk_plus,  sk_minus, sk_times,  sk_obelus, sk_caret, sk_clear, sk_null
+; sk_chs,   sk_3,     sk_6,     sk_9,      sk_rparen, sk_tan,   sk_vars,  sk_null
+; sk_point, sk_2,     sk_5,     sk_8,      sk_lparen, sk_cos,   sk_prgm,  sk_stat
+; sk_0,     sk_1,     sk_4,     sk_7,      sk_comma,  sk_sin,   sk_apps,  sk_xt0n
+; sk_null,  sk_sto,   sk_ln,    sk_log,    sk_square, sk_recip, sk_math,  sk_alpha
+; sk_graph, sk_trace, sk_zoom,  sk_window, sk_yequ,   sk_2nd,   sk_mode,  sk_del
+gk_table:
+; normal
+	.db $04, $02, $01, $03, $00, $00, $00, $00
+	.db $05, $80, $81, $82, $83, $84, $09, $00
+	.db $8C, $91, $94, $97, $86, $BB, $35, $00
+	.db $8D, $90, $93, $96, $85, $B9, $2D, $31
+	.db $8E, $8F, $92, $95, $8B, $B7, $2C, $00
+	.db $00, $8A, $BF, $C1, $BD, $B6, $32, $00
+	.db $44, $5A, $51, $48, $49, $00, $45, $0A
+; alpha
+	.db $08, $00, $00, $07, $00, $00, $00, $00
+	.db $06, $CC, $B0, $AB, $A6, $A1, $00, $00
+	.db $CA, $CB, $AF, $AA, $A5, $A0, $00, $00
+	.db $C6, $B3, $AE, $A9, $A4, $9F, $9C, $00
+	.db $99, $B2, $AD, $A8, $A3, $9E, $9B, $00
+	.db $00, $B1, $AC, $A7, $A2, $9D, $9A, $00
+	.db $00, $00, $00, $00, $00, $00, $00, $00
+; shift
+	.db $00, $00, $00, $00, $00, $00, $00, $00
+	.db $0D, $36, $88, $87, $EF, $B5, $00, $00
+	.db $C5, $F5, $F8, $FB, $ED, $BC, $38, $00
+	.db $EE, $F4, $F7, $FA, $EC, $BA, $2F, $00
+	.db $3E, $F3, $F6, $F9, $98, $B8, $39, $00
+	.db $00, $0C, $C0, $C2, $BE, $37, $33, $00
+	.db $4A, $3B, $57, $4B, $55, $00, $40, $0B
+; shift + alpha (same as alpha in TIOS...)
+	.db $08, $00, $00, $07, $00, $00, $00, $00
+	.db $06, $CC, $B0, $AB, $A6, $A1, $00, $00
+	.db $CA, $CB, $AF, $AA, $A5, $A0, $00, $00
+	.db $C6, $B3, $AE, $A9, $A4, $9F, $9C, $00
+	.db $99, $B2, $AD, $A8, $A3, $9E, $9B, $00
+	.db $00, $B1, $AC, $A7, $A2, $9D, $9A, $00
+	.db $00, $00, $00, $00, $00, $00, $00, $00
+; 	.db $00, $00, $00, $00, $00, $00, $00, $00
+; 	.db $00, $00, $00, $00, $00, $00, $00, $00
+; 	.db $00, $00, $00, $00, $00, $00, $00, $00
+; 	.db $00, $00, $00, $00, $00, $00, $00, $00
+; 	.db $00, $00, $00, $00, $00, $00, $00, $00
+; 	.db $00, $00, $00, $00, $00, $00, $00, $00
+; 	.db $00, $00, $00, $00, $00, $00, $00, $00
+
+compat.disphl:
+	ld	de, os.scrap
+	call	zp.htoa_word
+	xor	a
+	ld	(de), a
+	
+	ld	hl, os.scrap
+	jp	compat.puts
+
+compat.sendabyte:
+	ret
+compat.recabyte:
+	ret
+compat.recfirstbyte:
+	ret
+compat.recfirstbytenc:
+	ret
+
+compat.apd_enable:
+	push	hl
+	ld	hl, os.flags + osf.general
+	set	aps_on, (hl)
+	pop	hl
+	ret
+compat.apd_disable:
+	push	hl
+	ld	hl, os.flags + osf.general
+	res	aps_on, (hl)
+	pop	hl
+	ret
+
+compat.homeup:
+	ld	bc, 0
+	ld	(curRow), bc
+	ret
+
+compat.lcd_busy:
+	lcd_busy
+	ret
+
+compat.getappbasepage:
+	jp	zp.getbaseapppage
+
+compat.nzif83plus:
+	in	a, (hw_port)
+	cpl
+	and	$80
+	ret
+
+compat.chkbattlow:
+	jp	zp.battery_level
+
+compat.setexspeed:
+	out (cpu_speed_port), a
+	ret
+
+compat.getbasever:
+	; pretend to be last known OS version...
+	ld	a, 2
+	ld	b, 43
+	
+	ret
+
+compat.op1exop2:
+	ld	de, OP2
+	jr	compat.op1ex
+	
+compat.op1exop3:
+	ld	de, OP3
+	jr	compat.op1ex
+	
+compat.op1exop4:
+	ld	de, OP4
+	jr	compat.op1ex
+	
+compat.op1exop5:
+	ld	de, OP5
+	jr	compat.op1ex
+
+compat.op1exop6:
+	ld	de, OP6
+	jr	compat.op1ex
+
+compat.op2exop4:
+	ld	de, OP4
+	jr	compat.op1ex
+
+compat.op2exop5:
+	ld	de, OP5
+	jr	compat.op1ex
+
+compat.op2exop6:
+	ld	de, OP6
+	jr	compat.op1ex
+
+compat.op5exop6:
+	ld	hl, OP5
+	ld	de, OP6
+	jr	compat.opex
+
+compat.op2ex:
+	ld	hl, OP2
+	jr	compat.opex
+	
+compat.op1ex:
+	ld	hl, OP1
+	
+compat.opex:
+	ld	bc, 9
+	call	zp.memswap
+
+compat.mov11B:
+	ldi
+compat.mov10B:
+	ldi
+compat.mov9B
+	ldi
+compat.mov8B
+	ldi
+compat.mov7B:
+	ld	bc, 7
+	ldir
+	ret
+
+compat.op1toop2:
+	ld	de, OP2
+compat.op1to:
+	ld	hl, OP1
+	jr	compat.mov9B
+
+compat.op2toop1:
+	ld	de, OP1
+compat.op2to
+	ld	hl, OP2
+	jr	compat.mov9B
+
+compat.op3toop1:
+	ld	de, OP1
+compat.op3to
+	ld	hl, OP3
+	jr	compat.mov9B
+
+compat.op4toop1:
+	ld	de, OP1
+compat.op4to
+	ld	hl, OP4
+	jr	compat.mov9B
+
+compat.op5toop1:
+	ld	de, OP1
+compat.op5to
+	ld	hl, OP5
+	jr	compat.mov9B
+
+compat.op6toop1:
+	ld	de, OP1
+compat.op6to
+	ld	hl, OP6
+	jr	compat.mov9B
+
+compat.mov9toop1:
+	ld	de, OP1
+	jr	compat.mov9B
+
+compat.mov9op1op2:
+	push	hl
+	call	compat.mov9toop1
+	pop	hl
+
+compat.mov9toop2:
+	ld	de, OP2
+	jr	compat.mov9B
+
+compat.op1toop3:
+	ld	de, OP3
+	jr	compat.op1to
+
+compat.op1toop4:
+	ld	de, OP4
+	jr	compat.op1to
+
+compat.op1toop5:
+	ld	de, OP5
+	jr	compat.op1to
+
+compat.op1toop6:
+	ld	de, OP6
+	jr	compat.op1to
+
+compat.op2toop3:
+	ld	de, OP3
+	jr	compat.op2to
+
+compat.op2toop4:
+	ld	de, OP4
+	jr	compat.op2to
+
+compat.op2toop5:
+	ld	de, OP5
+	jr	compat.op2to
+
+compat.op2toop6:
+	ld	de, OP6
+	jr	compat.op2to
+
+compat.op3toop4:
+	ld	de, OP4
+	jr	compat.op3to
+
+compat.op3toop5:
+	ld	de, OP5
+	jr	compat.op3to
+
+compat.op4toop2:
+	ld	de, OP2
+	jr	compat.op4to
+
+compat.op4toop3:
+	ld	de, OP3
+	jr	compat.op4to
+
+compat.op4toop5:
+	ld	de, OP5
+	jr	compat.op4to
+
+compat.op4toop6:
+	ld	de, OP6
+	jr	compat.op4to
+
+compat.op5toop2:
+	ld	de, OP2
+	jr	compat.op5to
+
+compat.op5toop3:
+	ld	de, OP3
+	jr	compat.op5to
+
+compat.op5toop4:
+	ld	de, OP4
+	jr	compat.op5to
+
+compat.op5toop6:
+	ld	de, OP6
+	jr	compat.op5to
+
+compat.op6toop2:
+	ld	de, OP2
+	jr	compat.op6to
+
+compat.op6toop5:
+	ld	de, OP5
+	jr	compat.op6to
+
+
+compat.pushrealo6:
+	ld	hl, OP6
+	jr	compat.pushreal
+
+compat.pushrealo5:
+	ld	hl, OP5
+	jr	compat.pushreal
+
+compat.pushrealo4:
+	ld	hl, OP4
+	jr	compat.pushreal
+
+compat.pushrealo3:
+	ld	hl, OP3
+	jr	compat.pushreal
+
+compat.pushrealo2:
+	ld	hl, OP2
+	jr	compat.pushreal
+
+compat.pushrealo1:
+	ld	hl, OP1
+
+compat.pushreal:
+	push	hl
+	
+	; create entry
+	ld	bc, 11
+	call	zp.malloc
+	
+	; get address of fps stack top (previous entry)
+	ld	de, (FPS)
+	
+	; store address of new entry
+	ld	(FPS), hl
+	
+	; store it at the beginning of new entry (backward single linking for traversal and pop)
+	ld	(hl), e
+	inc	hl
+	ld	(hl), d
+	inc	hl
+	ex	de, hl
+	
+	pop	hl
+	
+	; copy data to stack space
+	ld	bc, 9
+	ldir
+	
+	ret
+
+compat.poprealo2:
+	ld	de, OP2
+	jr	compat.popreal
+
+compat.poprealo3:
+	ld	de, OP3
+	jr	compat.popreal
+
+compat.poprealo4:
+	ld	de, OP4
+	jr	compat.popreal
+
+compat.poprealo5:
+	ld	de, OP5
+	jr	compat.popreal
+
+compat.poprealo6:
+	ld	de, OP6
+	jr	compat.popreal
+
+compat.poprealo1:
+	ld	de, OP1
+
+compat.popreal:
+	push	af
+	
+	ld	hl, (FPS)
+	
+	ld	a, h
+	or	l
+	jr	z, compat.popreal.end
+	
+	; "remove" entry from stack by storing pointer to previous entry in FPS
+	push	hl
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	ld	(FPS), bc
+	
+	; copy data to desired location
+	ld	bc, 9
+	ldir
+	
+	pop	hl
+	
+	; free memory (and preserve a in the process to comply with SDK docs)
+	call	zp.free
+	
+compat.popreal.end:
+	pop	af
+	ret
+
+compat.flashtoram:
+	jp	zp.flashtoram
+
+compat.loadcindpaged:
+	jp	zp.deref_paged_byte
+
+compat.loaddeindpaged:
+	jp	zp.deref_paged_word
+
+compat.setuppagedptr:
+	
+	ret
+
+compat.pagedget:
+	
+	ret
+
+compat.memset:
+	ld	(hl), a
+	ld	d, h
+	ld	e, l
+	inc	de
+	dec	bc
+	ldir
+	ret
+
+compat.jerrorno:
+compat.jforcecmdnochar:
+compat.jforcecmd:
+	call	zp.compat_stop
+	jp	zp.console
+
+compat.fpadd:
+	ld	hl, OP1
+	ld	de, OP2
+	call	zp.fp_add
+	ret
+
+compat.fpsub:
+	ld	hl, OP1
+	ld	de, OP2
+	call	zp.fp_sub
+	ret
+
+compat.fpmult:
+	ld	hl, OP1
+	ld	de, OP2
+	call	zp.fp_mult
+	ret
+
+compat.fpdiv:
+	ld	hl, OP1
+	ld	de, OP2
+	call	zp.fp_div
+	ret
+
+#if $ > $8000
+!!!
+.echo "Page 01 is too large...\n\n"
+#endif
+
+.echo	"\nPage 01: "
+.echo	$-$4000
+.echo	" bytes used\t"
+.echo	(($-$4000)*100)/$4000
+.echo	"% filled\n"
+
+.end

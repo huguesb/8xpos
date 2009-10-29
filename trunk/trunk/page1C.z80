@@ -1,0 +1,999 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+.nolist
+#include "xos.inc"
+#include "xos.exp"
+.list
+
+PAGE = $1C
+
+.org $4000
+
+; a couple of ports are protected and require a precise instruction
+; sequence to be properly written to (and that must be executed from
+; a priviledged flash page
+#define protPortWrite(port) di
+#defcont			 \ nop
+#defcont			 \ nop
+#defcont			 \ im	1
+#defcont			 \ di
+#defcont			 \ out	(port), a
+
+vect_flash_unlock:	.export vect_flash_unlock
+	; bit of magic here to reenable interrupts only if they were disabled
+	; ld a, i (and ld a,r) cause P/V to be set to IFF
+	ld	a,i
+	push	af
+	
+	di
+	
+	ld	a, 1
+	protPortWrite(flash_lock_port)
+	
+	pop	af
+	; po : interrupts were disabled before / pe : interrupts were enabled before
+	ret	po
+	
+	ei
+	ret
+
+vect_flash_lock:	.export vect_flash_lock
+	ld	a, i
+	push	af
+	
+	di
+	
+	xor	a
+	protPortWrite(flash_lock_port)
+	
+	pop	af
+	ret	po
+	
+	ei
+	ret
+
+;protected ports are 14,16,22, and 23 - all Flash write/execution protection
+;we allow execution on all Flash pages, then relock Flash
+vect_flash_exec_init_se: .export vect_flash_exec_init_se
+	di
+	call	vect_flash_unlock
+	
+	;Set Flash execution lower limit
+	
+	ld	a, $FF
+	protPortWrite(fxl_low_port)
+	;Flash execution upper limit
+	inc	a
+	protPortWrite(fxl_high_port)
+	
+	; TIOS reportedly writes data to port $25, $26... ($10, $20 respectively)
+	; the effect of these writes is not documented so...
+	
+	jp	vect_flash_lock
+	
+vect_flash_exec_init_be: .export vect_flash_exec_init_be
+	di
+	
+	call	vect_flash_unlock
+	
+	; tricky flash execution enabling (untested)
+	
+	xor	a
+	protPortWrite($05)
+	protPortWrite(flash_exec_port)
+	
+	inc	a
+	protPortWrite(flash_exec_port)
+	xor	a
+	protPortWrite(flash_exec_port)
+	
+	ld	a, 2
+	protPortWrite($05)
+	xor	a
+	protPortWrite(flash_exec_port)
+	
+	jp	vect_flash_lock
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+; here lies all data that is exclusively meant for kernel-space use
+; (NOT font data for instance) and/or which is used rarely enough that
+; an extra page swap is affordable
+;
+; NOTE : it must be exported (using TASM .export directive) to be
+; reachable from the rest of the OS
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; draw_line core code (all three code pathes and vector tables)
+Xbit.res:	.export	Xbit.res
+ .dw DrawX0r,DrawX1r,DrawX2r,DrawX3r
+ .dw DrawX4r,DrawX5r,DrawX6r,DrawX7r
+Xbit.set:
+ .dw DrawX0s,DrawX1s,DrawX2s,DrawX3s
+ .dw DrawX4s,DrawX5s,DrawX6s,DrawX7s
+Xbit.inv:
+ .dw DrawX0i,DrawX1i,DrawX2i,DrawX3i
+ .dw DrawX4i,DrawX5i,DrawX6i,DrawX7i
+Ybit.res:	.export	Ybit.res
+ .dw DrawY0r,DrawY1r,DrawY2r,DrawY3r
+ .dw DrawY4r,DrawY5r,DrawY6r,DrawY7r
+Ybit.set:
+ .dw DrawY0s,DrawY1s,DrawY2s,DrawY3s
+ .dw DrawY4s,DrawY5s,DrawY6s,DrawY7s
+Ybit.inv:
+ .dw DrawY0i,DrawY1i,DrawY2i,DrawY3i
+ .dw DrawY4i,DrawY5i,DrawY6i,DrawY7i
+		
+DrawX0r:
+	res 7,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX1r
+	ret
+DrawX1r:
+	res 6,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX2r
+	ret
+DrawX2r:
+	res 5,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX3r
+	ret
+DrawX3r:
+	res 4,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX4r
+	ret
+DrawX4r:
+	res 3,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX5r
+	ret
+DrawX5r:
+	res 2,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX6r
+	ret
+DrawX6r:
+	res 1,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX7r
+	ret
+DrawX7r:
+	res 0,(ix)
+	inc ix
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX0r
+	ret
+
+DrawY0r_:
+	inc ix
+	sub h
+	dec b
+	ret z
+DrawY0r:
+	res 7,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY1r_
+	djnz DrawY0r
+	ret
+DrawY1r_:
+	sub h
+	dec b
+	ret z
+DrawY1r:
+	res 6,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY2r_
+	djnz DrawY1r
+	ret
+DrawY2r_:
+	sub h
+	dec b
+	ret z
+DrawY2r:
+	res 5,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY3r_
+	djnz DrawY2r
+	ret
+DrawY3r_:
+	sub h
+	dec b
+	ret z
+DrawY3r:
+	res 4,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY4r_
+	djnz DrawY3r
+	ret
+DrawY4r_:
+	sub h
+	dec b
+	ret z
+DrawY4r:
+	res 3,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY5r_
+	djnz DrawY4r
+	ret
+DrawY5r_:
+	sub h
+	dec b
+	ret z
+DrawY5r:
+	res 2,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY6r_
+	djnz DrawY5r
+	ret
+DrawY6r_:
+	sub h
+	dec b
+	ret z
+DrawY6r:
+	res 1,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY7r_
+	djnz DrawY6r
+	ret
+DrawY7r_:
+	sub h
+	dec b
+	ret z
+DrawY7r:
+	res 0,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY0r_
+	djnz DrawY7r
+	ret
+	
+DrawX0s:
+	set 7,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX1s
+	ret
+DrawX1s:
+	set 6,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX2s
+	ret
+DrawX2s:
+	set 5,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX3s
+	ret
+DrawX3s:
+	set 4,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX4s
+	ret
+DrawX4s:
+	set 3,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX5s
+	ret
+DrawX5s:
+	set 2,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX6s
+	ret
+DrawX6s:
+	set 1,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX7s
+	ret
+DrawX7s:
+	set 0,(ix)
+	inc ix
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX0s
+	ret
+
+DrawY0s_:
+	inc ix
+	sub h
+	dec b
+	ret z
+DrawY0s:
+	set 7,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY1s_
+	djnz DrawY0s
+	ret
+DrawY1s_:
+	sub h
+	dec b
+	ret z
+DrawY1s:
+	set 6,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY2s_
+	djnz DrawY1s
+	ret
+DrawY2s_:
+	sub h
+	dec b
+	ret z
+DrawY2s:
+	set 5,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY3s_
+	djnz DrawY2s
+	ret
+DrawY3s_:
+	sub h
+	dec b
+	ret z
+DrawY3s:
+	set 4,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY4s_
+	djnz DrawY3s
+	ret
+DrawY4s_:
+	sub h
+	dec b
+	ret z
+DrawY4s:
+	set 3,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY5s_
+	djnz DrawY4s
+	ret
+DrawY5s_:
+	sub h
+	dec b
+	ret z
+DrawY5s:
+	set 2,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY6s_
+	djnz DrawY5s
+	ret
+DrawY6s_:
+	sub h
+	dec b
+	ret z
+DrawY6s:
+	set 1,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY7s_
+	djnz DrawY6s
+	ret
+DrawY7s_:
+	sub h
+	dec b
+	ret z
+DrawY7s:
+	set 0,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY0s_
+	djnz DrawY7s
+	ret
+
+DrawX0i:
+	bit	7, (ix)
+	jr	nz, $+5
+	set 7,(ix)
+	jr	$+5
+	res	7, (ix)
+	
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX1i
+	ret
+DrawX1i:
+	bit	6, (ix)
+	jr	nz, $+5
+	set	6, (ix)
+	jr	$+5
+	res	6, (ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX2i
+	ret
+DrawX2i:
+	bit	5, (ix)
+	jr	nz, $+5
+	set	5, (ix)
+	jr	$+5
+	res	5, (ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX3i
+	ret
+DrawX3i:
+	bit	4, (ix)
+	jr	nz, $+5
+	set	4, (ix)
+	jr	$+5
+	res	4, (ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX4i
+	ret
+DrawX4i:
+	bit	3, (ix)
+	jr	nz, $+5
+	set	3, (ix)
+	jr	$+5
+	res	3, (ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX5i
+	ret
+DrawX5i:
+	bit	2, (ix)
+	jr	nz, $+5
+	set	2, (ix)
+	jr	$+5
+	res	2, (ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX6i
+	ret
+DrawX6i:
+	bit	1, (ix)
+	jr	nz, $+5
+	set	1, (ix)
+	jr	$+5
+	res	1, (ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX7i
+	ret
+DrawX7i:
+	bit	0, (ix)
+	jr	nz, $+5
+	set	0, (ix)
+	jr	$+5
+	res	0, (ix)
+	inc ix
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	;djnz DrawX0i
+	dec	b
+	jp	nz, DrawX0i
+	ret
+
+DrawY0i_:
+	inc ix
+	sub h
+	dec b
+	ret z
+DrawY0i:
+	bit	7, (ix)
+	jr	nz, $+5
+	set	7, (ix)
+	jr	$+5
+	res	7, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY1i_
+	djnz DrawY0i
+	ret
+DrawY1i_:
+	sub h
+	dec b
+	ret z
+DrawY1i:
+	bit	6, (ix)
+	jr	nz, $+5
+	set	6, (ix)
+	jr	$+5
+	res	6, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY2i_
+	djnz DrawY1i
+	ret
+DrawY2i_:
+	sub h
+	dec b
+	ret z
+DrawY2i:
+	bit	5, (ix)
+	jr	nz, $+5
+	set	5, (ix)
+	jr	$+5
+	res	5, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY3i_
+	djnz DrawY2i
+	ret
+DrawY3i_:
+	sub h
+	dec b
+	ret z
+DrawY3i:
+	bit	4, (ix)
+	jr	nz, $+5
+	set	4, (ix)
+	jr	$+5
+	res	4, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY4i_
+	djnz DrawY3i
+	ret
+DrawY4i_:
+	sub h
+	dec b
+	ret z
+DrawY4i:
+	bit	3, (ix)
+	jr	nz, $+5
+	set	3, (ix)
+	jr	$+5
+	res	3, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY5i_
+	djnz DrawY4i
+	ret
+DrawY5i_:
+	sub h
+	dec b
+	ret z
+DrawY5i:
+	bit	2, (ix)
+	jr	nz, $+5
+	set	2, (ix)
+	jr	$+5
+	res	2, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY6i_
+	djnz DrawY5i
+	ret
+DrawY6i_:
+	sub h
+	dec b
+	ret z
+DrawY6i:
+	bit	1, (ix)
+	jr	nz, $+5
+	set	1, (ix)
+	jr	$+5
+	res	1, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY7i_
+	djnz DrawY6i
+	ret
+DrawY7i_:
+	sub h
+	dec b
+	ret z
+DrawY7i:
+	bit	0, (ix)
+	jr	nz, $+5
+	set	0, (ix)
+	jr	$+5
+	res	0, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY0i_
+	djnz DrawY7i
+	ret
+
+; console help :
+;
+; Console help
+; <   topic name   >
+; Details :
+
+; brief : show tabbed texts as in console help
+; input : hl -> data
+; output : none
+; destroys :
+vect_show_tabbed_texts:	.export vect_show_tabbed_texts
+	push	hl
+	call	zp.clrscr
+	pop	hl
+	ld	bc, $0000
+	call	zp.puts_con
+	xor	a
+	call	zp.invline
+	ld	d, a
+	ld	e, a
+	ld	b, a
+	ld	c, (hl)
+	inc	hl
+vect_stt.update:
+	push	hl
+	push	de
+	push	bc
+	
+	push	hl
+	push	bc
+	push	de
+	
+	; save title line
+	ld	hl, (os.vbuf_addr)
+	ld	de, os.scrap
+	ld	bc, 12*7
+	push	hl
+	push	de
+	push	bc
+	ldir
+	
+	; clear screen
+	call	zp.clrscr
+	
+	; restore title line
+	pop	bc
+	pop	hl
+	pop	de
+	ldir
+	
+	pop	de
+	pop	bc
+	pop	hl
+	
+	; display entry name, centered
+	ld	a, b
+	add	a, a
+	offset_hl
+	deref_hl
+	call	zp.strlen
+	ld	a, 24
+	sub	c
+	rra
+	ld	c, a
+	ld	b, $07
+	call	zp.puts_con
+	
+	; display text
+	add	hl, de
+	ld	d, 8*24
+	ld	bc, $1000
+	call	zp.putsn_con
+	
+	; display arrows if needed
+	pop	bc
+	push	bc
+	ld	a, b
+	or	a
+	ld	bc, $0700
+	ld	a, '<'
+	call	nz, zp.putch_con
+	pop	bc
+	push	bc
+	ld	a, b
+	inc	a
+	cp	c
+	ld	bc, $0717
+	ld	a, '>'
+	call	c, zp.putch_con
+	
+	call	zp.vbufdisp
+	
+	pop	bc
+	pop	de
+	pop	hl
+	
+vect_stt.loop:
+	call	zp.getch
+	
+	cp	k_left
+	jr	z, vect_stt.prev
+	cp	k_right
+	jr	z, vect_stt.next
+	cp	k_up
+	jr	z, vect_stt.scroll_up
+	cp	k_down
+	jr	z, vect_stt.scroll_down
+	cp	'q'
+	ret	z
+	cp	'Q'
+	ret	z
+	cp	k_enter
+	ret	z
+	jr	vect_stt.loop
+
+vect_stt.prev:
+	ld	a, b
+	or	a
+	jr	z, vect_stt.loop
+	dec	b
+	jp	vect_stt.update
+
+vect_stt.next:
+	ld	a, b
+	inc	a
+	cp	c
+	jr	nc, vect_stt.loop
+	inc	b
+	jp	vect_stt.update
+
+vect_stt.scroll_up:
+	ld	a, d
+	or	e
+	jr	z, vect_stt.loop
+	push	hl
+	ld	hl, -24
+	add	hl, de
+	ex	de, hl
+	pop	hl
+	jp	vect_stt.update
+
+vect_stt.scroll_down:
+	push	bc
+	push	hl
+	ld	a, b
+	add	a, a
+	offset_hl
+	deref_hl
+	add	hl, de
+	call	zp.strlen
+	ld	hl, 24*8
+	cmp_hlbc
+	ld	hl, 24
+	jr	nc,	$+4
+	add	hl, de
+	ex	de, hl
+	pop	hl
+	pop	bc
+	jp	nc, vect_stt.update
+	jr	vect_stt.loop
+
+; console help texts
+help.data:	.export help.data
+	.db	"Console Help", 0
+	.db	9
+	.dw	help.reboot
+	.dw help.host
+	.dw help.cls
+	.dw help.info
+	.dw	help.list
+	.dw help.del
+	.dw help.mem
+	.dw help.run
+	.dw help.chronos
+
+	    ;012345678901234567890123
+help.reboot:
+	.db "reboot", 0
+	.db "Reboots the calculator.", 0
+
+help.host:
+	.db "host", 0
+	.db "Calculator enters host\nmode\n"
+	.db "In host mode the calc\n"
+	.db "can communicate with PC\n"
+	.db "to exchange files"
+	.db 0
+
+help.cls:
+	.db "cls", 0
+	.db "Clear console screen", 0
+
+help.info:
+	.db "info", 0
+	.db "Access OS info screen", 0
+
+help.list:
+	.db "list", 0
+	.db "List filesystem contents", 0
+
+help.del:
+	.db "del", 0
+	.db "Deletes a file.", 0
+
+help.mem:
+	.db "mem", 0
+	.db "Display memory info", 0
+
+help.run:
+	.db "run", 0
+	.db "Run an executable file\n"
+	.db "The file must be a valid"
+	.db "XOS executable (see SDK)"
+	.db 0
+
+help.chronos:
+	.db "chronos", 0
+	.db "Start a timer\n"
+	.db "The timer will measure\n"
+	.db "elapsed time in milli-\n"
+	.db "seconds until you press\n"
+	.db "[MODE] to exit at which\n"
+	.db "point it will display\n"
+	.db "elapsed time as a 32bit\n"
+	.db "hexadecimal value."
+	.db 0
+
+#include "lib/commands.z80"
+#include "lib/flash.z80"
+
+#include "commands/tilp.z80"
+#include "commands/base.z80"
+#include "commands/fs.z80"
+
+#include "data/font_6x8.inc"
+
+.export	vect_forget_commands
+.export	vect_memorize_command
+.export	vect_recall_command
+
+.export	vect_flashwrite
+.export	vect_flasherase
+
+.export	cmd_REBOOT
+.export	cmd_HELP
+.export	cmd_CLS
+.export	cmd_TOUCH
+.export	cmd_DEL
+.export	cmd_MEM
+.export	cmd_LIST
+.export	cmd_CHRONOS
+.export	zp.host
+
+.export	os.font_6x8
+
+#if $ > $8000
+!!!
+.echo "Page 1C is too large...\n\n"
+#endif
+
+.echo	"\nPage 1C: "
+.echo	$-$4000
+.echo	" bytes used\t"
+.echo	(($-$4000)*100)/$4000
+.echo	"% filled\n"
+
+.end

@@ -1,0 +1,1273 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+;
+; fp format : same as TIOS for compat reasons...
+;
+;	* 1 "type" byte : sign (bit 7) and real/cplx (bits 3 and 2 : both 0 or both 11)
+;	* 1 exponent byte : origin (zero) at $80
+;	* 7 significand bytes in BCD (so 14 digits)
+;
+; note : we will NOT EVER bother implementing complex arithmetic. The presence of
+; complex markers is not noticed by the routines and the effect of that presence
+; are undefined
+;
+
+
+; brief : push a fp number onto stack
+; input : hl -> fp number
+; output : none
+; destroys : none
+vect_fp_push:
+	push	hl
+	push	de
+	push	bc
+	push	af
+	
+	push	hl
+	
+	; create entry
+	ld	bc, 11
+	call	zp.malloc
+	
+	; get address of fps stack top (previous entry)
+	ld	de, (os.fpstack)
+	
+	; store address of new entry
+	ld	(os.fpstack), hl
+	
+	; store it at the beginning of new entry (backward single linking for traversal and pop)
+	ld	(hl), e
+	inc	hl
+	ld	(hl), d
+	inc	hl
+	ex	de, hl
+	
+	pop	hl
+	
+	; copy data to stack space
+	ld	bc, 9
+	ldir
+	
+	pop	af
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+; brief : pop a fp number from the stack
+; input : de -> fp number (address)
+; output : fp number written to de
+; destroys : none
+vect_fp_pop:
+	push	af
+	push	hl
+	
+	ld	hl, (os.fpstack)
+	
+	ld	a, h
+	or	l
+	jr	z, vect_fp_pop.end
+	
+	push	bc
+	push	de
+	
+	; "remove" entry from stack by storing pointer to previous entry in FPS
+	push	hl
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	ld	(os.fpstack), bc
+	
+	; copy data to desired location
+	ld	bc, 9
+	ldir
+	
+	pop	hl
+	
+	; free memory (and preserve a in the process to comply with SDK docs)
+	call	zp.free
+	
+	pop	de
+	pop	bc
+	
+vect_fp_pop.end:
+	pop	hl
+	pop	af
+	ret
+
+; brief : copy the topmost element of the fp stack to a fp number
+; input : de -> fp number (address)
+; output : fp number written to de
+; destroys : none
+vect_fp_top:
+	push	af
+	push	hl
+	push	de
+	push	bc
+	
+	ld	hl, (os.fpstack)
+	ld	bc, 9
+	ldir
+	
+	pop	bc
+	pop	de
+	pop	hl
+	pop	af
+	ret
+
+; brief : drop a fp number from the stack
+; input : none
+; output : none
+; destroys : none
+vect_fp_drop:
+	push	de
+	; make sure we will not affect any ram
+	ld	de, $0000
+	call	vect_fp_pop
+	pop	de
+	ret
+	
+; 	push	af
+; 	push	hl
+; 	
+; 	ld	hl, (os.fpstack)
+; 	
+; 	ld	a, h
+; 	or	l
+; 	jr	z, vect_fp_drop.end
+; 	
+; 	push	de
+; 	push	bc
+; 	
+; 	; "remove" entry from stack by storing pointer to previous entry in FPS
+; 	push	hl
+; 	ld	c, (hl)
+; 	inc	hl
+; 	ld	b, (hl)
+; 	inc	hl
+; 	ld	(os.fpstack), bc
+; 	pop	hl
+; 	
+; 	; free memory
+; 	call	zp.free
+; 	
+; 	pop	de
+; 	pop	bc
+; 	
+; vect_fp_drop.end:
+; 	pop	hl
+; 	pop	af
+	ret
+
+; brief : copy the content of a fp number into another
+; input : hl -> source fp, de -> dest fp
+; output : none
+; destroys : none
+vect_fp_cpy:
+	push	hl
+	push	de
+	push	bc
+	ld	bc, 9
+	ldir
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+; brief : converts a fp number to a string in scientific representation
+; input : hl -> fp number, de -> string buffer (need room for 20chars), c -> precision
+; output : de incremented accordingly
+; destroys : a, bc
+vect_ftoa:
+; 	call	zp.htoa_word
+; 	
+; 	ld	a, ':'
+; 	ld	(de), a
+; 	inc	de
+; 	
+	
+	bit	7, (hl)
+	inc	hl
+	jr	z, vect_ftoa.nosign
+	
+	ld	a, '-'
+	ld	(de), a
+	inc	de
+vect_ftoa.nosign:
+	push	hl
+	inc	hl
+	
+	; set upper nibble to proper value (no need for add a, '0' :D)
+	ld	a, $30
+	
+	; put first digit
+	rld
+	ld	(de), a
+	inc	de
+	; put decimal point
+	ex	de, hl
+	ld	(hl), '.'
+	inc	hl
+	ex	de, hl
+	
+	; put mantissa nibble by nibble
+	ld	b, 13
+vect_ftoa.mantissa:
+	rld
+	dec	c
+	jr	z, vect_ftoa.mskip
+	ld	(de), a
+	inc	de
+	bit	0, b
+	jr	z, $+5
+	rld
+	inc	hl
+	djnz	vect_ftoa.mantissa
+	jr	vect_ftoa.mdone
+	
+	; perform "missing" rld's to "restore" fp number
+vect_ftoa.mskip:
+	rld
+	bit	0, b
+	jr	nz, vect_ftoa.mdone
+	rld
+	
+vect_ftoa.mdone:
+	pop	hl
+	
+	; put (scientific) exponent sign
+	ld	a, 'e'
+	ld	(de), a
+	inc	de
+	
+	; put exponent digits
+	ld	a, (hl)
+	sub	$80
+	
+	jr	nc, vect_ftoa.exp
+	ex	de, hl
+	ld	(hl), '-'
+	inc	hl
+	ex	de, hl
+	neg
+	
+vect_ftoa.exp:
+	call	zp.dtoa_byte
+	
+	dec	hl
+	ret
+
+
+vect_atof.reduce:
+	; make sure we skip any leading zero...
+	ld	a, b
+	cp	14
+	jr	nz, vect_atof.nored
+	bit	7, c
+	jr	nz, vect_atof.loop
+	; decrease exponent
+	ex	(sp), hl
+	dec	(hl)
+	ex	(sp), hl
+	jr	nz, vect_atof.loop
+vect_atof.nored:
+	ld	a, $30
+	jr	vect_atof.store
+
+; brief : converts a string onto a fp number
+; input : de -> string, hl -> fp number
+; ouptut : CF set in case of invalid string, hl -> fp number, de at end of number string
+; destryoys : a, bc
+vect_atof:
+	ld	bc, $0E80
+	ld	(hl), $00
+	
+	ld	a, (de)
+	cp	'-'
+	jr	nz, vect_atof.pos
+	ld	(hl), $80
+	inc	de
+vect_atof.pos:
+	inc	hl
+	push	hl
+	ld	(hl), $00
+	inc	hl
+	
+vect_atof.loop:
+	ld	a, (de)
+	inc	de
+	
+	or	a
+	jr	z, vect_atof.finish
+	
+	; check for decimal point
+	cp	'.'
+	jr	z, vect_atof.dec
+	
+	; check for exponent
+	cp	'e'
+	jr	z, vect_atof.exp
+	
+	; check for valid digit
+	cp	'0'
+	jr	z, vect_atof.reduce
+	jr	c, vect_atof.finish
+	cp	'9'+1
+	jr	nc, vect_atof.finish
+	
+vect_atof.store:
+	; store a bcd digit
+	rld
+	
+	; increase exponent
+	bit	7, c
+	jr	z, $+3
+	inc	c
+	
+	; increase fp pointer every other digit
+	bit	0, b
+	jr	z, $+3
+	inc	hl
+	
+	; check for max digit count
+	djnz	vect_atof.loop
+	
+vect_atof.end:
+	pop	hl
+	
+	; set exponent if not already done
+	bit	7, c
+	jr	z, $+3
+	ld	(hl), c
+	
+	dec	(hl)
+	dec	hl
+	
+	or	a
+	ret
+
+vect_atof.finish:
+	dec	de
+	ld	a, b
+	cp	14
+	jr	c, vect_atof.finish.loop
+	; special case for null input : set exponent to 1 to avoid 0e-1
+	inc	c
+vect_atof.finish.loop:
+	xor	a
+	
+	; store a bcd digit
+	rld
+	
+	; increase fp pointer every other digit
+	bit	0, b
+	jr	z, $+3
+	inc	hl
+	
+	; check for max digit count
+	djnz	vect_atof.finish.loop
+	
+	jr	vect_atof.end
+
+vect_atof.dec:
+	bit	7, c
+	jr	nz, vect_atof.decok
+vect_atof.error:
+	pop	hl
+	dec	hl
+	ccf
+	ret
+	
+vect_atof.decok:
+	; store exponent
+	ex	(sp), hl
+	ld	(hl), c
+	ex	(sp), hl
+	
+	; make sure we won't be confused by multiple decimal points
+	ld	c, 0
+	jr	vect_atof.loop
+
+vect_atof.exp:
+	push	hl
+	
+	ld	a, (de)
+	sub	'-'
+	push	af
+	jr	nz, $+3
+	inc	de
+	
+	call	get_exp
+	jr	nc, $+6
+	pop	af
+	pop	hl
+	jr	vect_atof.error
+	
+	pop	af
+	or	a
+	jr	nz, $+6
+	ld	a, l
+	neg
+	ld	l, a
+	
+	ld	a, l
+	add	a, c
+	
+	pop	hl
+	
+	ex	(sp), hl
+	add	a, (hl)
+	ld	(hl), a
+	ex	(sp), hl
+	ld	c, 0
+	jr	vect_atof.loop
+
+; brief : get exponent
+; input : a -> ascii letter
+; output : CF set if invalid digit, l -> number
+; destroys : 
+get_exp:
+	ld	a, (de)
+	sub	'0'
+	ret	c
+	cp	10
+	ccf
+	ret	c
+	
+	ld	l, a
+	
+	inc	de
+	ld	a, (de)
+	sub	'0'
+	ccf
+	ret	nc
+	cp	10
+	ret	nc
+	
+	inc	de
+	
+	push	af
+	ld	a, l
+	add	a, a
+	add	a, a
+	add	a, l
+	add	a, a
+	ld	l, a
+	pop	af
+	
+	add	a, l
+	ld	l, a
+	or	a
+	ret
+
+; brief : float -> *unsigned* integer conversion
+; input : hl -> fp number
+; output : CF set in case of failure (input too large), hl -> integer (0 on failure)
+; destroys : a, bc
+; note : fractional part is truncated, not rounded
+vect_ftoi:
+	push	de
+	push	hl
+	
+	ld	de, 0
+	ld	c, d
+	inc	hl
+	
+	; check exponent to determine number of significant digits
+	ld	a, (hl)
+	inc	hl
+	sub	$80
+	jr	c, vect_ftoi.error
+	cp	5
+	jr	nc, vect_ftoi.error
+	ld	b, a
+	xor	a
+	
+	; first iteration (mult10 optimized out)
+	rld
+	push	af
+	offset_de
+	pop	af
+	
+	inc	c
+	
+	; check for null exponent
+	push	af
+	xor	a
+	or	b
+	jr	nz, vect_ftoi.preloop
+	pop	af
+	; restore...
+	rld
+	jr	vect_ftoi.end
+	
+vect_ftoi.preloop:
+	pop	af
+	
+vect_ftoi.loop:
+	push	bc
+	ex	de, hl
+	ld	b, h
+	ld	c, l
+	add	hl, hl
+	add	hl, hl
+	add	hl, bc
+	add	hl, hl
+	ex	de, hl
+	pop	bc
+	
+	; catch overflow
+	jr	c, vect_ftoi.error
+	
+	rld
+	push	af
+	offset_de
+	pop	af
+	
+	bit	0, c
+	jr	z, $+5
+	rld
+	inc	hl
+	
+	inc	c
+	djnz	vect_ftoi.loop
+	
+vect_ftoi.end:
+	bit	0, c
+	jr	z, $+5
+	rld
+	inc	hl
+	
+	pop	hl
+	
+	; this code allows signed conversion but further restricts input range
+	; and require extra check in inner loop
+; 	bit	7, (hl)
+; 	ex	de, hl
+; 	jr	z, $+9
+; 	ex	de, hl
+; 	ld	hl, 0
+; 	or	a
+; 	sbc	hl, de
+	
+	ex	de, hl
+	pop	de
+	or	a
+	ret
+
+vect_ftoi.error:
+	pop	hl
+	ld	hl, 0
+	pop	de
+	scf
+	ret
+
+; brief : *unsigned* integer -> float conversion
+; input : hl -> integer, de -> fp number
+; output : hl -> fp number
+; destroys : a, bc, de
+vect_itof:
+	push	hl
+	push	de
+	ld	hl, fp.0
+	ld	bc, 9
+	ldir
+	pop	de
+	pop	hl
+	
+	; check for null input
+	ld	a, h
+	or	l
+	ex	de, hl
+	ret	z
+	ex	de, hl
+	
+	ex	de, hl
+	inc	hl
+	push	hl
+	ld	(hl), $84
+	inc	hl
+	ex	de, hl
+	
+	ld	a, $80
+	
+	ld	bc, -10000
+	call	vect_itof.sub
+	ld	bc, -1000
+	call	vect_itof.sub
+	ld	bc, -100
+	call	vect_itof.sub
+	ld	c, -10
+	call	vect_itof.sub
+	ld	c, b
+	call	vect_itof.sub
+	
+	; fix position of last digit in mantissa if needed (number of digit is odd)
+	ex	de, hl
+	and	$40
+	jr	z, $+4
+	rld
+	
+	pop	hl
+	dec	hl
+	ret
+	
+vect_itof.sub:
+	and	$C0
+	or	$0F
+vect_itof._loop:
+	inc	a
+	add	hl, bc
+	jr	c, vect_itof._loop
+	sbc	hl, bc
+	
+	bit	7, a
+	jr	z, vect_itof.store
+	; leading digit : skip if null
+	res	7, a
+	ld	c, a
+	and	$0F
+	ld	a, c
+	jr	nz, vect_itof.store
+	; decrease exponent
+	set	7, a
+	inc	sp
+	inc	sp
+	ex	(sp), hl
+	dec	(hl)
+	ex	(sp), hl
+	dec	sp
+	dec	sp
+	ret
+vect_itof.store:
+	; write digit
+	ex	de, hl
+	rld
+	ex	de, hl
+	
+	; move to next byte if necessary
+	bit	6, a
+	jr	z, $+3
+	inc	de
+	
+	; update byte boundary flag
+	xor	$40
+	ret
+
+; brief : adjust exponent and mantissa to ensure that the number is in "normal" form
+; input : hl -> fp number
+; output : none
+; destroys : a
+vect_fp_normalize:
+	push	bc
+	
+	inc	hl
+	
+	ld	b, 13
+	ld	c, (hl)
+	inc	hl
+	
+vect_fp_normalize.loop:
+	ld	a, (hl)
+	and	$F0
+	jr	nz, vect_fp_normalize.done
+	dec	c
+	call	vect_fp_shl
+	djnz	vect_fp_normalize.loop
+	ld	a, (hl)
+	and	$F0
+	jr	z, vect_fp_normalize.zero
+vect_fp_normalize.done:
+	dec	hl
+	ld	(hl), c
+	dec	hl
+vect_fp_normalize.zero:
+	pop	bc
+	ret
+
+; brief : set a fp number to a given constant
+; input : a -> constant id, hl -> fp number
+; output : fp number in hl set to corresponding constant
+; destroys : none
+vect_fp_const:
+	push	hl
+	push	de
+	push	bc
+	
+	ex	de, hl
+	ld	h, 0
+	ld	l, a
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	ld	bc, fp.0
+	add	hl, bc
+	ld	bc, 9
+	ldir
+	
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+; some constants : standard precision (TIOS) is 14 decimal places, 30 are stored for extra precision
+; in some algorithms and in case users wish to increase the precision of fp math
+fp.0:
+	.db $00, $80, $00, $00, $00, $00, $00, $00, $00, 	$00, $00, $00, $00, $00, $00, $00 ;, $00
+fp.1:
+	.db $00, $80, $10, $00, $00, $00, $00, $00, $00, 	$00, $00, $00, $00, $00, $00, $00 ;, $00
+fp.e:
+	.db $00, $80, $27, $18, $28, $18, $28, $45, $90, 	$45, $23, $53, $60, $28, $74, $71 ;, $35
+fp.pi:
+	.db $00, $80, $31, $41, $59, $26, $53, $58, $97, 	$93, $23, $84, $62, $64, $33, $83 ;, $28
+fp.ln10:
+	.db $00, $80, $23, $02, $58, $50, $92, $99, $40, 	$45, $68, $40, $17, $99, $14, $54 ;, $68
+fp.ln2:
+	.db $00, $7F, $69, $31, $47, $18, $05, $59, $94, 	$53, $09, $41, $72, $32, $12, $14 ;, $58
+; ; CORDIC table for ln/exp
+; fp.ln1.1:
+; 	.db $00, $7E, $95, $31, $01, $79, $80, $43, $24, 	$86, $00, $43, $95, $21, $23, $28, $07
+; fp.ln1.01:
+; 	.db $00, $7D, $99, $50, $33, $08, $53, $16, $80, 	$82, $84, $82, $15, $35, $75, $44, $26
+; fp.ln1.001:
+; 	.db $00, $7C, $99, $95, $00, $33, $30, $83, $53, 	$31, $66, $80, $93, $98, $92, $05, $35
+; fp.ln1.0001:
+; 	.db $00, $7C, $99, $99, $50, $00, $33, $33, $08, 	$33, $53, $33, $16, $66, $80, $95, $11
+; fp.ln1.0001:
+; 	.db $00, $7C, $99, $99, $50, $00, $33, $33, $08, 	$33, $53, $33, $16, $66, $80, $95, $11
+
+; √2
+; 	≈ 1.41421 35623 73095 04880 16887 24209 69807
+; √3
+; 	≈ 1.73205 08075 68877 29352 74463 41505 87236
+; √5
+; 	≈ 2.23606 79774 99789 69640 91736 68731 27623
+
+; brief : compares two numbers
+; input : hl, de -> fp number
+; output : same flag output as 8bit cp (only Z and C are relevant)
+; destroys : a
+vect_fp_cmp:
+	push	bc
+	push	hl
+	push	de
+	
+	; sign
+	ld	a, (de)
+	cp	(hl)
+	jr	nz, vect_fp_cmp.end
+	
+	ex	de, hl
+	
+	ld	b, 8
+	; exponent and mantissa
+vect_fp_cmp.loop:
+	inc	hl
+	inc	de
+	ld	a, (de)
+	cp	(hl)
+	jr	nz, vect_fp_cmp.end
+	djnz	vect_fp_cmp.loop
+	
+vect_fp_cmp.end:
+	pop	de
+	pop	hl
+	pop	bc
+	ret
+
+; brief : fp -> bool conversion (non destructive)
+; input : hl -> fp number
+; output : a and Z flag reflect conversion result
+; destroys : none
+vect_fp_bool:
+	push	bc
+	push	hl
+	
+	inc	hl
+	
+	xor	a
+	ld	b, 7
+	
+	inc	hl
+	or	(hl)
+	djnz	$-2
+	
+	pop	hl
+	pop	bc
+	ret	z
+	
+	ld	a, $FF
+	ret
+
+; brief : discards the sign of a fp number
+; input : hl -> fp number
+; destroys : none
+vect_fp_abs:
+	res 7, (hl)
+	ret
+
+; brief : discards the value of a fp, keeping only its sign
+; input : hl -> fp number
+; output : hl -> fp number in {-1, 0, 1}, a -> all digits OR'ed together
+; destroys : none
+vect_fp_sign:
+	push	bc
+	ld	bc, 8
+	add	hl, bc
+	
+	; zero out most of the significand
+	xor	a
+	ld	b, 6
+	ld	c, a
+	
+	or	(hl)
+	ld	(hl), c
+	dec	hl
+	djnz	$-3
+	
+	; set first byte of the significand
+	; first digit will be one if any of the digit was non null
+	or	(hl)
+	jr	z, $+4
+	ld	c, $10
+	ld	(hl), c
+	dec	hl
+	pop	bc
+	
+	; set exponent : zero
+	ld	(hl), $80
+	dec	hl
+	
+	or	a
+	jr	nz, $+4
+	; zero out sign byte
+	ld	(hl), a
+	ret
+	
+; 	; we slightly modify the first byte to make room for infinity and nan numbers
+; 	; without alering the behavior of this function
+; 	ld	a, (hl)
+; 	and	$80
+	
+	; true = !false ...
+	ld	a, $FF
+	ret
+
+; brief : negates a fp number
+; input : hl -> fp number
+; destroys : none
+vect_fp_neg:
+	bit	7, (hl)
+	jr	z, $+5
+	res	7, (hl)
+	ret
+	set	7, (hl)
+	ret
+
+; brief : adjust two numbers for add/sub
+; input : hl, de -> fp numbers, at exponent
+; destroys : a, b
+vect_fp_adjust:
+	; compare exponents
+	ld	a, (de)
+	sub	(hl)
+	ret	z
+	
+	push	af
+	jp	p, $+5
+	neg
+	
+	ld	b, a
+	
+	cp	14
+	jr	c, $+5
+	pop	af
+	scf
+	ret
+	
+	pop	af
+	jr	c, vect_fp_adjust.de
+	
+	; hl is smallest -> adjust exponent
+	ld	a, (de)
+	ld	(hl), a
+	
+vect_fp_adjust.hl:
+	xor	a
+	inc	hl
+	
+	call	vect_fp_shr
+	djnz	$-3
+	
+	dec	hl
+	ret
+	
+vect_fp_adjust.de:
+	ex	de, hl
+	call	vect_fp_adjust.hl
+	ex	de, hl
+	ret
+
+; brief : round hl towards zero (remove any float part)
+; input : hl -> fp number
+; output : hl -> result
+; destroys : a, bc
+vect_fp_int:
+	push	de
+	push	hl
+	
+	inc	hl
+	
+	ld	a, (hl) 
+	sub	$80
+	jr	nc, $+4
+	ld	a, $FF
+	
+	ld	c, 7
+	inc	a
+	jr	z, vect_fp_int.clear
+	
+	cp	14
+	jr	nc, vect_fp_int.done
+	
+	inc	hl
+	dec	c
+	sub	2
+	jr	z, vect_fp_int.clear
+	jr	nc, $-6
+	
+	; clear "isolated" digit
+	dec	hl
+	ld	a, (hl)
+	and	$0F
+	ld	(hl), a
+	
+vect_fp_int.clear:
+	; clear remaining digits (all grouped)
+	ld	b, c
+	xor	a
+	
+	inc	hl
+	ld	(hl), a
+	djnz	$-2
+	
+vect_fp_int.done:
+	pop	hl
+	pop	de
+	ret
+
+; brief : fp equivalent of "inc hl"
+; input : hl -> fp number
+; output : hl -> result
+; destroys : a, bc
+vect_fp_inc:
+	push	de
+	ex	de, hl
+	ld	a, 1
+	ld	hl, os.scrap
+	call	zp.fp_const
+	ex	de, hl
+	call	vect_fp_add
+	pop	de
+	ret
+
+; brief : fp equivalent of "dec hl"
+; input : hl -> fp number
+; output : hl -> result
+; destroys : a, bc
+vect_fp_dec:
+	push	de
+	ex	de, hl
+	ld	a, 1
+	ld	hl, os.scrap
+	call	zp.fp_const
+	ex	de, hl
+	call	vect_fp_sub
+	pop	de
+	ret
+
+; brief : fp equivalent of "add hl, de"
+; input : hl, de -> fp numbers
+; output : hl -> result
+; destroys : a, bc
+vect_fp_add:
+	; compare signs
+	ld	a, (de)
+	xor	(hl)
+	jr	z, vect_fp_add.signskip
+	
+	; which one is negative?
+	bit	7, (hl)
+	jr	z, vect_fp_sub.signskip
+	ex	de, hl
+	jr	vect_fp_sub.signskip
+	
+vect_fp_add.signskip:
+	inc	hl
+	inc	de
+	
+	; adjust numbers for addition
+	call	vect_fp_adjust
+	; if exp diff is too large for actual addition
+	jr	c, vect_fp_add.end
+	
+	inc	hl
+	inc	de
+	
+	ld	c, 7
+	or	a
+	call	vect_bcd_adc
+	
+	dec	hl
+	dec	de
+	
+	jr	nc, vect_fp_add.end
+	
+	; increase exponent
+	inc	(hl)
+	
+	inc	hl
+	; shift digits and put a one
+	ld	a, 1
+	call	vect_bcd_shr
+	dec	hl
+vect_fp_add.end:
+	dec	hl
+	dec	de
+	
+	; ensure normal form (not necessary if inputs were in normal form already...)
+	jp	vect_fp_normalize
+	;ret
+
+; brief : fp equiv of "or a \ sbc hl, de"
+; input : hl, de -> fp numbers
+; output : hl -> result
+; destroys : a, bc, fp number in de
+vect_fp_sub:
+	; compare signs
+	ld	a, (de)
+	xor	(hl)
+	jr	nz, vect_fp_add.signskip
+	
+vect_fp_sub.signskip:
+	inc	hl
+	inc	de
+	
+	; adjust numbers for addition
+	call	vect_fp_adjust
+	; if exp diff is too large for actual addition
+	jr	c, vect_fp_sub.end
+	
+	inc	hl
+	inc	de
+	
+	ld	c, 7
+	or	a
+	call	vect_bcd_sbc
+	
+	dec	hl
+	dec	de
+	
+	; set sign flag according to last carry
+	rra
+	and	$80
+	jr	z, vect_fp_sub.end
+	
+	; set sign flag
+	dec	hl
+	xor	(hl)
+	ld	(hl), a
+	inc	hl
+	
+	inc	hl
+	;ld	b, 7
+	call	vect_bcd_cpl
+	dec	hl
+	
+vect_fp_sub.end:
+	dec	hl
+	dec	de
+	
+	; ensure normal form
+	jp	vect_fp_normalize
+
+; brief : fp equiv of "zp.mult_hl_de"
+; input : hl, de -> fp numbers
+; output : hl -> result
+; destroys : a, bc, fp number in de
+; warning : if hl and de are equal (the pointers, not the values) the result will be borked
+vect_fp_mult:
+	; compute result's sign
+	ld	a, (de)
+	xor	(hl)
+	ld	(hl), a
+	
+	inc	hl
+	inc	de
+	
+	; compute result's exponent
+	; todo : error checking
+	ld	a, (de)
+	sub	$80 - 1
+	add	a, (hl)
+	ld	(hl), a
+	
+	inc	hl
+	inc	de
+	
+	; check for zero (assume normal form for both numbers)
+	ld	a, (de)
+	or	a
+	jr	z, vect_fp_mult.null
+	ld	a, (hl)
+	or	a
+	jr	nz, vect_fp_mult.notnull
+vect_fp_mult.null:
+	; ensure normal form for result exponent
+	dec	de
+	dec	hl
+	ld	(hl), $80
+	
+	dec	hl
+	dec	de
+	ret
+	
+vect_fp_mult.notnull:
+	; check for one ?
+	
+	; restoring algo
+	;	* build table of nibble-multiples of de [9*8]
+	;	* use composite shifter and composite adder over hl and de
+	;	* multiprecision result in mantissa of both hl and de, truncate ready
+	
+	; build mult table (stored in os.scrap)
+	ld	c, 7
+	call	vect_bcd_mlt_tbl
+	
+	;ld	c, 7
+	call	vect_bcd_mult
+	
+	dec	hl
+	dec	hl
+	dec	de
+	dec	de
+	
+	jp	vect_fp_normalize
+
+; brief : fp division of hl by de
+; input : hl -> dividend, de -> divisor
+; output : hl -> result
+; destroys : a, bc, fp number in de
+vect_fp_div:
+	; compute result's sign
+	ld	a, (de)
+	xor	(hl)
+	ld	(hl), a
+	
+	inc	hl
+	inc	de
+	
+	; compute result's exponent
+	; todo : error checking
+	ld	a, (de)
+	cpl
+	add	a, $81
+	add	a, (hl)
+	ld	(hl), a
+	
+	inc	hl
+	inc	de
+	
+	; check for zero (assume normal form for both numbers)
+	ld	a, (de)
+	or	a
+	jr	z, vect_fp_div.infinity
+	ld	a, (hl)
+	or	a
+	jr	nz, vect_fp_div.notnull
+
+vect_fp_div.null:
+	; ensure normal form for result exponent
+	dec	de
+	dec	hl
+	ld	(hl), $80
+	
+	dec	hl
+	dec	de
+	ret
+
+vect_fp_div.infinity:
+	; todo : add infinity bit in first fp byte and extend all fp routines accordingly
+	
+	ret
+
+vect_fp_div.notnull:
+	; actual division here
+	
+	ld	c, 7
+	call	vect_bcd_div
+	
+	dec	hl
+	dec	de
+	dec	hl
+	dec	de
+	
+	jp	vect_fp_normalize
+
+; brief : shift fp mantissa one digit to left
+; input : hl -> address of mantissa, a (lower nibble) -> new digit to insert
+; output : a -> discarded digit (lower nibble)
+; destroys : none
+vect_fp_shl:
+	push	bc
+	ld	c, 7
+	call	vect_bcd_shl
+	pop	bc
+	ret
+
+; brief : shift fp mantissa one digit to left
+; input : hl -> address of mantissa, a (lower nibble) -> new digit to insert
+; ouptut : a -> discarded digit (lower nibble)
+; destroys : none
+vect_fp_shr:
+	push	bc
+	ld	c, 7
+	call	vect_bcd_shr
+	pop	bc
+	ret
+
+vect_fp_pow:
+	
+	ret
+
+vect_fp_idiv:
+	
+	ret
+
+vect_fp_mod:
+	
+	ret

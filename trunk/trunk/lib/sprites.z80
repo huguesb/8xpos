@@ -1,0 +1,296 @@
+.nolist
+;Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+; brief : write a sprite to vbuf
+; input : de -> sprite data, b -> sprite height, l -> y coord, c -> x coord, h -> flags (0 : XOR, 1 : 0R)
+; output : none
+; destroys : a, bc, de, hl
+vect_putsprite:
+	push	de
+	
+	ld	a, h
+	
+	ld	h, 0
+	ld	d, h
+	ld	e, l
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	add	hl, hl
+	
+	ld	e, c
+	srl	e
+	srl	e
+	srl	e
+	add	hl, de
+	
+	ld	de, (os.vbuf_addr)
+	add	hl, de
+	pop	de
+	
+	push	af
+	
+	ld	a, c
+	and	$07
+	jp	nz, vect_putsprite.unaligned
+	
+	; aligned sprite from here : simple and fast
+	
+	; (38 T per row fixed + 35 per loop)
+	; not multiples of 8 rows : 179 T-states to amort over the rest
+	; multiples of 8 rows : 64 T-states to amort over the rest
+	; eg :
+	;		3 rows -> ~110 T per row
+	;		8 rows -> ~50 T per row
+	;		16 rows -> ~47 T per row
+	;		17 rows -> ~53 T per row
+	
+	ld	a, b				; 4
+	and	$07					; 7
+	jp	z, vect_putsprite.agood	; 10
+	sub	8					; 7
+	neg						; 8
+	ld	c, a				; 4
+	add	a, a				; 4
+	add	a, a				; 4
+	add	a, c				; 4
+	ld	c, a				; 4
+	ld	a, b				; 4
+	and	$F8					; 7
+	rra						; 4
+	rra						; 4
+	rra						; 4
+	inc	a					; 4
+	ld	b, a				; 4
+	pop	af					; 10
+	rrca					; 4
+	ld	a, b				; 4
+	push	af				; 11
+	ld	b, 0				; 7
+	push	ix				; 15
+	ld	ix, vect_putsprite.a8_xor	; 14
+	jp	c, $+7				; 10
+	ld	ix, vect_putsprite.a8_or	; 14
+	add	ix, bc				; 15
+	ld	bc, 12				; 10
+	ex	(sp), ix			; 23
+	ret						; 10
+	
+vect_putsprite.agood:
+	pop	af					; 10
+	rrca					; 4
+	
+	ld	a, b				; 4
+	and	$F8					; 7
+	rra						; 4
+	rra						; 4
+	rra						; 4
+	ld	bc, 12				; 10
+	
+vect_putsprite.a8l_xor:
+	push	af				; 11
+	
+vect_putsprite.a8_xor:
+	ld	a, (de)				; 7
+	inc	de					; 6
+	xor	(hl)				; 7
+	ld	(hl), a				; 7
+	add	hl, bc				; 11
+	
+	ld	a, (de)
+	inc	de
+	xor	(hl)
+	ld	(hl), a
+	add	hl, bc
+	
+	ld	a, (de)
+	inc	de
+	xor	(hl)
+	ld	(hl), a
+	add	hl, bc
+	
+	ld	a, (de)
+	inc	de
+	xor	(hl)
+	ld	(hl), a
+	add	hl, bc
+	
+	ld	a, (de)
+	inc	de
+	xor	(hl)
+	ld	(hl), a
+	add	hl, bc
+	
+	ld	a, (de)
+	inc	de
+	xor	(hl)
+	ld	(hl), a
+	add	hl, bc
+	
+	ld	a, (de)
+	inc	de
+	xor	(hl)
+	ld	(hl), a
+	add	hl, bc
+	
+	ld	a, (de)
+	inc	de
+	xor	(hl)
+	ld	(hl), a
+	add	hl, bc
+	
+	pop	af					; 10
+	dec	a					; 4
+	jp	nz, vect_putsprite.a8l_xor	; 10
+	ret						; 10
+
+vect_putsprite.a8l_or:
+	push	af				; 11
+	
+vect_putsprite.a8_or:
+	ld	a, (de)				; 7
+	inc	de					; 6
+	or	(hl)				; 7
+	ld	(hl), a				; 7
+	add	hl, bc				; 11
+	
+	ld	a, (de)
+	inc	de
+	or	(hl)
+	ld	(hl), a
+	add	hl, bc
+	
+	ld	a, (de)
+	inc	de
+	or	(hl)
+	ld	(hl), a
+	add	hl, bc
+	
+	ld	a, (de)
+	inc	de
+	or	(hl)
+	ld	(hl), a
+	add	hl, bc
+	
+	ld	a, (de)
+	inc	de
+	or	(hl)
+	ld	(hl), a
+	add	hl, bc
+	
+	ld	a, (de)
+	inc	de
+	or	(hl)
+	ld	(hl), a
+	add	hl, bc
+	
+	ld	a, (de)
+	inc	de
+	or	(hl)
+	ld	(hl), a
+	add	hl, bc
+	
+	ld	a, (de)
+	inc	de
+	or	(hl)
+	ld	(hl), a
+	add	hl, bc
+	
+	pop	af					; 10
+	dec	a					; 4
+	jp	nz, vect_putsprite.a8l_or	; 10
+	ret						; 10
+
+vect_putsprite.unaligned:
+	ld	c, a			; 4
+	pop	af
+	rlca				; 4
+	
+	push	ix			; 15
+	push	de			; 11
+	pop	ix				; 14
+	
+	jp	c, vect_putsprite.ualoop_or	; 10
+	
+	; min : 142 T per iter, max : 280 T per iter
+vect_putsprite.ualoop_xor:
+	xor	a				; 4
+	ld	d, (ix)			; 19
+	inc	ix				; 10
+	
+	ld	e, c			; 4
+	srl	d				; 8
+	rra					; 4
+	dec	c				; 4
+	jr	nz, $-4			; 7/12
+	ld	c, e			; 4
+	
+	; c * 23 + 13
+	
+	inc	hl				; 6
+	xor	(hl)			; 7
+	ld	(hl), a			; 7
+	dec	hl				; 6
+	ld	a, (hl)			; 7
+	xor	d				; 4
+	ld	(hl), a			; 7
+	
+	ld	de, 12			; 10
+	add	hl, de			; 11
+	
+	djnz	vect_putsprite.ualoop_xor	; 8/13
+	
+	pop	ix				; 14
+	ret					; 10
+
+	; min : 142 T per iter, max : 280 T per iter
+vect_putsprite.ualoop_or:
+	xor	a				; 4
+	ld	d, (ix)			; 19
+	inc	ix				; 10
+	
+	ld	e, c			; 4
+	srl	d				; 8
+	rra					; 4
+	dec	c				; 4
+	jr	nz, $-4			; 7/12
+	ld	c, e			; 4
+	
+	; c * 23 + 13
+	
+	inc	hl				; 6
+	or	(hl)			; 7
+	ld	(hl), a			; 7
+	dec	hl				; 6
+	ld	a, (hl)			; 7
+	or	d				; 4
+	ld	(hl), a			; 7
+	
+	ld	de, 12			; 10
+	add	hl, de			; 11
+	
+	djnz	vect_putsprite.ualoop_or	; 8/13
+	
+	pop	ix				; 14
+	ret					; 10

@@ -1,0 +1,1159 @@
+.nolist
+; malloc code (meminit, malloc, free) :
+; Copyright (c) 2008 Sean McLaughlin.
+;
+; slight modifications, documentation, and rest of this file :
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+; 
+; Permission is hereby granted, free of charge, to any person
+; obtaining a copy of this software and associated documentation
+; files (the "Software"), to deal in the Software without
+; restriction, including without limitation the rights to use,
+; copy, modify, merge, publish, distribute, sublicense, and/or sell
+; copies of the Software, and to permit persons to whom the
+; Software is furnished to do so, subject to the following
+; conditions:
+; 
+; The above copyright notice and this permission notice shall be
+; included in all copies or substantial portions of the Software.
+; 
+; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+; EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+; OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+; NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+; HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+; WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+; FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+; OTHER DEALINGS IN THE SOFTWARE.
+.list
+
+;
+; filesystem :
+;	* use extra RAM pages only [2, 4, 6, 7]
+;	* uses memory management code as a base for alloc/free
+;	* uses distinct memory pools in each page
+;	* add metadata to file nodes
+;	* use callback mechanism in many places
+;	* always swap filesystem pages in bank B (see memory.z80 for explanation)
+;
+
+;
+; callbacks spec
+;
+; location : callbacks may NOT be in the $8000-$BFFF range since filesystem
+; data gets swapped here. They may not be in $C000-$FFFF either but that's
+; because of execution protection which is a hardware limiation not specific
+; to file I/O
+;
+; input :
+;	* hl -> node pointer (metadata not processed)
+;	* de -> node size
+;	* ix -> self (address of the callback) [might be useful for position independent code...]
+;
+; output : 
+;	* CF set to require further file I/O operations to be aborted (emergency exit cascade in callers)
+;
+
+;
+; metadata spec :
+;	* 1 byte : metadata size, (excluding the size taken by that byte...)
+;	* list of metadata fields :
+;		- 1 byte : field length (excluding size taken by the size and type bytes)
+;		- 1 byte : field type
+;		- n bytes : field contents
+;
+; standard metadata records :
+;	* NAME : filename -> zero terminated string
+;	* SIZE : total file size (for split files) -> 2 bytes
+;	* NEXT : address of next chunk (for split files) -> 3 bytes : node address then page number
+;	* PREV : address of previous chunk (for split files) -> 3 bytes : node address then page number
+;
+
+; brief : initialize the filesystem (all previous content lost)
+; input : none
+; output : CF set on failure (improper hw)
+; destroys : a, bc, hl, iy
+vect_file_initfs:
+	; abort if not SE
+	in	a, (hw_port)
+	rlca
+	ccf
+	ret	c
+	
+	; mark fmeminfo as dirty (next file_meminfo call will recompute meminfo)
+	ld	hl, os.flags + osf.filesystem
+	set	fmeminfo_dirty, (hl)
+	
+	; save ram page
+	in	a, (map_bankB_port)
+	push	af
+	
+	ld	a, 4
+	ld	hl, vect_file_pages
+vect_file_initfs.loop:
+	push	af
+	
+	ld	a, (hl)
+	inc	hl
+	or	$80
+	out	(map_bankB_port), a
+	
+	push	hl
+	
+	; clear memory
+	ld	hl, os.falloc.start
+	ld	de, os.falloc.start + 1
+	ld	bc, os.falloc.poolend - os.falloc.start - 1 ; $4000 - 1
+	ld	(hl), 0
+	ldir
+	
+	; init file alloc data
+	ld	iy, os.falloc.start
+	ld	hl, os.falloc.firstnode
+	ld	bc, os.falloc.poolend - os.falloc.firstnode ; $4000 - 16
+	call	zp.meminit_iy
+	
+	pop	hl
+	
+	pop	af
+	dec	a
+	jr	nz,	vect_file_initfs.loop
+	
+	; restore ram page
+	pop	af
+	out	(map_bankB_port), a
+	
+	or	a
+	ret
+
+
+; brief : compute file node contents size
+; input : hl -> node pointer (malloc/free node, not content)
+; output : hl -> node contents pointer (malloc/free suitable, contents), de -> node contents size
+; note : hl + de = next node pointer (or pool end = $C000 if hl was last node in pool)
+vect_file_node_info:
+	; get next node pointer
+	ld	d, (hl)
+	inc	hl
+	ld	e, (hl)
+	dec	hl
+	
+	; correct it (see memory.z80 for details)
+	set	7, d
+	
+	; check for last node and fix address
+	or	a
+	sbc	hl, de
+	add	hl, de
+	jr	c, vect_file_node_info.ok
+	; last node : adjust address of "next" chunk
+	ld	de, os.falloc.poolend
+vect_file_node_info.ok:
+	; move to node contents (not file contents yet, start of metadata instead)
+	inc	hl
+	inc	hl
+	
+	; compute node size (excluding malloc overhead (next node pointer))
+	ex	de, hl
+	or	a
+	sbc	hl, de
+	ex	de, hl
+	
+	ret
+
+; brief : find a given metadata field
+; input : hl -> node pointer (malloc/free suitable), d -> field type
+; output : CF set on failure, reset on success, a -> field index
+; destroys : none
+vect_file_meta_find:
+	push	bc
+	push	hl
+	ld	b, (hl)
+	inc	hl
+	ld	a, b
+	or	a
+	jr	z, vect_file_meta_find.fail
+vect_file_meta_find.loop:
+	ld	c, (hl)
+	inc	hl
+	dec	b
+	jr	z, vect_file_meta_find.fail
+	ld	a, (hl)
+	cp	d
+	jr	z, vect_file_meta_find.ok
+	
+	inc	hl
+	dec	b
+	
+	ld	a, c
+	offset_hl
+	
+	ld	a, b
+	sub	c
+	ld	b, a
+	; b <= c : end of metadata...
+	jr	c, $+4
+	jr	nz, vect_file_meta_find.loop
+	
+vect_file_meta_find.fail:
+	pop	hl
+	pop	bc
+	scf
+	ret
+	
+vect_file_meta_find.ok:
+	pop	hl
+	ld	a, (hl)
+	sub	b
+	pop	bc
+	or	a
+	ret
+
+; brief : file_list over the page currently swapped in bank B
+; input :
+;		c -> flags
+;			bit 7 : list alloc
+;			bit 6 : list free
+;			bit 5 : enable count
+;			bit 4 : count numer of nodes instead of callbacks
+;		ix -> callback
+; output : CF set  if exit forced by callback, (if counting enabled) b -> number of callbacks
+; destroys : a, hl, de
+; note : no metadata processing -> left to the callback
+vect_file_list_page:
+	ld	hl, os.falloc.firstnode
+	
+	bit	list_count, c
+	jr	z, vect_file_list_page.loop
+	ld	b, 0
+	
+vect_file_list_page.loop:
+	ld	a, (hl)
+	
+	; get file node info
+	call	vect_file_node_info
+	
+	; hl -> node contents pointer
+	; de -> node size
+	; hl + de -> next node pointer
+	
+	; determine whether callback should be called for this node 
+	rlca
+	; CF : set -> node occupied, reset -> node free
+	ld	a, c
+	jr	c, $+3
+	rlca
+	rlca
+	; CF : set -> callback required, reset -> callback not needed
+	
+	; spare some 60 cycles in case of skip by not using a "call c, ..."
+	jr	nc, vect_file_list_page.skip
+	push	bc
+	push	de
+	push	hl
+	call	zp.call_ix
+	pop	hl
+	pop	de
+	pop	bc
+	
+	; CF set : stop loop requested by callback
+	ret	c
+	
+	; counting
+	bit	list_count, c
+	jr	z, vect_file_list_page.nocount
+	inc	b
+	jr	vect_file_list_page.nocount
+	
+vect_file_list_page.skip:
+	
+	; counting
+	bit	list_count, c
+	jr	z, vect_file_list_page.nocount
+	bit	list_total, c
+	jr	z, vect_file_list_page.nocount
+	inc	b
+	
+vect_file_list_page.nocount:
+	; go for next node if we did not reach the end of the page
+	add	hl, de
+	; simple check : we use bank B (range $8000-$BFFF)
+	bit	6, h
+	jr	z, vect_file_list_page.loop
+	
+	; no prob...
+	or	a
+	ret
+
+; brief : file_list over the whole filesystem
+; input :
+;		c -> flags (if null, bit 7 is set automatically)
+;			bit 7 : list alloc
+;			bit 6 : list free
+;			bit 5 : enable count
+;			bit 4 : count numer of nodes instead of callbacks
+;		ix -> callback
+; output :
+;		CF set on failure
+;			a = 0 : exit forced by callback
+;			a != 0 ($FE to be precise) : hardware compat check failed (file I/O require SE calc)
+;		(if counting enabled) de -> number of callbacks
+; destroys : a, b, hl
+; note : no metadata processing -> left to the callback
+vect_file_list:
+	; check for hardware compat (SE only...)
+	in	a, (hw_port)
+	or	$7F	; make sure a is not nul if we are to abort
+	rlca
+	ccf
+	ret	c
+	
+	ld	b, 4
+	ld	de, 0
+	ld	hl, vect_file_pages
+	
+	; save page swapped in bank
+	in	a, (map_bankB_port)
+	push	af
+	
+vect_file_list.loop:
+	ld	a, (hl)
+	inc	hl
+	
+	or	$80
+	out	(map_bankB_port), a
+	
+	push	bc
+	push	hl
+	push	de
+	call	vect_file_list_page
+	ld	a, b
+	pop	de
+	pop	hl
+	pop	bc
+	
+	; CF set : callback requested exit
+	jr	c, vect_file_list.forcedexit
+	
+	offset_de
+	
+	djnz	vect_file_list.loop
+	
+	; done iterating...
+	
+	; restore saved page
+	pop	af
+	out	(map_bankB_port), a
+	
+	; no prob...
+	or	a
+	ret
+	
+vect_file_list.forcedexit:
+	pop	af
+	out	(map_bankB_port), a
+	
+	; forced : to exit
+	xor	a
+	scf
+	ret
+
+; pages used by the filesystem (by lookup order) [exactly 4 of them required, unless you alter file_list...]
+vect_file_pages:
+	.db 2, 4, 6, 7
+
+; brief : find a file
+; input :
+;	hl -> filename (zero terminated string)
+;	ix -> callback
+; output : CF set on failure, reset on success
+; destroys : a, bc, hl, de, ix, iy
+vect_file_find:
+	; create info struct (4 bytes) :
+	;	* 2 bytes : pointer to filename
+	;	* 2 bytes : user callback
+	
+	push	ix
+	push	hl
+	
+	ld	bc, 4
+	call	zp.malloc
+	
+	; iy is the only "safe" register for passing parameters to callback
+	push	hl
+	pop	iy
+	
+	; fill struct with stack content and restore stack pointer
+	ex	de, hl
+	ld	hl, 0
+	add	hl, sp
+	ldir
+	ld	sp, hl
+	
+	push	iy
+	
+	ld	c, bitmask(list_alloc)
+	ld	ix, vect_file_find.callback
+	call	vect_file_list
+	
+	pop	hl
+	push	af
+	
+	call	zp.free
+	
+	pop	af
+	
+	; proper exit codes
+	ccf
+	ret	c
+	or	a
+	ret	z
+	scf
+	ret
+
+vect_file_find.callback:
+	push	de
+	
+	; find NAME field, if any
+	ld	d, meta_NAME
+	call	vect_file_meta_find
+	pop	bc
+	
+	; careful not to exit with CF set in this case : it would cancel search
+	ccf
+	ret	nc
+	
+	push	hl
+	; skip field length and type (zero terminated string...)
+	add	a, 2
+	; go to field contents
+	offset_hl
+	
+	; get back filename for strcmp
+	ld	e, (iy + 0)
+	ld	d, (iy + 1)
+	
+	call	zp.strcmp
+	
+	pop	hl
+	
+	jr	z, vect_file_find.cb.found
+	
+	; keep searching
+	or	a
+	ret
+	
+vect_file_find.cb.found:
+	; file found : callback
+	
+	ld	d, h
+	ld	e, l
+	dec	de
+	dec	de
+	
+	ld	a, (hl)
+	inc	a
+	push	af
+	offset_hl
+	pop	af
+	
+	; better way to do : bc -= a ?
+	push	hl
+	cpl
+	ld	l, a
+	ld	h, $FF
+	inc	hl
+	add	hl, bc
+	
+	; get back user callback
+	ld	c, (iy + 2)
+	ld	b, (iy + 3)
+	push	bc
+	pop	ix
+	
+	ld	b, h
+	ld	c, l
+	pop	hl
+	
+	; do the real call, at last...
+	; hl -> node data pointer (beyond meta data)
+	; bc -> node data size (not incl metadata)
+	; de -> node pointer (memory node)
+	call	zp.call_ix
+	
+	; abort search
+	scf
+	ret
+
+; brief : delete a file
+; input : hl -> filename
+; output : 
+; destroys : a, bc, de, hl, ix, iy
+vect_file_delete:
+	push	hl
+	call	zp.cputs
+	call	zp.cdisp
+	pop	hl
+	
+	ld 	ix, vect_file_delete.callback
+	jp	vect_file_find
+
+vect_file_delete.callback:
+	; mark fmeminfo as dirty (next file_meminfo call will recompute meminfo)
+	ld	hl, os.flags + osf.filesystem
+	set	fmeminfo_dirty, (hl)
+	
+	; we don't care about data, only about fs node
+	ex	de, hl
+	inc	hl
+	inc	hl
+	
+	ld	b, 0
+	
+vect_file_delete.loop:
+	push	hl
+	
+; 	push	bc
+; 	push	hl
+; 	
+; 	ld	de, os.scrap
+; 	ld	a, b
+; 	inc	b
+; 	call	zp.htoa_byte
+; 	xor	a
+; 	ld	(de), a
+; 	ld	hl, os.scrap
+; 	call	zp.cputs
+; 	
+; 	pop	hl
+; 	push	hl
+; 	call	_meta_disp
+; 	pop	hl
+	
+	; release the node
+	ld	iy, os.falloc.start
+	call	zp.free_iy
+	
+; 	pop	bc
+	pop	hl
+	
+	; loop over chunks (if file split)
+	call	vect_file_nextchunk
+	ret	c
+	
+	jr	vect_file_delete.loop
+
+; _meta_disp:
+; 	ld	de, os.scrap
+; 	
+; 	ld	c, (hl)
+; 	inc	hl
+; 	ld	a, c
+; 	or	a
+; 	push	af
+; 	call	zp.htoa_byte
+; 	pop	af
+; 	jr	z, _end
+; 	
+; 	ld	a, $0A
+; 	ld	(de), a
+; 	inc	de
+; 	
+; _loop:
+; 	ld	b, (hl)
+; 	inc	hl
+; 	dec	c
+; 	jr	z, _end
+; 	ld	a, (hl)
+; 	inc	hl
+; 	dec	c
+; 	push	af
+; 	call	zp.htoa_byte
+; 	
+; 	ld	a, ':'
+; 	ld	(de), a
+; 	inc	de
+; 	ld	a, b
+; 	call	zp.htoa_byte
+; 	
+; 	ld	a, ':'
+; 	ld	(de), a
+; 	inc	de
+; 	
+; 	pop	af
+; 	jr	z, _end
+; 	cp	meta_NAME
+; 	jr	z, _name
+; 	
+; 	ld	a, (hl)
+; 	inc	hl
+; 	dec	c
+; 	jr	z, _end
+; 	call	zp.htoa_byte
+; 	djnz	$-8
+; 	
+; 	jr	_common
+; 	
+; _name:
+; 	ld	a, (hl)
+; 	inc	hl
+; 	dec	c
+; 	jr	z, _end
+; 	or	a
+; 	jr	nz, $+4
+; 	ld	a, '*'
+; 	ld	(de), a
+; 	inc	de
+; 	djnz	_name
+; 	
+; _common:
+; 	ld	a, $0A ; LF
+; 	ld	(de), a
+; 	inc	de
+; 	
+; 	jr	_loop
+; 	
+; _end:
+; 	xor	a
+; 	ld	(de), a
+; 	
+; 	ld	hl, os.scrap
+; 	call	zp.cputs
+; 	call	zp.cdisp
+; 	
+; 	ret
+
+; brief : find next file chunk, if file split
+; input : hl -> node contents pointer (points to metadata size)
+; output : hl -> node contents pointer (points to metadata size)
+; destroys : a
+vect_file_nextchunk:
+	push	de
+	
+	ld	d, meta_NEXT
+	call	vect_file_meta_find
+	jr	c, vect_file_nextchunk.exit
+	
+	; move to field
+	add	a, 2
+	offset_hl
+	
+	; load chunk address
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	inc	hl
+	ld	a, (hl)
+	
+	; switch page
+	or	$80
+	out	(map_bankB_port), a
+	
+	; set node contents pointer
+	ex	de, hl
+	
+	or	a
+vect_file_nextchunk.exit:
+	pop	de
+	ret
+
+; brief : creates a file
+; input : hl -> filename, bc -> size, ix -> callback
+; output : CF set if file created
+; destroys : a, hl, bc, de, ix, iy
+vect_file_create:
+	
+	; push file creation info struct into stack
+	ld	de, 0
+	push	de
+	push	de
+	
+	push	hl
+	
+	push	bc
+	call	zp.strlen
+	pop	hl
+	
+	; ensure metadata size < 256 (name will be cut if required) [todo : check...]
+	ld	b, 0
+	inc	c		; space for string terminator
+	inc	c		; space for metadata field type
+	inc	c		; space for metadata field length
+	
+	add	hl, bc
+	; size of metadata requires one byte (which is not accounted
+	; in the size of the metadata itself....)
+	inc	hl
+	
+	; bc -> size of metadata (ready for writing to file unless spliting required)
+	; hl -> size of data to allocate (change for splitting)
+	
+	ex	(sp), hl
+	
+	push	bc
+	push	hl
+	
+	; create info struct (10 bytes) :
+	;	* 2 bytes : pointer to filename
+	;	* 2 bytes : metadata size (only LSB is relevant)
+	;	* 2 bytes : alloc size
+	;	* 4 bytes : room for stuff
+	
+	ld	bc, 10
+	call	zp.malloc
+	
+	; safely pass the struct to callback
+	push	hl
+	pop	iy
+	
+	; fill struct with stack content and restore stack pointer
+	ex	de, hl
+	ld	hl, 0
+	add	hl, sp
+	ldir
+	ld	sp, hl
+	
+	push	iy
+	push	ix
+	
+	; first try without split
+	ld	c, bitmask(list_free)
+	ld	ix, vect_file_create.cb
+	call	vect_file_list
+	
+	jr	c, vect_file_create.ok
+	
+	; second attemp with split
+	ld	d, bitmask(list_free)
+	ld	ix, vect_file_create.cbsplit
+	call	vect_file_list
+	
+	jr	nc, vect_file_create.die
+	
+vect_file_create.ok:
+	; modified info struct (10 bytes) :
+	;	* 2 bytes : scrap (used as counter in case of splitting)
+	;	* 2 bytes : page of first chunk (only LSB is relevant)
+	;	* 2 bytes : address of first chunk
+	;	* 4 bytes : scrap (used in case of splitting)
+	
+	pop	ix
+	
+	; save page
+	in a, (map_bankB_port)
+	push	af
+	
+	ld	a, (iy + 2)
+	ld	l, (iy + 4)
+	ld	h, (iy + 5)
+	
+	out	(map_bankB_port), a
+	
+	; get proper node size without hassle
+	dec	hl
+	dec	hl
+	push	hl
+	call	vect_file_node_info
+	
+	; some hassle to convert address/size from node to data
+	ex	de, hl
+	add	hl, de
+	ex	de, hl
+	
+	ld	a, (hl)
+	inc	hl
+	offset_hl
+	
+	ex	de, hl
+	or	a
+	sbc	hl, de
+	ex	de, hl
+	
+	ld	b, d
+	ld	c, e
+	pop	de
+	
+	; params passed to user callback :
+	;	hl -> data pointer
+	;	bc -> data size
+	;	de -> node pointer (for advanced use and split files)
+	call	zp.call_ix
+	
+	; restore page
+	pop	af
+	out	(map_bankB_port), a
+	
+	ld	hl, os.flags + osf.filesystem
+	set	fmeminfo_dirty, (hl)
+	
+	jr	vect_file_create.exit
+	
+vect_file_create.die:
+	pop	ix
+vect_file_create.exit:
+	
+	; free memory (file info struct)
+	pop	hl
+	call	zp.free
+	
+	ret
+
+; input :
+;		hl -> node pointer
+;		de -> node size
+;		iy -> file info struct
+vect_file_create.cb:
+	; determine whether the chunk has sufficient memory
+	
+	ld	c, (iy + 4)
+	ld	b, (iy + 5)
+	
+	ex	de, hl
+	cmp_hlbc
+	ex	de, hl
+	
+	jr	nc, $+4
+	
+	; improper fs node, keep searching
+	or	a
+	ret
+	
+vect_file_create.cb.sub:
+	; use placed malloc to actually allocate the memory
+	push	hl
+	push	iy
+	
+	dec	hl
+	dec	hl
+	ld	iy, os.falloc.start
+	call	zp.malloc_placed_iy
+	
+	pop	iy
+	
+	; write metadata
+	
+	; metadata size
+	ld	a, (iy + 2)
+	ld	(hl), a
+	inc	hl
+	
+	; NAME field
+	;sub	2
+	;ld	(hl), a
+	push	hl
+	inc	hl
+	ld	(hl), meta_NAME
+	inc	hl
+	
+	ld	e, (iy + 0)
+	ld	d, (iy + 1)
+	
+	ex	de, hl
+	call	zp.strcpy
+	ex	de, hl
+	
+	; set proper size for NAME field
+	pop	de
+	inc	de
+	inc	de
+	or	a
+	sbc	hl, de
+	ld	a, l
+	add	hl, de
+	dec	de
+	dec	de
+	ld	(de), a
+	
+	; update file info struct
+	pop	de
+	in a, (map_bankB_port)
+	ld	(iy + 2), a
+	ld	(iy + 4), e
+	ld	(iy + 5), d
+	
+	; file created : abort chunk listing
+	scf
+	ret
+
+;
+; input :
+;		hl -> node pointer
+;		de -> node size
+;		iy -> file info struct
+vect_file_create.cbsplit:
+	; check whether we've already found chunks
+	ld	c, (iy + 2)
+	ld	b, (iy + 3)
+	
+	ld	a, b
+	or	a
+	jr	nz, vect_file_create.cbcont
+	
+	push	hl
+	
+	; get back bare data size
+	ld	l, (iy + 4)
+	ld	h, (iy + 5)
+	; alloc size - metadata size - 1 = requested size
+	or	a
+	sbc	hl, bc
+	dec	hl
+	ex	(sp), hl
+	
+	; split -> add SIZE and NEXT fields, resp 5 and 4 bytes
+	ld	a, c
+	add	a, 5+4
+	ld	c, a
+	ld	(iy + 2), c
+	
+	; determine whether the node has sufficient space for metadata
+	ex	de, hl
+	cmp_hlbc
+	ex	de, hl
+	
+	jr	nc, $+5
+	
+	; improper fs node, keep searching
+	pop	hl
+	or	a
+	ret
+	
+	; set info of prev chunk (this one) for next one to perform the linking
+	in	a, (map_bankB_port)
+	ld	(iy + 6), l
+	ld	(iy + 7), h
+	ld	(iy + 8), a
+	
+	; allocate and fill first chunk
+	
+	; go for whole node...
+	ld	b, d
+	ld	c, e
+	
+	push	de
+	
+	; save some space...
+	call	vect_file_create.cb.sub
+	
+	pop	bc
+	
+	; add SIZE field
+	ld	(hl), 2
+	inc	hl
+	ld	(hl), meta_SIZE
+	inc	hl
+	
+	; ex (sp), de ...
+	ex	de, hl
+	ex	(sp), hl
+	ex	de, hl
+	
+	ld	(hl), e
+	inc	hl
+	ld	(hl), d
+	inc	hl
+	
+	; ex (sp), de ...
+	ex	de, hl
+	ex	(sp), hl
+	ex	de, hl
+	
+	call	__init_NEXT_field
+	
+	; setup size counter
+	ex	de, hl
+	add	hl, bc
+	or	a
+	sbc	hl, de
+	ex	de, hl
+	
+	pop	hl
+	
+	; hl -> requested data size
+	; de -> data size available in that first chunk
+	
+	or	a
+	sbc	hl, de
+	
+	; set remaining data size to find
+	ld	(iy + 0), l
+	ld	(iy + 1), h
+	
+	; set chunk count
+	ld	(iy + 3), 1
+	
+	ret
+	
+vect_file_create.cbcont:
+	; check for min size (16 bytes)
+	ld	a, e
+	and	$F0
+	or	d
+	ret	z
+	
+	; increase chunk count...
+	inc	b
+	ld	(iy + 3), b
+	
+	; determine if we're done after that chunk
+	ex	de, hl
+	
+	ld	c, (iy + 0)
+	ld	b, (iy + 1)
+	
+	; each chunk must have some metadata attached
+	inc	bc
+	
+	cmp_hlbc
+	ex	de, hl
+	
+	; CF reset means we're (almost) done [i.e at last chunk]
+	; switch CF : now set means we're dealing with last chunk
+	ccf
+	
+	; preserve flags
+	push	af
+	
+	; allocate proper size
+	jr	c, $+4
+	ld	b, d
+	ld	c, e
+	
+	; update previous NEXT field
+	push	bc
+	; push node data to stack for copy
+	in	a, (map_bankB_port)
+	ld	c, a
+	ld	b, a
+	push	bc
+	push	hl
+	
+	ld	l, (iy + 6)
+	ld	h, (iy + 7)
+	ld	a, (iy + 8)
+	
+	out	(map_bankB_port), a
+	
+	ld	d, meta_NEXT
+	call	vect_file_meta_find
+	
+	; move directly to field (skip field size and type)
+	add	a, 2
+	offset_hl
+	
+	; copy data
+	ex	de, hl
+	ld	hl, 0
+	add	hl, sp
+	ld	bc, 3
+	ldir
+	
+	pop	hl
+	pop	af
+	out	(map_bankB_port), a
+	pop	bc
+	
+	push	iy
+	dec	hl
+	dec	hl
+	ld	iy, os.falloc.start
+	call	zp.malloc_placed_iy
+	pop	iy
+	
+	; set metadata size
+	ld	(hl), 0
+	
+	pop	af
+	; stop here if last chunk
+	ret	c
+	
+	; set info of prev chunk (this one) for next one to perform the linking
+	in	a, (map_bankB_port)
+	ld	(iy + 6), l
+	ld	(iy + 7), h
+	ld	(iy + 8), a
+	
+	; set real metadata size
+	ld	(hl), 5
+	inc	hl
+	
+	call	__init_NEXT_field
+	
+	; continue search til the whole data fits
+	or	a
+	ret
+
+__init_NEXT_field:
+	; add NEXT field
+	ld	(hl), 3
+	inc	hl
+	ld	(hl), meta_NEXT
+	inc	hl
+	; leave room...
+	xor	a
+	ld	(hl), a
+	inc	hl
+	ld	(hl), a
+	inc	hl
+	ld	(hl), a
+	inc	hl
+	ret
+
+; brief : compute available and occupied memory
+; input : none
+; output : bc -> available memory
+vect_file_meminfo:
+	push	af
+	
+	ld	a, (os.flags + osf.filesystem)
+	bit	fmeminfo_dirty, a
+	jr	z, vect_file_meminfo.clean
+	
+	push	de
+	push	hl
+	push	ix
+	push	iy
+	
+	ld	hl, 0
+	ld	(os.fmeminfo), hl
+	ld	(os.fmeminfo + 2), hl
+	
+	ld	hl, os.flags + osf.filesystem
+	res	fmeminfo_dirty, (hl)
+	
+	ld	c, bitmask(list_free) | bitmask(list_alloc)
+	ld	ix, vect_file_meminfo.callback
+	call	vect_file_list
+	
+	pop	iy
+	pop	ix
+	pop	hl
+	pop	de
+	
+vect_file_meminfo.clean:
+	ld	bc, (os.fmeminfo)
+	
+	pop	af
+	ret
+
+vect_file_meminfo.callback:
+	; check whether node is occupied
+	dec	hl
+	dec	hl
+	ld	a, (hl)
+	rlca
+	
+	jr	c, vect_file_meminfo.cb.occupied
+	
+	ld	hl, (os.fmeminfo)
+	add	hl, de
+	
+	ld	(os.fmeminfo), hl
+	ret
+	
+vect_file_meminfo.cb.occupied:
+	ld	hl, (os.fmeminfo + 2)
+	add	hl, de
+	ld	(os.fmeminfo + 2), hl
+	ret
+

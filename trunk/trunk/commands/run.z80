@@ -1,0 +1,370 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+cmd_RUN:
+	; check arg count
+	or	a
+	ret	z
+	
+	; save args data
+	dec	a
+	ld	(psp.argc), a
+	push	hl
+	call	zp.strnext
+	ld	(psp.argv), hl
+	pop	hl
+	; check hardware : prog exec is SE only...
+	; todo : allow limited exec (16k prog space) for BE
+	; nb : such a limited mode would also require program to be
+	; directly copied to RAM page 1 by link protocol...
+	in	a, (hw_port)
+	rlca
+	ret	nc
+	
+	push	hl
+	
+	; find file...
+	ld	ix, cmd_RUN.callback
+	call	zp.file_find
+	
+	pop	hl
+	
+	; try to find an app then
+	call	zp.app_find
+	jr	c, cmd_RUN.fail
+	
+	; cleanup stack
+	ld	sp, (psp.stack)
+	
+	; swap first app page in
+	out	(map_bankA_port), a
+	
+	; start TIOS emulation
+	call	zp.compat_start
+	
+	; just in case...
+	ld	hl, zp.console
+	push	hl
+	ld	hl, zp.compat_stop
+	push	hl
+	
+	; go to app start
+	jp	$4080
+	
+cmd_RUN.fail:
+	; control will not return here if program was launched
+	ld	hl, cmd_RUN.strings
+	call	zp.cputs
+	call	zp.cdisp
+	scf
+	ret
+
+cmd_RUN.callback:
+	; hl -> data
+	; bc -> size
+	; de -> node
+	
+	; used for error strings
+	ld	ixh, 1
+	
+	; stupid TI file format stores program size twice
+	; stupid TI link protocol considers the second size
+	; to be part of program data : either discard first
+	; two bytes in link reception or skip them upon
+	; load/execution...
+	; as of now : keep and skip (may prove useful to have
+	; full data size in the first chunk in case of split...
+	inc	hl
+	dec	bc
+	inc	hl
+	dec	bc
+	
+	; check for valid executable file
+	ld	a, (hl)
+	inc	hl
+	dec	bc
+	cp	$BB
+	jp	z, cmd_RUN.cb.tios_emul
+	cp	magic.executable	; '#'
+	jp	nz, cmd_RUN.cb.error
+	
+	; next comes a zero terminated string identifying "interpreter", if any
+	; but this is not supported yet so just check for the terminator...
+	ld	a, (hl)
+	inc	hl
+	dec	bc
+	or	a
+	jp	nz, cmd_RUN.cb.error
+	
+	inc	ixh
+	
+	inc	de
+	inc	de
+	push	de
+	
+	; copy file data to RAM
+	ld	a, $81
+	out	(map_bankA_port), a
+	ld	de, $4000
+	
+	;call	__dump_hl
+	
+cmd_RUN.cb.loop:
+	ldi
+	; check for chunk end
+	jp	po, cmd_RUN.cb.chunkend
+	
+cmd_RUN.cb.pageend:
+	; check for page end
+	bit	7, d
+	jr	z, cmd_RUN.cb.loop
+	
+	; check for 32k limit
+	in	a, (map_bankA_port)
+	cp	$81
+	jp	nz, cmd_RUN.cb.error2
+	
+; 	push	hl
+; 	push	de
+; 	push	bc
+; 	ld	hl, _str_16k
+; 	call	zp.cputs
+; 	call	zp.cdisp
+; 	call	zp.getch
+; 	pop	bc
+; 	pop	de
+; 	pop	hl
+	
+	; move to next pgrm page and continue copy
+	ld	a, $83
+	out	(map_bankA_port), a
+	ld	de, $4000
+	
+	jr	cmd_RUN.cb.loop
+	
+cmd_RUN.cb.chunkend:
+	; check for split file : next chunks
+	pop	hl
+	call	zp.file_nextchunk
+	jr	c, cmd_RUN.cb.go
+	
+	; save node pointer for next iteration
+	push	hl
+	
+	call	file_advance
+	
+	jr	cmd_RUN.cb.pageend
+	
+cmd_RUN.cb.go:
+; 	ld	hl, $4000
+; 	ld	de, os.scrap
+; 	ld	b, 48
+; 	
+; 	call	zp.memdump
+; 	inc	hl
+; 	djnz	$-4
+; 	
+; 	ld	hl, os.scrap
+; 	call	zp.cputs
+; 	call	zp.cdisp
+; 	call	zp.getch
+	
+	; set start of lib section (end of program)
+	ld	hl, $0000
+	in	a, (map_bankA_port)
+	cp	$81
+	jr	z, $+4
+	set 6, h
+	add	hl, de
+	
+	; change pages
+	ld	a, $81
+	out	(map_bankA_port), a
+	ld	a, $83
+	out	(map_bankB_port), a
+	
+	ld	(psp.libs), hl
+	inc	hl
+	inc	hl
+	; prepare lib section for dylib_load : store (available) size of lib section in first slot
+	ex	de, hl
+	ld	hl, $C000
+	or	a
+	sbc	hl, de
+	ex	de, hl
+	dec	hl
+	ld	(hl), d
+	dec	hl
+	ld	(hl), e
+	
+	;call	__dump_hl
+	;ex	de, hl
+	;call	__dump_hl
+	
+	; let's have a proper stack (we don't want to give back control to file I/O)
+	; TODO : change to allow program to call subprograms...
+	ld	sp, $0000
+	ld	hl, zp.console
+	push	hl
+	
+	; reset all handlers
+	ld	hl, 0
+	ld	(psp.ehandler), hl
+	ld	(psp.interrupt), hl
+	ld	(psp.restart), hl
+	
+	; set saved stack pointer
+	add	hl, sp
+	ld	(psp.stack), hl
+	
+	; prepare registers for parameter passing
+	ld	a, (psp.argc)
+	ld	hl, (psp.argv)
+	
+	; go!!!
+	jp	prgm.start
+
+cmd_RUN.cb.tios_emul:
+	ld	a, (hl)
+	inc	hl
+	dec	bc
+	cp	$6D
+	jr	nz, cmd_RUN.cb.error
+	
+	; add "TIOS emulation"
+	;	* emulate most bcalls (among the useful ones...)
+	;	* load prgm at 9D95
+	;	* pretend to do some TIOS-like flag shit???
+	
+	inc	ixh
+	
+	; check for max size
+	push	hl
+	ld	hl, $C000-$9D95
+	sbc	hl, bc
+	pop	hl
+	jr	c, cmd_RUN.cb.error
+	
+	inc	ixh
+	
+	; load program to ram
+	ld	a, $81
+	out	(map_bankA_port), a
+	
+	inc	de
+	inc	de
+	push	de
+	
+	ld	de, $9D95
+	
+cmd_RUN.cb.tios_cpy:
+	ldir
+	
+	pop	hl
+	call	zp.file_nextchunk
+	jr	c, cmd_RUN.cb.tios_exec
+	
+	push	hl
+	
+	call	file_advance
+	
+	jr	cmd_RUN.cb.tios_cpy
+	
+cmd_RUN.cb.tios_exec:
+	; start compat layer
+	call	zp.compat_start
+	
+	; prepare return ...
+	ld	hl, zp.console
+	push	hl
+	ld	hl, zp.compat_stop
+	push	hl
+	
+	; go!
+	jp	$9D95
+	;jr cmd_RUN.cb.error
+	
+cmd_RUN.cb.error2:
+	pop	de
+	
+cmd_RUN.cb.error:
+	push	af
+	push	hl
+	ld	a, ixh
+	ld	hl, cmd_RUN.strings
+	
+	or	a
+	jr	z, cmd_RUN.cb.error.done
+	
+	ld	b, a
+	
+	call	zp.strnext
+	djnz $-3
+	
+cmd_RUN.cb.error.done:
+	call	zp.cputs
+	call	zp.cdisp
+	pop	hl
+	pop	af
+	
+	;call	zp.throw
+	
+	scf
+	ret
+
+file_advance:
+	; preserve copy destination
+	push	de
+	
+	; get node content size
+	dec	hl
+	dec	hl
+	call	zp.file_node_info
+	
+	; skip metadata
+	ld	b, 0
+	ld	c, (hl)
+	inc	bc
+	add	hl, bc
+	ex	de, hl
+	or	a
+	sbc	hl, bc
+	ex	de, hl
+	ld	b, d
+	ld	c, e
+	
+	pop	de
+	ret
+
+cmd_RUN.strings:
+	.db "File not found.", 0
+	.db "File not executable.", 0
+	.db "File too large.", 0
+	.db "TIOS emulation not ready.", 0
+
+;_str_chunk:
+;	.db "multi chunk", 0
+;_str_16k:
+;	.db "> 16k", 0
+

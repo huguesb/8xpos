@@ -1,0 +1,349 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+
+; <aliencode org="bootfree" author="Benjamin Moody" aka="Floppus Maximus" >
+; slightly modified to work with XOS (and format blending...)
+; <alienlicense>
+;;; BootFree -- A free boot loader and library for the TI-73, TI-83
+;;; Plus, and TI-84 Plus graphing calculators
+;;;
+;;; Copyright (C) 2006-2007 Benjamin Moody
+;;;
+;;; All rights reserved.
+;;;
+;;; Permission is hereby granted, free of charge, to any person
+;;; obtaining a copy of this software and associated documentation
+;;; files (the "Software"), to deal in the Software without
+;;; restriction, including without limitation the rights to use, copy,
+;;; modify, merge, publish, distribute, and/or sell copies of the
+;;; Software, and to permit persons to whom the Software is furnished
+;;; to do so, provided that the above copyright notice(s) and this
+;;; permission notice appear in all copies of the Software and that
+;;; both the above copyright notice(s) and this permission notice
+;;; appear in supporting documentation.
+;;;
+;;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+;;; EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+;;; MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+;;; NONINFRINGEMENT OF THIRD PARTY RIGHTS.  IN NO EVENT SHALL THE
+;;; COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS NOTICE BE LIABLE FOR
+;;; ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES, OR
+;;; ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+;;; PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+;;; TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+;;; PERFORMANCE OF THIS SOFTWARE.
+; </alienlicense>
+
+;;
+;; GetFieldSize
+;;
+;;  Determine the length of a field and the address of its first data
+;;  byte.
+;;
+;;  [The official version has a bug and returns garbage in BC when it
+;;  is used with a "long"-style field.]
+;;
+;;  Input: A = page
+;;         HL -> second type byte of the field
+;;  Output: BC = length (0 for "long" fields)
+;;          HL -> first data byte
+;;          E = high 4 bits of the second type byte
+;;  Destroys: 
+
+; a field is composed of 1 marker byte (eg $80), 1 metadata byte (see below)
+; and possibly some data, whose size is determined by metadata byte
+;
+; metadata byte : upper nibble holds field type, lower nibble determine size
+; possible case of lower nibble :
+;	* F -> "long" field : actually 4 bytes of junk
+;	* E -> word-sized field : next two bytes holds field size, in big endian
+;	* D -> byte-sized field : next byte holds field size
+;	* 0-C -> nibble size field : the lower nibble is actual field size
+vect_get_field_size:
+GetFieldSize:
+	push	af
+	ld	b, a
+	call	zp.deref_paged_byte
+	ld	e, c
+	ld	a, c
+	or	$F0
+	inc	a
+	jr	z, GetFieldSize_Long
+	inc	a
+	jr	z, GetFieldSize_Word
+	ld	b, 0
+	inc	a
+	jr	z, GetFieldSize_Byte
+	add	a, $10 - 3
+	ld	c, a
+	jr	GetFieldSize_Done
+GetFieldSize_Long:
+	ld	bc, 4
+	add	hl, bc
+	ld	bc, 0
+	jr	GetFieldSize_Done
+GetFieldSize_Word:
+	inc	hl
+	call	zp.deref_paged_byte
+	ld	b, c
+GetFieldSize_Byte:
+	inc	hl
+	call	zp.deref_paged_byte
+GetFieldSize_Done:
+	inc	hl
+	ld	a, e
+	and	$0F
+	ld	e, a
+	pop	af
+	ret
+
+; </aliencode>
+
+; brief : find an app field
+; input : ahl -> start of app header to consider, de -> field to look for [$80, $02, $03]x[$00-$FF]
+; output : Z set on success, ahl -> pointer to field metadata byte
+; destroys : bc
+vect_find_app_field.skip:
+	pop	af
+	push	de
+	call	vect_get_field_size
+	add	hl, bc
+	pop	de
+vect_find_app_field:
+	push	af
+	ld	b, a
+	
+vect_find_app_field.loop:
+	call	zp.deref_paged_byte
+	ld	a, c
+	inc	hl
+	cp	d
+	jr	nz, vect_find_app_field.next
+	
+	call	zp.deref_paged_byte
+	ld	a, c
+	xor	e
+	and	$F0
+	jr	nz, vect_find_app_field.skip
+	
+	pop	af
+	; set zero flag
+	cp	a
+	ret
+	
+vect_find_app_field.next:
+	cp	$80
+	jr	z, vect_find_app_field.skip
+	sub	$02
+	jr	z, vect_find_app_field.skip
+	dec	a
+	jr	z, vect_find_app_field.skip
+	
+	; no luck... end of header reached
+	; make sure zero flag remains reset
+	pop	bc
+	ld	a, b
+	ret
+
+; brief : iterate over flash apps
+; input : ix -> callback
+; output : CF set in case of forced exit (from callback)
+; destroys : a, bc, de, hl
+; callback input : ahl -> address of first app header field
+; callback output : CF set to abort listing
+vect_app_list:
+	call	zp.hw_version
+	
+	ld	hl, page_boundaries
+	add	a, a
+	offset_hl
+	
+	ld	a, (hl)
+	inc	hl
+	ld	e, (hl)
+	
+	sub	e
+	ld	b, a
+	add	a, e
+	ld	c, a
+	
+	; b : max number of pages to visit
+	; c : first page
+vect_app_list.loop:
+	push	bc
+	
+	;call	zp.dump_bc
+	
+	ld	b, c
+	ld	hl, $4000
+	call	zp.deref_paged_byte
+	ld	a, c
+	inc	hl
+	
+	; stop if not a flash app (either valid or deleted)
+	and	$7F
+	jr	nz, vect_app_list.end
+	
+	; skip first field
+	push	bc
+	ld	a, b
+	call	vect_get_field_size
+	add	hl, bc
+	pop	bc
+	
+	; skip deleted app
+	bit	7, c
+	jr	z, vect_app_list.skip
+	
+	push	hl
+	; callback
+	call	zp.call_ix
+	pop	hl
+	
+	jr	nc, vect_app_list.skip
+	
+	; exit
+	pop	bc
+	ret
+	
+vect_app_list.skip:
+	pop	bc
+	push	bc
+	ld	a, c
+	
+	ld	de, $8080 ; look for page count field
+	call	vect_find_app_field
+	jr	nz, vect_app_list.end
+	call	vect_get_field_size
+	;call	zp.dump_bc
+	;; size oughta be 1
+	;or	b
+	;jr	nz, vect_app_list.end
+	;dec	c
+	;jr	nz, vect_app_list.end
+	
+	ld	b, a
+	call	zp.deref_paged_byte
+	ld	a, c
+	dec	a
+	jr	z, vect_app_list.single
+	pop	bc
+	neg
+	ld	e, a
+	
+	add	a, c
+	ld	c, a
+	ld	a, b
+	add	a, e
+	ld	b, a
+	
+	push	bc
+vect_app_list.single:
+	pop	bc
+	dec	c
+	djnz	vect_app_list.loop
+
+vect_app_list.end:
+	pop	bc
+	or	a
+	ret
+
+page_boundaries:
+	.db $15, $08	; 83+BE
+	.db $69, $08	; 83+SE
+	.db $29, $08	; 84+BE
+	.db $69, $08	; 84+SE
+
+
+; brief : find a flash app
+; input : hl -> file name
+; output : CF set on failure, a -> first app page
+; destroys : a, bc, de, hl
+; callback input : ahl -> address of first app header field
+; callback output : CF set to abort listing
+vect_app_find:
+	push	hl
+	ld	iy, 0
+	add	iy, sp
+	
+	ld	ix, vect_app_find.cb
+	call	vect_app_list
+	
+	pop	bc
+	ld	a, c
+	ccf
+	ret
+
+vect_app_find.cb:
+	push	af
+	ld	de, $8040
+	call	vect_find_app_field
+	;call	nz, zp.throw
+	jr	nz, vect_app_find.cb.continue
+	call	vect_get_field_size
+	
+	;call	zp.dump_hl
+	
+	push	bc
+	ld	de, os.scrap
+	call	zp.flashtoram
+	pop	bc
+	
+	ld	hl, os.scrap
+	add	hl, bc
+	ld	a, ' '
+	
+	; chop all trailing spaces (put zero terminators instead)
+	ld	(hl), 0
+	dec	hl
+	cp	(hl)
+	jr	z, $-4
+	
+	ld	e, (iy + 0)
+	ld	d, (iy + 1)
+	
+	ld	hl, os.scrap
+	
+; 	push	hl
+; 	push	de
+; 	call	zp.cputs
+; 	ex	de, hl
+; 	call	zp.cputs
+; 	pop	de
+; 	pop	hl
+	
+	call	zp.strcmp
+	jr	nz, vect_app_find.cb.continue
+	
+	pop	af
+	ld	(iy + 0), a
+	scf
+	ret
+	
+vect_app_find.cb.continue:
+	pop	af
+	or	a
+	ret
+

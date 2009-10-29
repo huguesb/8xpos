@@ -1,0 +1,571 @@
+.nolist
+;Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Copyright (c) 2004, Sean McLaughlin.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+; brief : displays a pretty register dump
+; input : none
+; output : none
+; destroys : none
+vect_regdump:
+	push	af
+	push	bc
+	push	de
+	push	hl
+	push	ix
+	push	iy
+	
+	; stack frame :
+	;	* iy
+	;	* ix
+	;	* hl
+	;	* de
+	;	* bc
+	;	* af
+	;	* return address (to _throw)
+	;	* return address (to _throw's caller)
+	;	... (frame prior to _throw)
+	
+	ld	hl, 16
+	add	hl, sp
+	push	hl
+	dec	hl
+	dec	hl
+	deref_hl
+	dec	hl
+	dec	hl
+	dec	hl
+	push	hl
+	ld	a, i
+	ld	h, a
+	ld	a, r
+	ld	l, a
+	push	hl
+	
+	call	zp.cclear
+	
+	ld	hl, str_exception
+	ld	de, os.console
+	call	zp.strcpy
+	;call	zp.cputs
+	
+	ld	b, 9
+	ld	hl, 0
+	add	hl, sp
+ 	ld	de, os.console + (3*24) + 19
+	
+vect_regdump.loop:
+	; print MSB
+	inc	hl
+	call	zp.memdump
+	; print LSB
+	dec	hl
+	call	zp.memdump
+	; go to next value
+	inc	hl
+	inc	hl
+	; update ascii copy target
+	ld	a, e
+	sub	12
+	jr	nc, vect_regdump.noadjust
+	neg
+	dec	d
+vect_regdump.noadjust:
+	ld	e, a
+	
+	djnz	vect_regdump.loop
+	
+	; skip stack entry : caller
+	inc	hl
+	inc	hl
+	
+	; dump stack a bit now...
+	
+	ld	b, 16
+ 	ld	de, os.console + (5*24) - 1
+	
+	; remove zero terminator
+	ld	a, ' '
+	ld	(de), a
+	
+vect_stackdump.loop:
+	; update ascii copy target
+	inc	de
+	inc	de
+	
+	; print MSB
+	inc	hl
+	call	zp.memdump
+	; print LSB
+	dec	hl
+	call	zp.memdump
+	; go to next value
+	inc	hl
+	inc	hl
+	
+	; break away
+	ld	a, h
+	or	l
+	jr	z, $+4
+	
+	djnz	vect_stackdump.loop
+	
+	xor	a
+	ld	(de), a
+	
+	; remove reg dump from stack
+	ld	hl, 10
+	add	hl, sp
+	ld	sp, hl
+	
+	; restore all registers used by the routine
+	pop	hl
+	pop	de
+	pop	bc
+	pop	af
+	ret
+
+vect_tcreate:
+	push	af
+	ld	a, E_CREATE
+	jr	_throw
+
+vect_tlocate:
+	push	af
+	ld	a, E_LOCATE
+	jr	_throw
+
+vect_tlink:
+	push	af
+	ld	a, E_LINK
+	jr	_throw
+
+vect_texist:
+	push	af
+	ld	a, E_EXIST
+	jr	_throw
+
+vect_tmemory:
+	push	af
+	ld	a, E_MEMORY
+	jr	_throw
+
+vect_tchecksum:
+	push	af
+	ld	a, E_CHECKSUM
+	jr	_throw
+
+vect_tcompat:
+	push	af
+	ld	a, E_COMPAT
+	jr	_throw
+
+vect_throw:
+	push	af
+	ld	a, $FF
+
+_throw:
+	; let's avoid recursion huh (and avoid rendering the dumps useless...)
+	di
+	
+	ld	(os.exception), a
+	pop	af
+	
+	push	af
+	push	bc
+	push	de
+	push	hl
+	
+	; dump some memory that is about to be used to page 5 to restore it
+	; if user chosses to resume program execution
+	in	a, (map_bankA_port)
+	push	af
+	ld	a, $85
+	out	(map_bankA_port), a
+	
+	ld	hl, os.sysram
+	ld	de, $4000
+	ld	bc, os.command - os.sysram
+	ldir
+	
+	; oh and take a screenshot as well to restore it...
+	ex	de, hl
+	call	zp.screenshot
+	
+	pop	af
+	out	(map_bankA_port), a
+	
+	pop	hl
+	pop	de
+	pop	bc
+	pop	af
+	
+	; display regdump
+	call	vect_regdump
+	
+	push	af
+	push	bc
+	push	de
+	push	hl
+	
+	; display exception type string (default : unhandled)
+	ld	de, os.console
+	ld	a, (os.exception)
+	ld	hl, str_eunhandled
+	
+	; check for known type
+	cp	E_LAST+1
+	jr	nc, _throw_unhandled
+	
+	; pick right string
+	inc	de
+	inc	de
+	push	af
+	call	zp.htoa_byte
+	pop	af
+	inc	de
+	
+	ld	hl, err_strings
+	add	a, a
+	offset_hl
+	deref_hl
+	
+_throw_unhandled:
+	call	zp.strcpy
+	
+	; remove ugly zero terminator from console...
+	dec	de
+	ld	a, ' '
+	ld	(de), a
+	
+_throw_show:
+	; display the console
+	call	zp.cdisp
+	
+	ld	bc, $0603
+	
+_throw_update:
+	; display address selection indicator
+	call _throw_disp
+	
+	; wait for key input
+_throw_wait:
+	push	bc
+	ld	c, 100
+	call	zp.timer_msleep
+	pop	bc
+	
+	call	zp.getkey
+	cp	sk_clear
+	jp	z, _throw_return
+	cp	sk_enter
+	jp	z, _throw_hexedit
+	cp	sk_up
+	jr	z, _throw_up
+	cp	sk_down
+	jr	z, _throw_down
+	cp	sk_left
+	jp	z, _throw_left
+	cp	sk_right
+	jp	z, _throw_right
+	cp	sk_mode
+	jr	nz, _throw_wait
+	
+	; restore default keymap just in case...
+	ld	hl, 0
+	ld	(os.keymap.normal), hl
+	ld	(os.keymap.shift), hl
+	ld	(os.keymap.alpha), hl
+	
+	; return to console
+	jp zp.console
+
+_throw_up:
+	ld	a, b
+	sub	6
+	cp $06
+	jr	c, _throw_wait
+	cp	$18
+	jr	nc, $+11
+	call	_throw_disp
+	ld	a, b
+	sub	6
+	ld	b, a
+	jr	_throw_update
+	
+	call	_throw_disp
+	ld	a, b
+	sub	6
+	ld	b, a
+	cp	$18
+	jr	nz, _throw_update
+	sub	6
+	ld	b, a
+	
+	ld	a, c
+	dec	a
+	; mlt 4
+	add	a, a
+	add	a, a
+	; div 3
+	ld	d, a
+	ld	e, 3
+	call	zp.div_d_e
+	ld	c, d
+	inc	c
+	inc	c
+	inc	c
+	jr	_throw_update
+
+_throw_down:
+	ld	a, b
+	add	a, 6
+	cp	$18
+	jr	nc, $+11
+	call	_throw_disp
+	ld	a, b
+	add	a, 6
+	ld	b, a
+	jr	_throw_update
+	
+	ld	e, c
+	ld	d, a
+	
+	jr	nz, _throw_down.nojmp
+	add	a, 6
+	ld	d, a
+	
+	ld	a, c
+	sub	3
+	rra
+	;rra
+	and	$3E
+	ld	e, a
+	rra
+	add	a, e
+	inc	a
+	ld	e, a
+_throw_down.nojmp:
+	call	_throw_check
+	jp	c, _throw_wait
+	
+	push	de
+	call	_throw_disp
+	pop	bc
+	
+	jp	_throw_update
+
+_throw_left:
+	ld	a, c
+	cp	$07
+	jp	c, _throw_wait
+	call	_throw_disp
+	ld	a, b
+	cp	$18
+	ld	a, c
+	ld	e, 8
+	jr	c, $+4
+	dec	e
+	dec	e
+	sub	e
+	ld	c, a
+	jp	_throw_update
+
+_throw_right:
+	ld	a, c
+	cp	$13
+	jp	nc, _throw_wait
+	
+	ld	a, b
+	cp	$18
+	ld	a, c
+	ld	e, 8
+	jr	c, $+4
+	dec	e
+	dec	e
+	add	a, e
+	ld	e, a
+	ld	d, b
+	
+	call	_throw_check
+	jp	c, _throw_wait
+	push	de
+	call	_throw_disp
+	pop	bc
+	jp	_throw_update
+
+_throw_check:
+	push	de
+	ld	a, d
+	add	a, a
+	add	a, a
+	add	a, e
+	ld	e, a
+	adc	a, 0
+	sub	e
+	ld	d, a
+	ld	hl, os.console
+	add	hl, de
+	pop	de
+	
+	; basic checks for number
+	ld	a, (hl)
+	cp	'0'
+	ret	c
+	cp	'F'+1
+	ccf
+	ret
+
+; return to caller, *virtually* unharmed (console and screen have been altered...)
+_throw_return:
+	; wait for no key to be pressed
+	call	zp.getkey
+	cp	sk_null
+	jr	nz, $-5
+	
+	; clear keyport to avoid unwanted keypress to be caught by interrupted code
+	;ld	a, $FF
+	;out	(key_port), a
+	
+	; todo : save/restore screen? console? ... [using page 5 presumably]
+	
+	in	a, (map_bankA_port)
+	push	af
+	ld	a, $85
+	out	(map_bankA_port), a
+	
+	; restore previously saved sysram
+	ld	hl, $4000
+	ld	de, os.sysram
+	ld	bc, os.command - os.sysram
+	ldir
+	
+	ex	de, hl
+	; restore LCD memory from screenshot
+	; save vbuf addr
+	ld	hl, (os.vbuf_addr)
+	
+	; pretend our screenshot is vbuf
+	ex	de, hl
+	ld	(os.vbuf_addr), hl
+	
+	; restore LCD memory
+	call	zp.vbufdisp
+	
+	; restore vbuf addr
+	ex	de, hl
+	ld	(os.vbuf_addr), hl
+	
+	pop	af
+	out	(map_bankA_port), a
+	
+	; restore regs
+	pop	hl
+	pop	de
+	pop	bc
+	pop	af
+	
+	; reenable interrupts
+	ei
+	
+	; go back
+	ret
+
+; open hexedit to view some memory (starting from selected location)
+_throw_hexedit:
+	; set parameters
+	
+	; (/6 *24 : *4) /256 : /4
+	; convert coordinates
+	ld	a, b
+	add	a, a
+	add	a, a
+	add	a, c
+	ld	c, a
+	adc	a, 0
+	sub	c
+	ld	b, a
+	ld	hl, os.console
+	add	hl, bc
+	
+	push	hl
+	; ensure zero termination
+	ld	bc, 4
+	add	hl, bc
+	ld	(hl), 0
+	pop	hl
+	
+	ld	a, 1
+	call	app.hexedit
+	
+	; todo : preserve regdump and go back to it?
+	di
+	jp	_throw_show
+	;jp	zp.console
+
+_throw_disp:
+	;ld	bc, $0603
+	push	bc
+	ld	de, $0604
+	call	vect_cinvert
+	pop	bc
+	ret
+
+err_strings:
+	.dw	str_ecreate
+	.dw	str_elocate
+	.dw	str_elink
+	.dw	str_eexist
+	.dw	str_emem
+	.dw	str_echecksum
+	.dw	str_ecompat
+
+; console is 24 char wide : occupy it all
+str_exception:
+	.db	"EX  -                   "     ;1
+	.db	"AF      BC      DE      "     ;2
+	.db	"HL      IX      IY      "     ;3
+	.db	"SP      PC      IR      "     ;4
+	.db	"Stack Dump:             ", 0  ;5
+;	.db	"                        "     ;6
+;	.db	"                        ", 0  ;7
+		                               ;8
+		;012345678901234567890123
+
+str_ecreate:
+	.db	"Can't Create File\000" ; don't ask me... looks like tasm fucks up when string literals end
+str_elocate:
+	.db	"Can't Locate File\000" ; with 'e' and discard the zero terminator unless it is added that way...
+str_elink:
+	.db	"Transmission Error", 0
+str_eexist:
+	.db	"File Exists", 0
+str_emem:
+	.db	"Out of Memory", 0
+str_echecksum:
+	.db	"Bad Link Checksum", 0
+str_ecompat:
+	.db "Compat Layer Error", 0
+str_eunhandled:
+	.db	"  UNHANDLED  EXCEPTION ", 0
+		;012345678901234567890123

@@ -1,0 +1,430 @@
+.nolist
+;Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Copyright (c) 2004, Sean McLaughlin.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+; brief : copy a string
+; input : hl -> address of zero terminated string, de -> destination (must have space for strlen + 1)
+; output : none
+; destroys : a (hl, de -> point to end of strings)
+vect_strcpy:
+vect_strcpy._loop:
+	ld	a, (hl)
+	ldi
+	inc	bc
+	or	a
+	jr	nz, vect_strcpy._loop
+	ret
+
+; brief : copy a string
+; input :
+;		hl -> address of zero terminated string,
+;		de -> destination (must have space for strlen + 1)
+;		bc -> maximum length to copy
+; output : none
+; destroys : a, bc, (hl, de -> point to end of strings)
+vect_strncpy:
+vect_strncpy._loop:
+	ld	a, (hl)
+	ldi
+	ret	po
+	or	a
+	jr	nz, vect_strncpy._loop
+	ret
+
+; brief : compute the size of a string
+; input : hl -> address of zero terminated string
+; output : bc -> size of string
+; destroys : a
+vect_strlen:
+	push	hl
+	xor	a
+	ld	b, a
+	ld	c, a
+	cpir
+	ld	h, a
+	ld	l, a
+	scf
+	sbc	hl, bc
+	ld	b, h
+	ld	c, l
+	pop	hl
+	ret
+
+; brief : move string end
+; input : hl -> address of zero terminated string
+; output : hl -> address of next string (after zero terminator)
+; destroys : a
+; note : contrary to strnext this routine can point to a null byte
+vect_strend:
+	push	bc
+	xor	a
+	ld	b, a
+	ld	c, a
+	cpir
+	pop	bc
+	ret
+
+; brief : move to next string
+; input : hl -> address of zero terminated string
+; output : hl -> address of first non null byte after end of string
+; destroys : a
+vect_strnext:
+	call	vect_strend
+vect_strnext.loop:
+	ld	a, (hl)
+	or	a
+	ret	nz
+	inc	hl
+	jr	vect_strnext.loop
+
+; brief : concatenate two strings
+; input : hl -> address of string buffer, de -> address of string to concat to string at hl
+; output : de -> end of resulting string (past nul terminator) 
+; destroys : a
+vect_strcat:
+	push	hl
+	xor	a
+	ld	bc, -1
+	cpir
+	dec	hl
+	ex	de, hl
+vect_strcat._loop:
+	ld	a, (hl)
+	ldi
+	or	a
+	jr	nz, vect_strcat._loop
+	pop	hl
+	ret
+
+; brief : convert a string into uppercase
+; input : hl -> address of string buffer
+; output : none
+; destroys : a
+vect_strupr:
+	push	hl
+vect_strupr._loop:
+	ld	a, (hl)
+	or	a
+	jr	z, vect_strupr._done
+	cp	'a'
+	jr	c, vect_strupr._skip
+	cp	'z' + 1
+	jr	nc, vect_strupr._skip
+	and	~$20
+	ld	(hl), a
+vect_strupr._skip:
+	inc	hl
+	jp	vect_strupr._loop
+vect_strupr._done:
+	pop	hl
+	ret
+
+; brief : compare two strings
+; input : hl, de -> addresses of strings to compare
+; output : flags set as defined (by 8bit cp)
+; destroys : a
+vect_strcmp:
+	push	hl
+	push	de
+vect_strcmp._loop:
+	ld	a, (de)
+	cp	(hl)
+	jr	nz, vect_strcmp._done
+	inc	hl
+	inc	de
+	or	a
+	jr	nz, vect_strcmp._loop
+vect_strcmp._done:
+	pop	de
+	pop	hl
+	ret
+
+; brief : compare two strings
+; input : hl, de -> addresses of strings to compare
+; output : flags set as defined (by 8bit cp)
+; destroys : a, hl, de
+vect_strcmp_end:
+vect_strcmp_end._loop:
+	ld	a, (de)
+	cp	(hl)
+	ret	nz
+	inc	hl
+	inc	de
+	or	a
+	jr	nz, vect_strcmp_end._loop
+	ret
+
+; brief : compare two strings
+; input : hl, de -> addresses of strings to compare, bc -> max length to compare
+; output : flags set as defined (by 8bit cp)
+; destroys : a
+vect_strncmp:
+	push	hl
+	push	de
+vect_strncmp._loop:
+	ld	a, (de)
+	inc	de
+	cpi
+	jr	nz, vect_strncmp._done
+	jp	po, vect_strncmp._done
+	or	a
+	jr	nz, vect_strncmp._loop
+vect_strncmp._done:
+	pop	de
+	pop	hl
+	ret
+
+; brief : convert number to string
+; input : hlbc -> integer to convert, de -> address of string buffer
+; output : 4 chars written to (de), de updated accordingly
+; destroys : a
+vect_htoa_dword:
+	call	vect_htoa_word
+	ld	a, b
+	call	vect_htoa_byte
+	ld	a, c
+	jp	vect_htoa_byte
+
+; brief : convert number to string
+; input : hl -> integer to convert, de -> address of string buffer
+; output : 4 chars written to (de), de updated accordingly
+; destroys : a
+vect_htoa_word:
+	ld	a, h
+	call	vect_htoa_byte
+	ld	a, l
+
+; brief : convert number to string
+; input : a -> integer to convert, de -> address of string buffer
+; output : 2 chars written to (de), de updated accordingly
+; destroys : a
+vect_htoa_byte:
+	push	af
+	rra
+	rra
+	rra
+	rra
+	call	vect_htoa_nibble
+	pop	af
+
+; brief : convert number to string
+; input : a -> integer to convert (upper 4 bits not taken into account), de -> address of string buffer
+; output : 1 char written to (de), de updated accordingly
+; destroys : a
+vect_htoa_nibble:
+	or	$F0
+	daa
+	add	a, $A0
+	adc	a, $40
+	
+	ld	(de), a
+	inc	de
+	ret
+
+; brief : convert number to string
+; input : hl -> integer to convert, de -> address of string buffer
+; output : 5 char written to (de), de updated accordingly
+; destroys : a, bc
+vect_dtoa_word:
+	ld	bc, -10000
+	call	vect_dtoa_w.sub
+	ld	bc, -1000
+	call	vect_dtoa_w.sub
+	ld	bc, -100
+	call	vect_dtoa_w.sub
+	ld	c, -10
+	call	vect_dtoa_w.sub
+	ld	c, b
+
+vect_dtoa_w.sub:
+	ld	a, '0'-1
+vect_dtoa_w._loop:
+	inc	a
+	add	hl, bc
+	jr	c, vect_dtoa_w._loop
+	sbc	hl, bc
+
+	ld	(de), a
+	inc	de
+	ret
+
+; brief : convert number to string
+; input : a -> integer to convert, de -> address of string buffer
+; output : 3 char written to (de), de updated accordingly
+; destroys : a, bc
+vect_dtoa_byte:
+	ld	b, -100
+	call	vect_dtoa_b.sub
+	ld	b, -10
+	call	vect_dtoa_b.sub
+	ld	b, -1
+
+vect_dtoa_b.sub:
+	ld	c, '0'-1
+vect_dtoa_b._loop:
+	inc	c
+	add	a, b
+	jr	c, vect_dtoa_b._loop
+	sub	b
+	
+	ex	de, hl
+	ld	(hl), c
+	inc	hl
+	ex	de, hl
+	ret
+
+; brief : convert number to string
+; input : hlbc -> integer to convert, de -> address of string buffer
+; output : 32 char written to (de), de updated accordingly
+; destroys : a, bc
+vect_btoa_dword:
+	call	vect_btoa_word
+	ld	a, b
+	call	vect_btoa_byte
+	ld	a, c
+	jp	vect_btoa_byte
+	
+; brief : convert number to string
+; input : hl -> integer to convert, de -> address of string buffer
+; output : 16 char written to (de), de updated accordingly
+; destroys : a
+vect_btoa_word:
+	ld	a, h
+	call	vect_btoa_byte
+	ld	a, l
+	
+; brief : convert number to string
+; input : a -> integer to convert, de -> address of string buffer
+; output : 8 char written to (de), de updated accordingly
+; destroys : a
+vect_btoa_byte:
+	push	bc
+	ld	b, 8
+	ex	de, hl
+	
+vect_btoa_byte.loop:
+	ld	c, '0'
+	rlca
+	jr	nc, $+3
+	inc	c
+	ld	(hl), c
+	inc	hl
+	djnz	vect_btoa_byte.loop
+	ex	de, hl
+	
+	pop	bc
+	ret
+
+; brief : convert version number string (xx.yy) to 16 bit number (major:minor)
+; input : de -> address of string (hex number without prefix/suffix)
+; output : hl -> number corresponding to input string, de -> end of string (past nul terminator)
+; destroys : a, bc
+vect_atod_version:
+	ld	b, 2
+	call	vect_atod
+	ld	c, l
+	ld	b, 2
+	call	vect_atod
+	
+	ld	h, c
+	ret
+
+; brief : convert string to number
+; input : de -> address of string (hex number without prefix/suffix), b -> max size to convert
+; output : hl -> number corresponding to input string, de -> end of string (past nul terminator)
+; destroys : a, b
+vect_atod:
+	ld	hl, 0
+	ld	a, (de)
+	or	a
+	ret	z
+vect_atod._loop:
+	; next digit
+	ld	a, (de)
+	inc	de
+	or	a
+	ret	z
+	
+	; range checking
+	sub	'0'
+	ret	c
+	cp	10
+	ret	nc
+	
+	; mult hl by 10
+	push de
+	ld	d, h
+	ld	e, l
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	pop	de
+	
+	; add a
+	offset_hl
+	
+	djnz	vect_atoh._loop
+	ret
+
+; brief : convert string to number
+; input : de -> address of string (hex number without prefix/suffix), b -> max size to convert
+; output : hl -> number corresponding to input string, de -> end of string (past nul terminator)
+; destroys : a, b
+vect_atoh:
+	ld	hl, 0
+	ld	a, (de)
+	or	a
+	scf
+	ret	z
+vect_atoh._loop:
+	ld	a, (de)
+	inc	de
+	or	a
+	ret	z
+	cp	'0'
+	ret	c
+	cp	'9'+1
+	jr	c, vect_atoh._okay
+	cp	'A'
+	ret	c
+	cp	'F'+1
+	jr	c, vect_atoh._okay2
+	cp	'a'
+	ret	c
+	cp	'f'+1
+	ccf
+	ret	c
+	and	~$20
+vect_atoh._okay2:
+	sub	'A'-10-'0'
+vect_atoh._okay:
+	sub	'0'
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	or	l
+	ld	l, a
+	djnz	vect_atoh._loop
+	ret

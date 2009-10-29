@@ -1,0 +1,815 @@
+.nolist
+;Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Copyright (c) 2004, Sean McLaughlin.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+; brief : clears the console
+; input : none
+; output : none
+; destroys : hl, de, bc
+vect_cclear:
+	ld	hl, os.console
+	ld	de, os.console+1
+	ld	bc, 215
+	ld	(hl), ' '
+	ldir
+	ret
+
+; brief : redraw the console
+; input : none
+; output : none
+; destroys : hl, de, bc
+vect_credraw:
+	call	zp.clrscr
+	ld	hl, (os.vbuf_addr)
+	ld	bc, (MSG_PANE+8)*12
+	add	hl, bc
+	ld	d, h
+	ld	e, l
+	inc	de
+	ld	(hl), $FF
+	ld	bc, 11
+	ldir
+	jp	zp.vbufdisp
+
+; brief : inverts a nibble of LCD memory (correspond to a line of character cell)
+; input : b -> row, c -> column, d -> number of rows, e -> number of cols
+; output : none
+; destroys : 
+vect_cinvert:
+	; compute mask
+	ld	a, $0F
+	bit	0, c
+	jr	z, $+6
+	add	a, a
+	add	a, a
+	add	a, a
+	add	a, a
+	
+	push	af
+	
+vect_cinvert.oloop:
+	; set column
+	lcd_busy
+	ld	a, c
+	srl	a
+	add	a, $20
+	out	(lcd_cmd_port), a	; 20 - 2B: y-address
+	
+	pop	af
+	rrca
+	rrca
+	rrca
+	rrca
+	push	af
+	
+	push	de
+	push	bc
+	
+	ld	e, a
+	
+	; set row
+	lcd_busy
+	ld	a, b			; 80 - BF: x-address
+	add	a, $80
+	out	(lcd_cmd_port), a
+	
+vect_cinvert.iloop:
+	call	vect_invlcdnibble
+	inc	b
+	dec	d
+	jr	nz, vect_cinvert.iloop
+	pop	bc
+	pop	de
+	
+	inc	c
+	dec	e
+	jr	nz, vect_cinvert.oloop
+	
+	pop	af
+	
+	ret
+
+; destroys : a
+vect_invlcdnibble:
+	; dummy read
+	lcd_busy
+	in	a, (lcd_data_port)
+	
+	; read
+	lcd_busy
+	in	a, (lcd_data_port)
+	
+	; invert
+	xor	e
+	push	af
+	
+	; set row
+	lcd_busy
+	ld	a, b			; 80 - BF: x-address
+	add	a, $80
+	out	(lcd_cmd_port), a
+	
+	lcd_busy
+	pop	af
+	; write
+	out	(lcd_data_port), a
+	ret
+
+; brief : display the content of the console (directly to LCD, no buffering)
+; input : none
+; output : none
+; destroys : a
+vect_cdisp:
+	push	hl
+	push	de
+	push	bc
+
+	ld	hl, os.console
+
+	ld	c, 0
+vect_cdisp._row:
+	ld	a, $80
+	out	(lcd_cmd_port), a
+	lcd_busy
+	ld	a, c
+	add	a, $20
+	out	(lcd_cmd_port), a
+	lcd_busy
+
+	ld	b, 9
+vect_cdisp._column:
+	push	bc
+
+		ld	a, (hl)
+		inc	hl
+		ld	b, (hl)			; A = char 0, B = char 1
+
+		push	hl
+			srl	a
+			rl	c		; C.0 = char 0 lsb
+
+			ld	h, 0
+			ld	l, a
+			ld	d, h
+			ld	e, l
+			add	hl, hl
+			add	hl, de
+			add	hl, hl
+			ld	de, os.font_con
+			add	hl, de		; HL = char 0 bmp
+
+			ld	a, b
+			push	hl
+				rra
+				rl	c	; C.1 = char 0 lsb, C.0 = char 1 lsb
+
+				ld	h, 0
+				ld	l, a
+				ld	d, h
+				ld	e, l
+				add	hl, hl
+				add	hl, de
+				add	hl, hl
+				ld	de, os.font_con
+				add	hl, de
+
+			pop	de		; HL = char 1 bmp, DE = char 0 bmp
+	
+			ld	b, 6
+vect_cdisp._Byte_Loop:
+			push	bc
+				ld	a, (de)
+				bit	1, c
+				jr	z, $+6
+				rlca
+				rlca
+				rlca
+				rlca
+				and	$F0	; A = AAAA0000
+
+				ld	b, a
+				ld	a, (hl)
+				bit	0, c
+				jr	nz, $+6
+				rrca
+				rrca
+				rrca
+				rrca
+				and	$0F	; A = 0000BBBB
+				or	b	; A = AAAABBBB
+
+				out	(lcd_data_port), a
+
+				inc	hl
+				inc	de
+
+			pop	bc
+			djnz	vect_cdisp._Byte_Loop
+
+		pop	hl
+		ld	c, 23
+		add	hl, bc
+
+	pop	bc
+	djnz	vect_cdisp._column
+
+	ld	de, -(9*24)+2
+	add	hl, de
+
+	inc	c
+	ld	a, c
+	cp	12
+	jp	nz, vect_cdisp._row
+
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+; brief : scrolls console and writes a line to it, updates console pos
+; input : a -> char to write
+; output : see cprint
+; destroys : none
+vect_cputs:
+	call	vect_cscroll
+	push	hl
+	ld	hl, $0800
+	ld	(os.curpos.col), hl
+	pop	hl
+	;jp	zp.cprint
+
+; brief : writes a string to the console, updates console pos
+; input : hl -> address of NULL terminated string to write
+; output : a = 0, hl points immediately after the NULL terminator
+; destroys : none
+vect_cprint:
+vect_cprint._loop:
+	ld	a, (hl)
+	inc	hl
+	or	a
+	ret	z
+	cp	10
+	jr	z, vect_cprint._newline
+
+	call	vect_cputch
+	jp	vect_cprint._loop
+
+vect_cprint._newline:
+	ld	a, (os.curpos.row)
+	cp	8
+	jr	z, vect_cprint._scroll
+	inc	a
+	ld	(os.curpos.row), a
+	jr	vect_cprint._end
+
+vect_cprint._scroll:
+	call	vect_cscroll
+vect_cprint._end:
+	xor	a
+	ld	(os.curpos.col), a
+	jp	vect_cprint._loop
+
+; brief : moves console lines up
+; input : none
+; output : none
+; destroys : none
+vect_cscroll:
+	push	hl
+	push	de
+	push	bc
+	
+	; move existing lines up
+	ld	hl, os.console+24
+	ld	de, os.console
+	ld	bc, 8*24
+	ldir
+	
+	; fill new line with spaces
+	ld	h, d
+	ld	l, e
+	inc	de
+	ld	(hl), ' '
+	ld	c, 23
+	ldir
+
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+; brief : writes a char to the console, updates console pos
+; input : a -> char to write
+; output : none
+; destroys : none
+vect_cputch:
+	push	hl
+
+	ld	hl, (os.curpos.col)	; H = row, L = column
+	push	hl
+	push	af
+
+	ld	a, h
+	add	a, a			; row * 2
+	add	a, h			; row * 3
+	add	a, a			; row * 6
+	add	a, a			; row * 12
+	add	a, a			; row * 24
+	add	a, l			; row * 24 + col
+	;ld	h, msb(os.console)
+	;ld	l, a
+	ld	hl, os.console
+	offset_hl
+	
+	pop	af
+	ld	(hl), a
+
+	pop	hl
+	inc	l
+	ld	a, l
+	cp	24
+	jr	nz, vect_cprint._End
+
+	ld	l, 0
+	inc	h
+	ld	a, h
+	cp	9
+	jr	nz, vect_cprint._End
+
+	call	vect_cscroll
+	ld	hl, $0800
+
+vect_cprint._End:
+	ld	(os.curpos.col), hl
+	pop	hl
+	ret
+
+; brief : set console pos (for writing), bounds checking
+; input : bc -> pos (row:col)
+; output : CF set on failure (bounds), reset otherwise
+; destroys : a
+vect_csetpos:
+	ld	a, b
+	cp	9
+	ccf
+	ret	c
+	ld	a, c
+	cp	24
+	ccf
+	ret	c
+	ld	(os.curpos.col), bc
+	ret
+
+; brief : string input
+; input : os.command_buf -> buffer params (addr, len), ix, if non null is a callback called upon each keypress
+; output : string written in os.command (128 byte buffer)
+; destroys : a, bc, de, hl
+vect_cgets:
+	ld	a, CMD_PANE
+	call	zp.clrline
+	call	zp.displine
+	
+	ld	hl, (os.command_buf)
+	ld	b, 0
+	ld	c, b
+	ld	e, c
+	ld	(hl), b
+	
+	; hl -> current buffer position end
+	; b -> buffer size
+	; c -> cursor position 
+	; e -> buffer position corresponding to left border of cmd pane
+	
+vect_cgets.loop:
+	call	zp.getch
+	
+	ld	d, a
+	ld	a, ixh
+	or	ixl
+	ld	a, d
+	call	nz, zp.call_ix
+	jr	c, vect_cgets.nomove
+	
+	; check special keys
+	cp	k_enter
+	ret	z
+	cp	k_clear
+	jr	z, vect_cgets
+	cp	k_del
+	jp	z, vect_cgets.backspace
+	cp	k_left
+	jp	z, vect_cgets.prev
+	cp	k_right
+	jp	z, vect_cgets.next
+	
+	; check valid key range
+	cp	' '
+	jr	c, vect_cgets.loop
+	
+	; save key value
+	ld	d, a
+	
+	; check buffer size
+	push	hl
+	ld	hl, os.command_buf + 2
+	ld	a, b
+	cp	(hl)
+	pop	hl
+	jr	nc, vect_cgets.loop
+	
+	sub	c
+	jr	z, vect_cgets.append
+	; insert inside buffer
+	push	bc
+	inc	a
+	ld	b, a
+	offset_hl
+	
+vect_cgets.insert:
+	ld	a, (hl)
+	inc	hl
+	ld	(hl), a
+	dec	hl
+	dec	hl
+	djnz	vect_cgets.insert
+	
+	pop	bc
+	ld	a, (hl)
+	ld	(hl), d
+	inc	hl
+	ld	(hl), a
+	jr	vect_cgets.postinsert
+vect_cgets.append:
+	; at buffer end : append
+	ld	(hl), d
+	inc	hl
+	ld	(hl), 0
+	
+vect_cgets.postinsert:
+	inc	b
+	inc	c
+	
+vect_cgets.update:
+	; 
+	ld	a, c
+	sub	e
+	sub	23
+	jr	c, vect_cgets.nomove
+	add	a, e
+	ld	e, a
+vect_cgets.nomove:
+	
+	ld	a, CMD_PANE
+	call	zp.clrline
+	
+	push	hl
+	
+	push	de
+	push	bc
+	ld	d, 0
+	ex	de, hl
+	ld	de, (os.command_buf)
+	add	hl, de
+	ld	d, 24
+	ld	bc, CMD_PANE*256+0
+	call	zp.putsn_con
+	pop	bc
+	pop	de
+	
+	push	bc
+	push	de
+	; draw cursor
+	ld	a, c
+	ld	c, %10000000
+	sub	e
+	or	a
+	rra
+	jr	nc, $+4
+	ld	c, %00001000
+	
+	ld	hl, (os.vbuf_addr) ;lcd(CMD_PANE, 0)
+	ld	de, CMD_PANE*12
+	add	hl, de
+	ld	de, 12
+	offset_hl
+	
+	ld	b, 6
+vect_cgets.cursor:
+	ld	a, (hl)
+	or	c
+	ld	(hl), a
+	add	hl, de
+	djnz	vect_cgets.cursor
+	pop	de
+	pop	bc
+	
+	pop	hl
+	
+	ld	a, CMD_PANE
+	call	zp.displine
+	jp	vect_cgets.loop
+
+vect_cgets.prev:
+	ld	a, c
+	or	a
+	jp	z, vect_cgets.loop
+	dec	c
+	dec	hl
+	cp	e
+	jr	nz, vect_cgets.nomove
+	dec	e
+	jr	vect_cgets.nomove
+	
+vect_cgets.next:
+	ld	a, c
+	cp	b
+	jp	z, vect_cgets.loop
+	inc	c
+	inc	hl
+	jr	vect_cgets.update
+
+vect_cgets.backspace:
+	ld	a, c
+	or	a
+	jp	z, vect_cgets.loop
+	sub	b
+	jr	z, vect_cgets.bs.atend
+	push	hl
+	push	de
+	push	bc
+	neg
+	inc	a
+	ld	b, 0
+	ld	c, a
+	
+	ld	d, h
+	ld	e, l
+	dec	de
+	
+	ldir
+	
+	pop	bc
+	pop	de
+	pop	hl
+	dec	hl
+	jr	$+5
+vect_cgets.bs.atend:
+	dec	hl
+	ld	(hl), 0
+	
+	dec	b
+	dec	c
+	
+	ld	a, c
+	sub	e
+	jp	nc, vect_cgets.nomove
+	dec	e
+	
+	jp	vect_cgets.nomove
+
+; brief : write a character to display buffer using console font
+; input : a -> char to write, b -> row, c -> column
+; output : none
+; destroys : a
+vect_putch_con:
+	push	ix
+	push	hl
+	push	de
+	push	bc
+	
+	; hl = 12 * b
+	ld	h, 0
+	ld	l, b
+	ld	d, h
+	ld	e, l
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	add	hl, hl
+
+	ld	e, c
+	ld	c, a		; C.0 font lsb
+	srl	e
+	rl	c		; C.1 font lsb  C.0 = column lsb
+	add	hl, de
+
+	ld	de, (os.vbuf_addr) ;os.lcd.mem
+	add	hl, de		; HL = address into lcd_mem
+
+	push	hl
+	rra
+	ld	h, 0
+	ld	l, a
+	ld	d, h
+	ld	e, l
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	ld	de, os.font_con
+	add	hl, de		; HL = address of bitmap
+	ex	(sp), hl
+	pop	ix		; HL -> lcd_mem  IX -> bitmap
+
+	ld	b, 6
+
+vect_putch_con._loop:
+	ld	a, (ix)
+	bit	1, c
+	jr	nz, vect_putch_con._oddfont
+	rlca
+	rlca
+	rlca
+	rlca
+vect_putch_con._oddfont:
+	and	$0F
+	ld	e, $F0
+	bit	0, c
+	jr	nz, vect_putch_con._oddcolumn
+	ld	e, $0F
+	rlca
+	rlca
+	rlca
+	rlca
+vect_putch_con._oddcolumn:
+	push	af
+	ld	a, (hl)
+	and	e
+	ld	d, a
+	pop	af
+	or	d
+	ld	(hl), a
+	inc	ix
+	ld	de, 12
+	add	hl, de
+	djnz	vect_putch_con._loop
+	pop	bc
+	pop	de
+	pop	hl
+	pop	ix
+	ret
+
+; brief : write a string to display buffer using console font
+; input : hl -> address of zero terminated string, b -> row, c -> column
+; output : a = 0, hl points to memory after the zero terminator, bc holds last row:col
+; destroys : a, hl, bc (see output)
+vect_puts_con:
+vect_puts_con._loop:
+	ld	a, (hl)
+	inc	hl
+	or	a
+	ret	z
+	cp	10
+	jr	z, vect_puts_con._newline
+	call	vect_putch_con
+	inc	c
+	ld	a, c
+	cp	24
+	jr	nz, vect_puts_con._loop
+vect_puts_con._newline:
+	ld	a, b
+	add	a, 6
+	ld	b, a
+	ld	c, 0
+	jr	vect_puts_con._loop
+
+; brief : write a string to display buffer using console font
+; input : hl -> address of zero terminated string, b -> row, c -> column, d -> max number of chars to write
+; output : a = 0, hl points to memory after the zero terminator, bc holds last row:col
+; destroys : a, hl, bc (see output)
+vect_putsn_con:
+vect_putsn_con._loop:
+	ld	a, d
+	or	a
+	ret	z
+	ld	a, (hl)
+	inc	hl
+	or	a
+	ret	z
+	cp	10
+	jr	z, vect_putsn_con._newline
+	call	vect_putch_con
+	dec	d
+	inc	c
+	ld	a, c
+	cp	24
+	jr	nz, vect_puts_con._loop
+vect_putsn_con._newline:
+	ld	a, b
+	add	a, 6
+	ld	b, a
+	ld	c, 0
+	jr	vect_putsn_con._loop
+
+; brief : write a character to display buffer using large (6x8) font
+; input : a -> char to write, b -> row, c -> column
+; output : CF set if coords are out of range (in this case nothing is printed)
+; destroys : a
+vect_putch_6x8:
+	; putsprite doesn't bother with clipping
+	; so we do simple range checks to avoid writing garbage...
+	ld	a, c
+	cp	90
+	ccf
+	ret	c
+	
+	ld	a, b
+	cp	56
+	ccf
+	ret	c
+	
+	push	hl
+	push	de
+	push	bc
+	
+	ld	h, 0
+	ld	l, a
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	ld	de, os.font_6x8
+	add	hl, de
+	ex	de, hl
+	
+	; font map weighs 2kb : moved to page 1C...
+	in	a, (map_bankA_port)
+	push	af
+	push	bc
+	ld	a, $1C
+	ld	c, map_bankA_port
+	call	zp.setflashpage
+	pop	bc
+	
+	ld	l, b
+	ld	h, 1
+	ld	b, 8
+	call	zp.putsprite
+	
+	pop	af
+	out	(map_bankA_port), a
+	
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+; brief : write a string to display buffer using large (6x8) font
+; input : hl -> address of zero terminated string, b -> row, c -> column
+; output : CF set if coord went out of range
+;			otherwise, a = 0, hl points to memory after the zero terminator, bc holds last row:col
+; destroys : a, hl, bc (see output)
+vect_puts_6x8:
+vect_puts_6x8._loop:
+	ld	a, (hl)
+	inc	hl
+	or	a
+	ret	z
+	call	vect_putch_6x8
+	ret	c
+	ld	a, c
+	add	a, 6
+	ld	c, a
+	jr	vect_puts_6x8._loop
+
+; brief : write a string to display buffer using large (6x8) font
+; input : hl -> address of zero terminated string, b -> row, c -> column, d -> max number of chars to write
+; output : CF set if coord went out of range
+;			otherwise, a = 0, hl points to memory after the zero terminator, bc holds last row:col
+; destroys : a, hl, bc (see output)
+vect_putsn_6x8:
+	ld	a, d
+	or	a
+	ret	z
+vect_putsn_6x8._loop:
+	ld	a, (hl)
+	inc	hl
+	or	a
+	ret	z
+	call	vect_putch_6x8
+	ret	c
+	ld	a, c
+	add	a, 6
+	ld	c, a
+	dec	d
+	ret	z
+	jr	vect_puts_6x8._loop
+

@@ -1,0 +1,621 @@
+.nolist
+; malloc code (meminit, malloc, free) :
+; Copyright (c) 2008 Sean McLaughlin.
+;
+; slight modifications, documentation, and rest of this file :
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+; 
+; Permission is hereby granted, free of charge, to any person
+; obtaining a copy of this software and associated documentation
+; files (the "Software"), to deal in the Software without
+; restriction, including without limitation the rights to use,
+; copy, modify, merge, publish, distribute, sublicense, and/or sell
+; copies of the Software, and to permit persons to whom the
+; Software is furnished to do so, subject to the following
+; conditions:
+; 
+; The above copyright notice and this permission notice shall be
+; included in all copies or substantial portions of the Software.
+; 
+; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+; EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+; OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+; NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+; HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+; WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+; FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+; OTHER DEALINGS IN THE SOFTWARE.
+.list
+
+; Definitions
+
+; split thresold
+#define MIN_BLOCK_SIZE	16
+
+;; =meminit=
+;;
+;; ==Description==
+;; Initializes the memory manager.
+;;
+;; ==Inputs==
+;; :HL-Address of a block of memory to use as the memory pool.
+;; :BC-Size of the memory pool.
+;;
+;; !!! HL must be above $8000 (it is assumed to be and pointers will be corrupted if this is false) !!!
+;; (reasonnable assumption for TI calculators but worth documenting anyway)
+;;
+;; !!! another thing worth documenting !!!
+;; pointers (for the linked list) are stored in BIG ENDIAN
+;;
+;; ==Details==
+;; 'meminit' formats a block of memory for subsequent use by 'malloc'
+;; and 'free'.  The memory pool is kept as a singly-linked circular
+;; list where the links always point to nodes at higher addresses
+;; (except the last one).  The pool is initialized as one node
+;; controlling all the data.
+;;
+;; A node looks like this:
+;;
+;; |-┏━━━━━━┯━━━━━━━━┓
+;; |-┃ next │  data  ┃
+;; |-┗━━━━━━┷━━━━━━━━┛
+;; |-⠀◄━16━►⠀◄━size━► 
+;;
+;; 'next' is a 15-bit pointer to the next node in the list.  The msb of
+;; the 'next' field is used to indicate if the node is in use or not.
+;; Set means the node has been allocated.  Clear means that it is free
+;; for the taking.
+;;
+;; A block of data ('data') comes after.  The size of 'data', of course, 
+;; may vary from node to node.
+
+; brief : init memory pool
+; input :	hl -> address of memory block to use as pool
+;			bc -> size of memory pool
+; output : none
+; destroys : a, iy
+vect_meminit:
+	ld	iy, os.flags
+	set	dmeminfo_dirty, (iy + osf.dynamicmem)
+	
+	ld	iy, os.malloc.start
+	
+; brief : init memory pool
+; input :	hl -> address of memory block to use as pool
+;			bc -> size of memory pool
+;			iy -> pointer to memory pool data (6 bytes)
+; output : none
+; destroys : a
+vect_meminit_iy:
+	;ld	(os.malloc.start), hl
+	ld	(iy + 0), l
+	ld	(iy + 1), h
+	;ld	(os.malloc.mp_start), hl
+	ld	(iy + 2), l
+	ld	(iy + 3), h
+	
+	ld	(hl), h
+	res	7, (hl)
+	ld	a, l
+	inc	hl
+	ld	(hl), a
+	dec	hl
+	add hl, bc
+	
+	;ld	(os.malloc.mp_end), hl
+	ld	(iy + 4), l
+	ld	(iy + 5), h
+	
+	or	a
+	sbc	hl, bc
+	
+	ret
+
+; brief : compute available and occupied memory
+; input : none
+; output : bc -> available memory
+; destroys : 
+vect_meminfo:
+	push	af
+	
+	ld	a, (os.flags + osf.dynamicmem)
+	bit	dmeminfo_dirty, a
+	;jr	z, vect_meminfo.clean
+	
+	push	hl
+	push	de
+	push	bc
+	
+	ld	hl, 0
+	ld	(os.dmeminfo), hl
+	ld	(os.dmeminfo + 2), hl
+	
+	ld	hl, (os.malloc.mp_start)
+	
+vect_meminfo.loop:
+	ld	d, (hl)
+	inc	hl
+	ld	e, (hl)
+	inc	hl
+	
+	ld	a, d
+	set	7, d
+	
+	ex	de, hl
+	
+	or	a
+	sbc	hl, de
+	
+	push	af
+	
+	call	c, vect_meminfo.sizefix
+	
+	ld	b, h
+	ld	c, l
+	add	hl, de
+	ld	de, os.dmeminfo
+	ex	de, hl
+	
+	rlca
+	jr	nc, $+4
+	inc	hl
+	inc	hl
+	
+	push	hl
+	deref_hl
+	add	hl, bc
+	ld	b, h
+	ld	c, l
+	pop	hl
+	ld	(hl), c
+	inc	hl
+	ld	(hl), b
+	
+	ex	de, hl
+	
+	pop	af
+	jr	nc, vect_meminfo.loop
+	
+	ld	hl, os.flags + osf.dynamicmem
+	res	dmeminfo_dirty, (hl)
+	
+	pop	bc
+	pop	de
+	pop	hl
+	
+vect_meminfo.clean:
+	ld	bc, (os.dmeminfo)
+	
+	pop	af
+	ret
+
+vect_meminfo.sizefix:
+	ld	hl, (os.malloc.mp_end)
+	or	a
+	sbc	hl, de
+	ret
+
+; _dump_de:
+; 	ret
+; 	push	af
+; 	push	de
+; 	push	hl
+; 	push	bc
+; 	ex	de, hl
+; 	ld	de, os.scrap
+; 	call	zp.htoa_word
+; 	ld	a, '@'
+; 	ld	(de), a
+; 	inc	de
+; 	ld	hl, 8
+; 	add	hl, sp
+; 	deref_hl
+; 	dec	hl
+; 	dec	hl
+; 	dec	hl
+; 	call	zp.htoa_word
+; 	xor	a
+; 	ld	(de), a
+; 	ld	hl, os.scrap
+; 	call	zp.cputs
+; 	call	zp.cdisp
+; 	
+; 	pop	bc
+; 	pop	hl
+; 	pop	de
+; 	pop	af
+; 	ret
+; 	
+; _dump_hl:
+; 	ret
+; 	push	af
+; 	push	de
+; 	push	hl
+; 	push	bc
+; 	
+; 	ld	de, os.scrap
+; 	call	zp.htoa_word
+; 	ld	a, '@'
+; 	ld	(de), a
+; 	inc	de
+; 	ld	hl, 8
+; 	add	hl, sp
+; 	deref_hl
+; 	dec	hl
+; 	dec	hl
+; 	dec	hl
+; 	call	zp.htoa_word
+; 	xor	a
+; 	ld	(de), a
+; 	ld	hl, os.scrap
+; 	call	zp.cputs
+; 	call	zp.cdisp
+; 	
+; 	pop	bc
+; 	pop	hl
+; 	pop	de
+; 	pop	af
+; 	ret
+
+;; =malloc=
+;;
+;; ==Description==
+;; Allocate a piece of memory.
+;;
+;; ==Inputs==
+;; :BC-Amount of memory.
+;;
+;; ==Outputs==
+;; If successful,
+;; :HL-Address of allocated memory.
+;; :CF-Clear.
+;; If unsuccessful,
+;; :CF-Set.
+;;
+;; ==Details==
+;; 'malloc' works by moving through the list, searching for a node that
+;; is free.  When it finds one, it first takes the opportunity to
+;; coalesce with any succeeding free nodes.  It must then check that the
+;; size of the data block is large enough to satisfy the request.  The
+;; first node that fills this requirement is the one used.  This is
+;; called the _first fit_ technique.
+;;
+;; The node is allocated in one of two ways.  To prevent the existence
+;; of nodes containing pointlessly small amounts of data, and nodes
+;; that aren't large enough even to store the metadata, the difference
+;; between the size and the request is checked to be smaller than the
+;; constant 'MIN_BLOCK_SIZE'.  If it is, the entire node is allocated
+;; (meaning more memory is allocated than was requested).
+;;
+;; If the size is large enough that the request can be satisfied and still
+;; leave a workable amount, the the node is split into two.  The first
+;; is made to be exactly the size requested.  The other is inserted after
+;; and contains the leftovers (its size is less by four to account for
+;; the metadata).
+;;
+;; |-      ╭───────────────────────────────────────────────────────────╮
+;; |-┏━━━━━┿┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳┅▽┅
+;; |-┃ next╯│  data                                                  ┃
+;; |-┗━━━━━━┷━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┻┅┅┅
+;; |-
+;; |-      ╭───────────────────╮   ╭───────────────────────────────────╮
+;; |-┏━━━━━┿┯━━━━━━━━━━━━━━━━┳━▽━━━┿┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳┅▽┅
+;; |-┃ next╯│      data      ┃ next╯│              data              ┃
+;; |-┗━━━━━━┷━━━━━━━━━━━━━━━━┻━━━━━━┷━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┻┅┅┅
+;;
+;; In either case, the node is marked as allocated by setting the msb
+;; of 'next' and returning the address of the first byte of the data
+;; block in HL.  The address of the allocated node is stored in a
+;; persistent variable ('start').  The next allocation will start its
+;; search from this address.
+;;
+;; If the entire list is scanned and nothing is usable, the carry flag
+;; is set and the routine exits.
+
+; brief : allocate a chunk of memory
+; input :	hl -> node where data should be allocated
+;			bc -> size of chunk to allocate
+; output : hl -> address of allocated chunk
+; destroys : a, de
+vect_malloc_placed:
+	push	iy
+	
+	; mark meminfo as dirty
+	ld	iy, os.flags
+	set	dmeminfo_dirty, (iy + osf.dynamicmem)
+	
+	ld	iy, os.malloc.start
+	call	vect_malloc_placed_iy
+	
+	pop	iy
+	ret
+	
+; brief : allocate a chunk of memory
+; input :	bc -> size of chunk to allocate
+; output : hl -> address of allocated chunk
+; destroys : a, de
+vect_malloc:
+	push	iy
+	
+	; mark meminfo as dirty
+	ld	hl, os.flags + osf.dynamicmem
+	set	dmeminfo_dirty, (hl)
+	ld	iy, os.malloc.start
+	
+	call	vect_malloc_iy
+	
+	pop	iy
+	ret
+	
+; brief : allocate a chunk of memory
+; input :	bc -> size of chunk to allocate
+;			iy -> pointer to memory pool data (6 bytes)
+; output : hl -> address of allocated chunk
+; destroys : a, de
+vect_malloc_iy:
+; Pick up from where we left off.
+	;ld	hl, (os.malloc.start)
+	ld	l, (iy + 0)
+	ld	h, (iy + 1)
+	
+	;call	_dump_hl
+	
+; brief : allocate a chunk of memory
+; input :	hl -> node where data should be allocated
+;			bc -> size of chunk to allocate
+;			iy -> pointer to memory pool data (6 bytes)
+; output : hl -> address of allocated chunk
+; destroys : a, de
+vect_malloc_placed_iy:
+; Find a free node.
+vect_malloc.search_loop:
+	bit	7, (hl)
+	jp	nz, vect_malloc.search_upd_np
+
+; Coalesce with succeeding nodes.
+	jr	vect_malloc.merge_upd
+vect_malloc.merge_loop:
+	;call	_dump_hl
+	;call	_dump_de
+	
+	ld	a, (de)
+	ld	(hl), a
+	inc	hl
+	inc	de
+	ld	a, (de)
+	ld	(hl), a
+	dec	hl
+
+vect_malloc.merge_upd:
+	ld	d, (hl)
+	inc	hl
+	ld	e, (hl)
+	dec	hl
+	set	7, d
+	ld	a, (de)
+	rlca
+	jr	c, vect_malloc.allocate
+	sbc	hl, de
+	add	hl, de
+	jr	c, vect_malloc.merge_loop
+
+; Check that the block is large enough
+vect_malloc.allocate:
+	push	hl
+	ld	d, (hl)
+	inc	hl
+	ld	e, (hl)
+	inc	hl
+	set	7, d
+	or	a
+	ex	de, hl
+	sbc	hl, de
+	jr	nc, vect_malloc.allocate_nofix
+	; This is the highest block and its size can't be determined from its link.
+	;ld	hl, (os.malloc.mp_end)
+	ld	l, (iy + 4)
+	ld	h, (iy + 5)
+	or	a
+	sbc	hl, de
+vect_malloc.allocate_nofix:
+	sbc	hl, bc
+	jr	c, vect_malloc.search_upd
+
+; Get entire node if there isn't enough space left over.
+	ld	de, MIN_BLOCK_SIZE
+	sbc	hl, de
+	add	hl, de
+	
+	jr	nc, vect_malloc.split
+	pop	hl
+	
+	set	7, (hl)
+	
+	ld	d, (hl)
+	inc	hl
+	ld	e, (hl)
+	inc	hl
+	
+	jr	vect_malloc.pass
+	
+; Split.
+vect_malloc.split:
+	pop	hl
+	push	hl
+	
+	ld	d, (hl)
+	inc	hl
+	ld	e, (hl)
+	inc	hl
+	
+	add	hl, bc
+	ld	(hl), d
+	inc	hl
+	ld	(hl), e
+	dec	hl
+	pop	de
+	ex	de, hl
+	
+	ld	(hl), d
+	inc	hl
+	ld	(hl), e
+	inc	hl
+	
+	set	7, d
+	
+; Return successfully.
+vect_malloc.pass:
+	;ld	(os.malloc.start), de
+	ld	(iy + 0), e
+	ld	(iy + 1), d
+	
+	;call	_dump_hl
+	;call	_dump_de
+	
+	or	a
+	ret
+
+; Next node.
+vect_malloc.search_upd:
+	pop	hl
+vect_malloc.search_upd_np:
+	ld	a, (hl)
+	inc	hl
+	ld	l, (hl)
+	ld	h, a
+	
+	set 	7, h
+vect_malloc.search_chk:
+	;ld	de, (os.malloc.start)
+	ld	e, (iy + 0)
+	ld	d, (iy + 1)
+	
+	or	a
+	sbc	hl, de
+	add	hl, de
+	jr	nz, vect_malloc.search_loop
+	
+	scf
+	ret
+
+;; =free=
+;;
+;; ==Description==
+;; Frees memory previously allocated by 'malloc'.
+;;
+;; ==Inputs==
+;; :HL-Address previously output by 'malloc'.
+;;
+;; ==Details==
+;; 'free' is used to return unneeded memory to the memory manager.  It
+;; is a very simple-minded routine, since it does not do any sanity
+;; checks on the input beyond silently doing nothing with a null
+;; pointer--it blindly assumes the caller has fed it valid data.
+;; Calling 'free' on an invalid address, or calling 'free' more than
+;; once on the same address is undefined behavior (the memory manager
+;; is almost certainly corrupted).
+;;
+;; The node to be freed might have free nodes on either side of it.  To
+;; maximize the ability of the memory manager to satisfy requests,
+;; these nodes ought to be coalesced into one large node.  Since the
+;; nodes are only singly-linked, this can only be done with successive
+;; nodes.  The preceding nodes are left to be cleaned up by the
+;; 'malloc' routine.
+
+; brief : release a chunk of memory
+; input :	hl -> address of allocated chunk
+; output : none
+; destroys : a, hl, de
+vect_free:
+	push	iy
+	; mark meminfo as dirty
+	ld	iy, os.flags
+	set	dmeminfo_dirty, (iy + osf.dynamicmem)
+	
+	ld	iy, os.malloc.start
+	
+	call	vect_free_iy
+	
+	pop	iy
+	ret
+	
+; brief : release a chunk of memory
+; input :	hl -> address of allocated chunk
+;			iy -> pointer to memory pool data (6 bytes)
+; output : none
+; destroys : a, hl, de
+vect_free_iy:
+; Check for null pointer
+	ld	a, h
+	or	l
+	ret	z
+
+; Mark node free
+	;call	_dump_hl
+	
+	bit	7, h
+	call	z, zp.throw_memory
+	
+	dec	hl
+	dec	hl
+	res	7, (hl)
+	jr	vect_free.fmerge_upd
+
+; Merge with successive free nodes.
+vect_free.fmerge_loop:
+	ld	a, (de)
+	ld	(hl), a
+	inc	de
+	inc	hl
+	ld	a, (de)
+	ld	(hl), a
+	dec	hl
+
+vect_free.fmerge_upd:
+	ld	d, (hl)
+	inc	hl
+	ld	e, (hl)
+	dec	hl
+	set	7, d
+	ld	a, (de)
+	rlca
+	jr	c, vect_free.done
+	sbc	hl, de
+	add	hl, de
+	jr	c, vect_free.fmerge_loop
+
+vect_free.done:
+	; used to save ptr to next node : nonsense, we've just free'd some
+	; space, why not use it for the next alloc if possible...
+	;ld	(iy + 0), e
+	;ld	(iy + 1), d
+	
+	; only change if lower than previous value...
+	ld	e, (iy + 0)
+	ld	d, (iy + 1)
+	cmp_hlde
+	ret	nc
+	ld	(iy + 0), l
+	ld	(iy + 1), h
+	ret
+
+; brief : swaps to blocks of memory
+; input : hl, de -> addresses of blocks to swap, bc -> size of blocks
+; output :
+; destroys : a
+vect_memswap:
+	push	hl
+	push	de
+	push	bc
+vect_memswap._loop:
+	ld	a, (de)
+	ldi
+	dec	hl
+	ld	(hl), a
+	inc	hl
+	jp	pe, vect_memswap._loop
+
+	pop	bc
+	pop	de
+	pop	hl
+	ret

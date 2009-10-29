@@ -1,0 +1,584 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+; BCD numbers manipulation
+
+; O(1) bin to bcd conv : < 210 T-states
+vect_bin_to_bcd:
+	; smart impl : 7 T-states :D (may not work due to half carry not being set)
+	add	a, 0
+	daa
+	ret
+	
+	; 10 = %1010; 1/10 = 0.0001100110011...
+	
+	;div by 10 then shift the remainder in
+	; this assumes that a <= 99
+	
+	call	vect_div_10
+	ld	b, a
+	ld	a, c
+	rla
+	rla
+	rla
+	rla
+	and	$F0
+	or	b
+	
+	ret
+
+; 0(1) div a by 10 : < 140 T-states
+vect_div_10:
+	ld	b, a
+	
+	rra
+	rra
+	rra
+	rra
+	and	$0F		; a *= 0.0001
+	ld	c, a
+	rra
+	add	a, c	; a *= 0.00011
+	ld	c, a
+	
+	rra
+	rra
+	rra
+	rra
+	and	$0F		; a *= 0.000000011
+	add	a, c	; a *= 0.000110011
+	
+	; <needed?> : 27 extra T-states
+	rra
+	rra
+	rra
+	rra
+	and	$0F		; a *= 0.0000000110011
+	add	a, c	; a *= 0.0001100110011
+	;</needed?>
+	
+	ld	c, a	; c = quot
+	add	a, a
+	add	a, a
+	add	a, c
+	add	a, a	; a = 10*quot
+	
+	sub	b
+	neg			; a = remainder
+	
+	; sanity check
+	cp	10
+	ret	c
+	
+	sub	10
+	inc	c
+	ret
+
+; O(1) BCD to bin conv of a : 66 T-states
+; destroys : bc
+vect_bcd_to_bin:
+	; 10 = %1010; 1/10 = 0.0001100110011
+	
+	; "naive" div then mult impl... 
+	ld	c, a
+	rra
+	rra
+	rra
+	rra
+	and	$0F
+	ld	b, a
+	add	a, a
+	add	a, a
+	add	a, b
+	add	a, a
+	ld	b, a
+	ld	a, c
+	and	$0F
+	add	a, b
+	ret
+
+; move to end of a big endian BCD number of size b (for processing that requires it)
+; vect_bcd_off_b:
+; 	push	af
+; 	ld	a, b
+; 	add	a, l
+; 	ld	l, a
+; 	adc	a, h
+; 	sub	l
+; 	ld	h, a
+; 	pop	af
+; 	ret
+
+; brief : shift fp mantissa one digit to left
+; input : hl -> address of mantissa, a (lower nibble) -> new digit to insert, c -> size
+; output : a -> discarded digit (lower nibble)
+; destroys : b
+vect_bcd_shl:
+	push	hl
+	;call	vect_bcd_off_b
+	ld	b, 0
+	add	hl, bc
+	ld	b, c
+vect_bcd_shl.loop:
+	dec	hl
+	rld
+	djnz	vect_bcd_shl.loop
+	
+	pop	hl
+	ret
+
+; brief : shift bcd one digit to left
+; input : hl -> address of mantissa, a (lower nibble) -> new digit to insert, c -> size
+; ouptut : a -> discarded digit (lower nibble)
+; destroys : b
+vect_bcd_shr:
+	push	hl
+	ld	b, c
+vect_bcd_shr.loop:
+	rrd
+	inc	hl
+	djnz	vect_bcd_shr.loop
+	
+	pop	hl
+	ret
+
+; brief : hl += de + carry for c BCD bytes, big endian
+vect_bcd_adc:
+	;push	af
+	;call	vect_bcd_off_b
+	ld	b, 0
+	add	hl, bc
+	ex	de, hl
+	;call	vect_bcd_off_b
+	add	hl, bc
+	ex	de, hl
+	ld	b, c
+vect_bcd_adc.loop:
+	dec	hl
+	dec	de
+	;pop	af
+	ld	a, (de)
+	adc	a, (hl)
+	daa
+	ld	(hl), a
+	;push	af
+	djnz	vect_bcd_adc.loop
+	;pop	af
+	ret
+
+; brief : hl -= de + carry for c BCD bytes, big endian
+vect_bcd_sbc:
+	;push	af
+	push	af
+	ld	b, 0
+	add	hl, bc
+	;call	vect_bcd_off_b
+	ex	de, hl
+	add	hl, bc
+	pop	af
+	;call	vect_bcd_off_b
+	ld	b, c
+vect_bcd_sbc.loop:
+	dec	hl
+	dec	de
+	;pop	af
+	ld	a, (de)
+	sbc	a, (hl)
+	daa
+	ld	(de), a
+	;push	af
+	djnz	vect_bcd_sbc.loop
+	;pop	af
+	ex	de, hl
+	ret
+
+; brief : cpl hl for c BCD bytes (10 complement)
+vect_bcd_cpl:
+	;push	af
+	;call	vect_bcd_off_b
+	ld	b, 0
+	add	hl, bc
+	ld	b, c
+	or	a
+vect_bcd_cpl.loop:
+	dec	hl
+	;pop	af
+	ld	a, 0
+	sbc	a, (hl)
+	daa
+	;push	af
+	ld	(hl), a
+	djnz	vect_bcd_cpl.loop
+	;pop	af
+	ret
+
+; compare two c bytes big endian BCD numbers (actually works with regular bin numbers as well)
+vect_bcd_cmp:
+	push	hl
+	push	de
+	
+	ex	de, hl
+	ld	b, c
+vect_bcd_cmp.loop:
+	ld	a, (de)
+	cp	(hl)
+	jr	nz, vect_bcd_cmp.end
+	inc	hl
+	inc	de
+	djnz	vect_bcd_cmp.loop
+	
+vect_bcd_cmp.end:
+	pop	de
+	pop	hl
+	ret
+
+vect_bcd_add8:
+	ld	b, 0
+	add	hl, bc
+	ld	b, c
+	
+	dec	hl
+	add	a, (hl)
+	daa
+	ld	(hl), a
+	djnz	vect_bcd_inc.loop
+
+vect_bcd_inc:
+	ld	b, 0
+	add	hl, bc
+	ld	b, c
+	
+vect_bcd_inc.loop:
+	dec	hl
+	ld	a, (hl)
+	add	a, 1
+	daa
+	ld	(hl), a
+	jr	nz, vect_bcd_inc.end
+	djnz	vect_bcd_inc.loop
+	ret
+	
+	dec	hl
+vect_bcd_inc.end:
+	djnz	$-1
+	ret
+
+vect_bcd_dec:
+	ld	b, 0
+	add	hl, bc
+	ld	b, c
+	xor	a
+	
+vect_bcd_dec.loop:
+	dec	hl
+	ld	a, (hl)
+	sub	1
+	daa
+	ld	(hl), a
+	cp	$99
+	jr	nz, vect_bcd_dec.end
+	djnz	vect_bcd_dec.loop
+	ret
+	
+	dec	hl
+vect_bcd_dec.end:
+	djnz	$-1
+	ret
+
+; brief : builds a nibble mult table for a b bytes big endian BCD number
+; input : de -> fp number, c -> size
+; destroys : a, bc
+vect_bcd_mlt_tbl:
+	; build table
+	push	hl
+	push	de
+	
+	; init all values to de (first byte set to zero cause we slightly
+	; extend the range to account for probable overflow of multiples)
+	;ex	de, hl
+	ld	hl, os.scrap
+	ld	b, 9
+vect_bcd_mlt_tbl.iloop:
+	ld	(hl), 0
+	inc	hl
+	push	de
+	push	bc
+	ex	de, hl
+	ld	b, 0
+	ldir
+	ex	de, hl
+	pop	bc
+	pop	de
+	djnz	vect_bcd_mlt_tbl.iloop
+	
+	; incremental fill : tbl[i] += tbl[i-1] for i in 1..8
+	; so, since tbl[i] = de initially, in the end we have
+	; tbl[i] = (i+1) * de -> a proper mult table
+	ld	hl, os.scrap
+	ld	b, 8
+	;ld	c, a
+vect_bcd_mlt_tbl.floop:
+	push	bc
+	ld	d, h
+	ld	e, l
+	ld	b, 0
+	add	hl, bc
+	inc	hl
+	;ld	b, c
+	or	a
+	call	zp.bcd_adc
+	pop	bc
+	djnz	vect_bcd_mlt_tbl.floop
+	
+	pop	de
+	pop	hl
+	ret
+
+; brief : multiplies two b bytes BCD number
+; input : hl, de -> multiplier and multiplicand, c -> size of BCD numbers
+; output : hl:de -> resulting BCD number
+vect_bcd_mult:
+	ld	b, c
+	
+	; clear de mantissa (needed for restoring algo)
+	push	hl
+	push	de
+	ex	de, hl
+	ld	(hl), 0
+	inc	hl
+	djnz	$-3
+	pop	de
+	pop	hl
+	
+	; restoring algo core loop : multiplier has 14 digits so we loop 14 times
+	ld	b, c
+	sla	b
+vect_bcd_mult.loop:
+	push	bc
+	
+	; shift composite accumulator by one digit
+	;ld	b, c
+	ex	de, hl
+	xor	a
+	call	zp.bcd_shl
+	ex	de, hl
+	;ld	b, c
+	call	zp.bcd_shl
+	
+	; a = nth digit of multiplier
+	or	a
+	jr	z, vect_bcd_mult.skip
+	
+	push	hl
+	push	de
+	
+	; find proper table entry
+	ld	hl, os.scrap
+	dec	a
+	add	a, a
+	add	a, a
+	add	a, a
+	offset_hl
+	inc	hl
+	
+	ex	de, hl
+	
+	; add to acc
+	or	a
+	;ld	b, c
+	call	zp.bcd_adc
+	
+	; here comes the "composite" part of the adder
+	dec	de
+	ld	a, (de)
+	pop	de
+	pop	hl
+	
+	adc	a, 0
+	daa
+	
+	; if both the upper nibble and the carry are null then skip
+	jr	z, vect_bcd_mult.skip
+	
+	; some carrying to do over hl
+	push	hl
+	dec	c
+	ld	b, 0
+	add	hl, bc
+	or	a
+	
+vect_bcd_mult.carry:
+	adc	a, (hl)
+	daa
+	ld	(hl), a
+	dec	hl
+	ld	a, 0
+	jr	c, vect_bcd_mult.carry
+	
+	pop	hl
+	
+vect_bcd_mult.skip:
+	pop	bc
+	djnz	vect_bcd_mult.loop
+	
+	ret
+
+; brief : copy data from hl into de then put zeros into that data
+; in : c -> size of stuff
+; out : b = 0
+; destroys : a
+fill:
+	ld	a, c
+	ldir
+	ld	c, a
+	
+	ex	de, hl
+	xor	a
+	ld	b, c
+	
+	ld	(hl), a
+	inc	hl
+	djnz	$-2
+	
+	ex	de, hl
+	ret
+
+
+vect_bcd_div:
+	;ld	c, b
+	
+	push	de
+	push	hl
+	
+	ld	hl, os.scrap
+	ex	de, hl
+	
+	; prepare accumulator
+	; 2b bytes de:00
+	ld	b, 0
+	call	fill
+	
+	; prepare divisor temp
+	; 2b bytes hl:00
+	
+	pop	hl
+	push	hl
+	
+	call	fill
+	
+	; get pointers to temps
+	ld	de, os.scrap
+	ld	h, 0
+	ld	l, c
+	add	hl, hl
+	add	hl, de
+	
+	; restoring algo core loop : 1 iteration per digit
+	ld	b, c
+	sla	b
+vect_bcd_div.loop:
+; 	ex	(sp), hl
+; 	
+; 	push	bc
+; 	push	hl
+; 	push	de
+; 	push	de
+; 	ld	de, os.console
+; 	ld	b, 7
+; 	call	zp.memdump
+; 	inc	hl
+; 	djnz	$-4
+; 	pop	hl
+; 	
+; 	ld	hl, os.scrap
+; 	ld	de, os.console + 24
+; 	ld	c, 4
+; 	
+; dbgloop:
+; 	ld	b, 7
+; 	call	zp.memdump
+; 	inc	hl
+; 	djnz	$-4
+; 	ld	a, 10
+; 	add	a, e
+; 	ld	e, a
+; 	adc	a, d
+; 	sub	e
+; 	ld	d, a
+; 	dec	c
+; 	jr	nz, dbgloop
+; 	
+; 	call	zp.cdisp
+; 	call	zp.getch
+; 	pop	de
+; 	pop	hl
+; 	pop	bc
+; 	ex	(sp), hl
+	
+	push	bc
+	
+	; trial substraction
+	xor	a
+	push	af
+	sla	c
+loop:
+	pop	af
+	inc	a
+	push	af
+	;ld	b, c
+	;sla	b
+	call	zp.bcd_sbc
+	jr	nc, loop
+	;ld	b, c
+	;sla	b
+	call	zp.bcd_adc
+skip:
+	srl	c
+	pop	af
+	dec	a
+	
+	; shift one digit into result
+	pop	bc
+	ex	(sp), hl
+	push	bc
+	;ld	b, c
+	call	zp.bcd_shl
+	pop	bc
+	ex	(sp), hl
+	push	bc
+	
+	; shift divisor
+	ex	de, hl
+	xor	a
+	;ld	b, c
+	call	zp.bcd_shr
+	ex	de, hl
+	
+	pop	bc
+	djnz	vect_bcd_div.loop
+	
+	pop	hl
+	pop	de
+	
+	ret

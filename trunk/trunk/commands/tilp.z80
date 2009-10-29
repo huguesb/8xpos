@@ -1,0 +1,938 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+zp.host:
+	ld	hl, zp.host.str
+	call	zp.cputs
+	call	zp.cdisp
+	
+	; use link assist on SE
+	in	a, (hw_port)
+	rlca
+	jr	nc, zp.host.loop
+	
+	call	zp.enableLA
+	
+zp.host.loop
+	ei
+	halt
+	call	zp.getkey
+	cp	sk_mode
+	ret	z
+	
+	call	zp.can_read
+	call	nz, zp.tilp
+	
+	jr	zp.host.loop
+
+zp.host.str:
+	.db "Entering host mode...", 0
+
+zp.tilp:
+	call	zp.get_command
+	
+	ld	hl, 0
+	
+	push	af
+	ld	a, b
+	or	c
+	call	nz, zp.get_data
+	call	c, zp.throw_link
+	pop	af
+	
+	push	hl
+	ld	d, a
+	ld	e, $FF
+	ld	hl, zp.tilp.cid
+	
+zp.tilp.cmdloop:
+	ld	a, (hl)
+	inc	hl
+	inc	e
+	or	a
+	jr	z, zp.tilp.fail
+	cp	d
+	jr	nz, zp.tilp.cmdloop
+	
+	; send acknowledgement
+	ld	d, link_ACK
+	call	zp.send_command_nodata
+	
+	sla	e
+	ld	d, 0
+	ld	hl, zp.tilp.cmd
+	add	hl, de
+	deref_hl
+	
+	ex	(sp), hl
+	ret
+	
+zp.tilp.fail:
+	pop	hl
+	call	zp.free
+	
+	; send acknowledgement
+	ld	d, link_REXIT
+	call	zp.send_error
+	
+	ret
+
+zp.tilp.cid:
+	.db link_VER	; Request version
+	.db link_RDY	; Check ready
+	.db link_SCR	; Take screenshot 
+	.db link_DEL	; Delete variable
+	.db link_REQ	; Request variable
+	.db link_RTS	; Request to send variable (silent-link)
+	.db	0
+
+zp.tilp.cmd:
+	.dw tilp.VER	; Request version
+	.dw tilp.RDY	; Check ready
+	.dw tilp.SCR	; Take screenshot 
+	.dw tilp.DEL	; Delete variable
+	.dw tilp.REQ	; Request variable
+	.dw tilp.RTS	; Request to send variable (silent-link)
+
+
+; brief : for the sake of size optimization...
+; input : hl -> pointer to VAR header
+; output : hl -> pointer to filename, ensure zero termination
+tilp.infile:
+	inc	hl
+	inc	hl
+	inc	hl
+	
+	; ensure nul terminator (just in case version field is non zero...)
+	ld	de, 8
+	add	hl, de
+	ld	(hl), 0
+	sbc	hl, de
+	ret
+
+; brief : fills and send a VAR header 
+; input :
+;		hl -> address of a 13 bytes buffer
+;		bc -> size of variable
+;		de -> address of variable name
+;		a -> data type
+tilp.send_var_header:
+	push	hl
+	
+	; size
+	ld	(hl), c
+	inc	hl
+	ld	(hl), b
+	inc	hl
+	
+	; data type
+	ld	(hl), a ; tLockedProg
+	inc	hl
+	
+	; filename
+	ex	de, hl
+	ld	b, 8
+	call	zp.strncpy
+	ex	de, hl
+	
+	; pad name if needed
+	ld	a, b
+	or	a
+	jr	z, $+7
+	
+	xor	a
+	ld	(hl), a
+	inc	hl
+	djnz	$-2
+	
+	; version
+	; a is necessarily null at that point -> shave 1 byte and a few T-states...
+	ld	(hl), a
+	inc	hl
+	
+	; second type id
+	ld	(hl), a
+	
+	; send VAR header
+	pop	hl
+	ld	bc, 13
+	ld	d, link_VAR
+	jp	zp.send_command
+
+
+tilp.RDY:
+	; free VAR header (in case there was one...) [free checks for null pointer]
+	call	zp.free
+	ret
+
+;
+; respond to version information request
+;
+tilp.VER:
+	; free VAR header (in case there was one...) [free checks for null pointer]
+	call	zp.free
+	
+	; wait for clearance
+	call	zp.get_command
+	cp	link_CTS
+	call	nz, zp.throw_link
+	
+	; send acknowledgement
+	ld	d, link_ACK
+	call	zp.send_command_nodata
+	
+	; fill response data
+	ld	ix, os.scrap
+	
+	; note : some features of the linking protocol (e.g DEL) have been implemented
+	; in late versions of the TIOS ( >= 2.0 ) so some linking softwares may check
+	; the version before proceeding (TILP does). Bottom line : we may have to cheat
+	; about the version number here...
+	call	zp.os_version
+	
+	; cannot load from h or l into index regs... (it would load from ixh/ixhl instead)
+	ex	de, hl
+	ld	(ix + 0), d
+	ld	(ix + 1), e
+	
+	call	zp.bootcode_version
+	
+	ex	de, hl
+	ld	(ix + 2), d
+	ld	(ix + 3), e
+	
+	call	zp.battery_level
+	
+	ld	(ix + 4), a
+	
+	call	zp.hw_version
+	
+	ld	(ix + 5), a
+	
+	; language : english...
+	ld	(ix + 6), $09
+	ld	(ix + 7), $01
+	
+	xor	a
+	ld	(ix + 8), a
+	ld	(ix + 9), a
+	ld	(ix + 10), a
+	
+	; send data
+	ld	hl, os.scrap
+	ld	d, link_DATA
+	ld	bc, 11
+	call	zp.send_command
+	
+	; wait for acknowledgement
+	call	zp.get_command
+	cp	link_ACK
+	call	nz, zp.throw_link
+	
+	ret
+
+;
+; respond to screenshot request
+;
+tilp.SCR:
+	; free VAR header (in case there was one...) [free checks for null pointer]
+	call	zp.free
+	
+	; take screenshot
+	ld	bc, 768
+	call	zp.malloc
+	push	hl
+	call	zp.screenshot
+	pop	hl
+	
+	; send data
+	push	hl
+	ld	d, link_DATA
+	ld	bc, 768
+	call	zp.send_command
+	pop	hl
+	
+	; free memory used to store screenshot
+	call	zp.free
+	
+	; reject request
+	;ld	d, link_REXIT
+	;call	zp.send_command_nodata
+	
+	; wait for acknowledgement
+	call	zp.get_command
+	cp	link_ACK
+	call	nz, zp.throw_link
+	
+	ret
+
+;
+; respond to variable deletion request
+;
+tilp.DEL:
+	; delete here
+	push	hl
+	call	tilp.infile
+	; delete file
+	call	zp.file_delete
+	
+	jr	c, $+9
+	
+	; send acknowledgement (once variable has been deleted)
+	ld	d, link_ACK
+	call	zp.send_command_nodata
+	jr	$+7
+	
+	; send error
+	ld	d, link_REXIT
+	call	zp.send_error
+	
+	pop	hl
+	
+	; free VAR header
+	call	zp.free
+	
+	ret
+
+;
+; respond to TI->PC transfer request
+;
+tilp.REQ:
+	push	hl
+	pop	ix
+	
+	ld	a, (ix + 2)
+	
+	cp	tDirList
+	jr	z, tilp.DIRLIST
+	
+	cp	tProg
+	jr	z, tilp.sendProg
+	cp	tLockedProg
+	jr	z, tilp.sendProg
+	
+	; handle more data types here
+	
+	; unhandled
+	; free VAR HEADER
+	call	zp.free
+	
+	; send error message to abort transmission
+	ld	d, link_REXIT
+	call	zp.send_error
+	
+	; wait for acknowledgement
+	call	zp.get_command
+	cp	link_ACK
+	call	nz, zp.throw_link
+	
+	ret
+
+tilp.DIRLIST:
+	; free VAR HEADER
+	call	zp.free
+	
+	; send memory information
+	ld	d, link_DATA
+	call	zp.file_meminfo
+	call	zp.send_command_2bytes
+	
+	; wait for acknowledgement
+	call	zp.get_command
+	; special TILP request sequence to get only memory info (apparently undocumented...)
+	cp	link_EOT
+	ret	z
+	cp	link_ACK
+	call	nz, zp.throw_link
+	
+	; list files here
+	
+	ld	c, bitmask(list_alloc)
+	ld	ix, tilp.DIRLIST.callback
+	call	zp.file_list
+	
+	; list flash apps here
+	
+	ld	ix, tilp.DIRLIST.cb_apps
+	call	zp.app_list
+	
+	; notify end of transmission
+	ld	d, link_EOT
+	call	zp.send_command_nodata
+	
+	; wait for acknowledgement
+	call	zp.get_command
+	cp	link_ACK
+	call	nz, zp.throw_link
+	
+	ret
+
+tilp.sendProg:
+	; delete here
+	push	hl
+	call	tilp.infile
+	
+	ld	ix, tilp.sendProg.cb
+	call	zp.file_find
+	
+	; send error
+	ld	d, link_REXIT
+	call	c, zp.send_error
+	
+	; wait for acknowledgement
+	call	zp.get_command
+	cp	link_ACK
+	call	nz, zp.throw_link
+	
+	pop	hl
+	
+	; free VAR header
+	call	zp.free
+	ret
+
+tilp.sendProg.cb:
+	push	hl
+	push	bc
+	
+	; turn file_find callback params into file_list callback params
+	inc	de
+	inc	de
+	or	a
+	sbc	hl, de
+	add	hl, bc
+	ex	de, hl
+	
+	push	hl
+	; send actual variable header
+	call	tilp.DIRLIST.callback
+	
+	; wait for transfer clearance
+	call	zp.get_command
+	cp	link_CTS
+	call	nz, zp.throw_link
+	
+	; send acknowledgement
+	ld	d, link_ACK
+	call	zp.send_command_nodata
+	
+	pop	hl
+	
+	ld	d, meta_SIZE
+	call	zp.file_meta_find
+	jr	nc, tilp.sendProg.cb.split
+	
+	pop	bc
+	pop	hl
+	
+	; send actual data
+	ld	d, link_DATA
+	call	zp.send_command
+	
+	ret
+
+tilp.sendProg.cb.split:
+	; now onto the real deal...
+	; gotta reimp protocol...
+	
+	push	hl
+	add	a, 2
+	offset_hl
+	
+	; send packet header
+	ld	a, link_83P
+	call	zp.send_byte
+	ld	a, link_DATA
+	call	zp.send_byte
+	
+	; send data size
+	ld	a, (hl)
+	call	zp.send_byte
+	inc	hl
+	ld	a, (hl)
+	call	zp.send_byte
+	
+	pop	hl
+	
+	; get back chunk params and save metadata pointer
+	pop	bc
+	pop	de
+	push	hl
+	ex	de, hl
+	
+	; init checksum accumulator
+	ld	de, 0
+	
+tilp.sendProg.cb.sendloop:
+	; send data byte
+	ld	a, (hl)
+	inc	hl
+	call	zp.send_byte
+	
+	; update checksum
+	ex	de, hl
+	offset_hl
+	ex	de, hl
+	
+	; check for chunk end
+	dec	bc
+	ld	a, b
+	or	c
+	jr	nz, tilp.sendProg.cb.sendloop
+	
+	pop	hl
+	; go to next chunk, if any
+	call	zp.file_nextchunk
+	jr	c, tilp.sendProg.cb.end
+	
+	; get chunk params
+	push	hl
+	dec	hl
+	dec	hl
+	push	de
+	call	zp.file_node_info
+	ld	b, 0
+	ld	c, (hl)
+	inc	bc
+	add	hl, bc
+	ex	de, hl
+	or	a
+	sbc	hl, bc
+	ex	de, hl
+	ld	b, d
+	ld	c, e
+	pop	de
+	
+	jr	tilp.sendProg.cb.sendloop
+
+tilp.sendProg.cb.end:
+	; send checksum
+	ld	a, e
+	call	zp.send_byte
+	ld	a, d
+	call	zp.send_byte
+	
+	ret
+
+tilp.DIRLIST.callback:
+	ld	a, (hl)
+	
+	; default data size computation
+	push	hl
+	inc	a
+	cpl
+	ld	l, a
+	ld	h, $FF
+	inc	hl
+	add	hl, de
+	ld	b, h
+	ld	c, l
+	pop	hl
+	
+	; check for split file and get right size
+	ld	d, meta_SIZE
+	call	zp.file_meta_find
+	jr	c, tilp.DIRLIST.cb.single
+	
+	push	hl
+	add	a, 2
+	offset_hl
+	
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	pop	hl
+	
+tilp.DIRLIST.cb.single:
+	ld	d, meta_NAME
+	call	zp.file_meta_find
+	jr	c, tilp.DIRLIST.skip
+	
+	; skip field size and type
+	add	a, 2
+	offset_hl
+	
+	push	hl
+	push	bc
+	
+	; allocate var header
+	ld	bc, 13
+	call	zp.malloc
+	
+	pop	bc
+	pop	de
+	
+	push	hl
+	ld	a, tLockedProg
+	call	tilp.send_var_header
+	
+	; free var header
+	pop	hl
+	call	zp.free
+	
+	call	zp.get_command
+	cp	link_ACK
+	call	nz, zp.throw_link
+	
+tilp.DIRLIST.skip:
+	or	a
+	ret
+
+tilp.DIRLIST.cb_apps:
+	; find name field of app header
+	push	hl
+	push	af
+	ld	de, $8040
+	call	zp.find_app_field
+	jr	z, $+5
+	pop	af
+	pop	hl
+	ret
+	
+	; field found : get its size
+	call	zp.get_field_size
+	
+	; copy name from flash to some scrap ram
+	push	bc
+	ld	de, os.scrap
+	call	zp.flashtoram
+	pop	bc
+	
+	ld	hl, os.scrap
+	add	hl, bc
+	ld	a, ' '
+	
+	; chop all trailing spaces (put zero terminators instead)
+	ld	(hl), 0
+	dec	hl
+	cp	(hl)
+	jr	z, $-4
+	
+	; allocate var header
+	ld	bc, 13
+	call	zp.malloc
+	
+	pop	af
+	ex	(sp), hl
+	
+	; todo : size onto bc
+	ld	de, $8080
+	call	zp.find_app_field
+	ld	de, $4000
+	jr	nz, tilp.DIRLIST.cb_apps.skip
+	ld	b, a
+	call	zp.deref_paged_byte
+	ld	a, c
+	call	zp.mult_a_de
+	ex	de, hl
+tilp.DIRLIST.cb_apps.skip:
+	ld	b, d
+	ld	c, e
+	pop	hl
+	push	hl
+	
+	ld	a, tApp
+	ld	de, os.scrap
+	call	tilp.send_var_header
+	
+	; free var header
+	pop	hl
+	call	zp.free
+	
+	; wait for acknowledgement
+	call	zp.get_command
+	cp	link_ACK
+	call	nz, zp.throw_link
+	
+	ret
+
+;
+; respond to PC->TI transfer request
+;
+tilp.RTS:
+	push	hl
+	ld	hl, __str_recv
+	call	zp.cputs
+	call	zp.cdisp
+	pop	hl
+	
+	push	hl
+	pop	ix
+	
+	ld	a, (ix + 2)
+	
+	cp	tProg
+	jr	z, tilp.RTS.ok
+	cp	tLockedProg
+	jr	z, tilp.RTS.ok
+	
+	cp	tOS
+	jp	z, tilp.recvOS
+	
+tilp.RTS.error:
+	; free VAR HEADER
+	call	zp.free
+	
+	ld	hl, __str_fail
+	call	zp.cputs
+	call	zp.cdisp
+	
+	; send error message to abort transmission
+	ld	d, link_RMEM
+	call	zp.send_error
+	
+	; wait for acknowledgement
+	call	zp.get_command
+	cp	link_ACK
+	call	nz, zp.throw_link
+	
+	ret
+
+tilp.RTS.ok:
+	push	hl
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	dec	hl
+	
+	call	tilp.infile
+	
+	ld	ix, tilp.RTS.callback
+	call	zp.file_create
+	
+	ld	hl, __str_done
+	call	zp.cputs
+	call	zp.cdisp
+	
+	pop	hl
+	; free VAR HEADER
+	call	zp.free
+	
+	ret
+
+__str_recv: .db "recv...", 0
+__str_fail: .db "fail.", 0
+__str_done: .db "done.", 0
+
+tilp.RTS.callback:
+	push	iy
+	
+	push	hl
+	inc	de
+	inc	de
+	push	de
+	push	bc
+	
+	ld	iy, 0
+	add	iy, sp
+	
+	; give clearance to sender
+	ld	d, link_CTS
+	call	zp.send_command_nodata
+	
+	; wait for acknowledgement
+	call	zp.get_command
+	cp	link_ACK
+	call	nz, zp.throw_link
+	
+	; wait for data
+	call	zp.get_command
+	cp	link_DATA
+	call	nz, zp.throw_link
+	
+	; bc -> packet size
+	
+	ld	e, (iy + 0)
+	ld	d, (iy + 1)
+	; de -> node contents size
+	
+	ex	de, hl
+	cmp_hlbc
+	ex	de, hl
+	
+	jr	nc, tilp.RTS.cb.lastchunk
+	
+	; exchange packet and node size
+	push	bc
+	push	de
+	; init checksum
+	ld	de, 0
+	ld	(os.silentlink.check), de
+	pop	bc
+	pop	de
+	
+tilp.RTS.cb.loop:
+	; check for packet end
+	ld	a, d
+	or	e
+	jr	z, tilp.RTS.cb.loopend
+	
+	ex	de, hl
+	
+	; compute remaining packet size
+	or	a
+	sbc	hl, bc
+	jr	nc, $+8
+	add	hl, bc
+	ld	b, h
+	ld	c, l
+	ld	h, 0
+	ld	l, h
+	
+	ex	de, hl
+	
+	; save remaining packet size
+	push	de
+	
+	; get as much data as the node can contain
+	;call	__dump_hl
+	call	zp.get_data_raw
+	
+	; update checksum
+	ld	hl, (os.silentlink.check)
+	add	hl, de
+	ld	(os.silentlink.check), hl
+	
+	; switch to next file chunk if any
+	ld	l, (iy + 2)
+	ld	h, (iy + 3)
+	call	zp.file_nextchunk
+	jr	c, tilp.RTS.cb.loopend
+	; store node start for next iteration
+	ld	(iy + 2), l
+	ld	(iy + 3), h
+	; get node info (size mostly)
+	dec	hl
+	dec	hl
+	call	zp.file_node_info
+	
+	; skip meta data (adjust data pointer and size)
+	ld	b, 0
+	ld	c, (hl)
+	inc	bc
+	add	hl, bc
+	ex	de, hl
+	or	a
+	sbc	hl, bc
+	ex	de, hl
+	
+	ld	b, d
+	ld	c, e
+	
+	pop	de
+	
+	jr	tilp.RTS.cb.loop
+	
+tilp.RTS.cb.loopend:
+	ld	hl, 8
+	add	hl, sp
+	ld	sp, hl
+	
+	ld	de, (os.silentlink.check)
+	jr	tilp.RTS.cb.checksum
+	
+tilp.RTS.cb.lastchunk:
+	; for now let's suppose we're mono packet, mono chunk (with matching size)
+	; according to protocol we should always be monopacket but we may very well
+	; have to deal with split files... [TODO]
+	call	zp.get_data_raw
+	
+	pop	af
+	pop	af
+	pop	af
+	
+tilp.RTS.cb.checksum:
+	; get checksum
+	call	zp.get_byte
+	ld	l, a
+	call	zp.get_byte
+	ld	h, a
+	
+	cmp_hlde
+	
+	; todo : send CHK packet to request a resend
+	call	nz, zp.throw_checksum
+	
+	; acknowledge successful transfer
+	ld	d, link_ACK
+	call	zp.send_command_nodata
+	
+	call	zp.get_command
+	cp	link_EOT
+	call	nz, zp.throw_link
+	
+	pop	iy
+	or	a
+	ret
+
+; fixme : this does not seem to work, probably because of improper packet storage
+tilp.recvOS:
+	push	hl
+	; load packet content into ioData (need command bytes???)
+	ld	de, $867D
+	ldir
+	pop	hl
+	; release memory (just in case transfer is interrupted...)
+	call	zp.free
+	
+	; swap RAM page 1 into bank B
+	in	a, (hw_port)
+	and	$80
+	jr	nz, $+4
+	or	$40
+	inc	a
+	out	(map_bankB_port), a
+	
+	; some system flags might be needed...
+	ld	iy, $89F0
+	
+	; unlock flash
+	#if PAGE == $1C
+	call	vect_flash_unlock
+	#else
+	ld	hl, vect_flash_unlock
+	call	restricted_syscall_raw
+	#endif
+	
+	xor	a
+	; we're operating through link port, not USB and advertised as $73 (machine id)
+	ld	(iy + $1B), a
+	
+	; some weird setup code (courtesy of Brandon Wilson's OS2)
+	ld	($822F), a
+	ld	($83A4), a
+	dec	a
+	ld	($82AE), a
+	
+	; MarkOSInvalid : WikiTI says this is necessary for ReceiveOS to work, OS2 doesn't care...
+	;rst	28h
+	;.dw	$8093
+	
+	; MD5Init : necessary according to Brandon Wilson's OS2 sources...
+	bcall($808D)
+	
+	; ReceiveOS : we should never ever return from this
+	bcall($8072)
+	
+	ret
+

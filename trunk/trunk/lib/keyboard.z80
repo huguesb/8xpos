@@ -1,0 +1,179 @@
+.nolist
+;Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Copyright (c) 2004, Sean McLaughlin.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+; brief : ASCII-like input (waits for keypress)
+; input : none
+; output : a = ASCII code corresponding to input (or special key k_*)
+; destroys : none
+; note : halts whitin poll loop -> less power-hungry but less responsive as well (no consecutive keypresses)
+vect_getch:
+	push	de
+	push	hl
+	ld	hl, os.prev_key
+vect_getch._poll:
+	ei
+	halt
+	call	zp.getkey
+	or	a
+	jr	z, vect_getch._reset
+	ld	de, default.aps_time
+	ld	(os.aps.timer), de
+	cp	sk_2nd
+	jr	z, vect_getch._reset
+	cp	sk_alpha
+	jr	z, vect_getch._reset
+	cp	(hl)
+	jr	z, vect_getch._poll
+	ld	(hl), a
+	
+	ld	de, (os.keymap.normal)
+	ld	a, d
+	or	e
+	jr	nz, $+5
+	ld	de, os.normal_keys
+	
+	ld	a, kg_func
+	rowread
+	bit	kb_2nd, a
+	jr	nz, vect_getch._alpha
+	ld	de, (os.keymap.shift)
+	ld	a, d
+	or	e
+	jr	nz, $+5
+	ld	de, os.shift_keys
+	jp	vect_getch._xlat
+
+vect_getch._alpha:
+	ld	a, kg_row5
+	rowread
+	bit	kb_alpha, a
+	jr	nz, vect_getch._xlat
+	ld	de, (os.keymap.alpha)
+	ld	a, d
+	or	e
+	jr	nz, $+5
+	ld	de, os.alpha_keys
+vect_getch._xlat:
+	ex	de, hl
+	ld	a, (de)
+	offset_hl
+	ld	a, (hl)
+	pop	hl
+	pop	de
+	ret
+
+vect_getch._reset:
+	ld	(hl), sk_null
+	jp	vect_getch._poll
+
+; brief : ASCII-like input (waits for keypress)
+; input : none
+; output : a = ASCII code corresponding to input (or special key k_*)
+; destroys : none
+vect_getch_nohalt:
+	push	de
+	push	hl
+	push	bc
+	
+	ld	hl, os.prev_key
+	jr	$+7
+vect_getch_nohalt._poll:
+	ld	c, 128
+	call	zp.timer_msleep
+	
+	call	zp.getkey
+	or	a
+	jr	z, vect_getch_nohalt._reset
+	cp	sk_2nd
+	jr	z, vect_getch_nohalt._reset
+	cp	sk_alpha
+	jr	z, vect_getch_nohalt._reset
+	ld	(hl), a
+
+	ld	de, os.normal_keys
+	ld	a, kg_func
+	rowread
+	bit	kb_2nd, a
+	jr	nz, vect_getch_nohalt._alpha
+	ld	de, os.shift_keys
+	jp	vect_getch_nohalt._xlat
+
+vect_getch_nohalt._alpha:
+	ld	a, kg_row5
+	rowread
+	bit	kb_alpha, a
+	jr	nz, vect_getch_nohalt._xlat
+	ld	de, os.alpha_keys
+
+vect_getch_nohalt._xlat:
+	ex	de, hl
+	ld	a, (de)
+	offset_hl
+	ld	a, (hl)
+	
+	pop	bc
+	pop	hl
+	pop	de
+	ret
+
+vect_getch_nohalt._reset:
+	ld	(hl), sk_null
+	jp	vect_getch_nohalt._poll
+
+; brief : key input (does not wait for key press)
+; input : none
+; output : a = scan code (sk_*)
+; destroys : none
+vect_getkey:
+	push	bc
+	push	de
+	;ld	a, i
+	;push	af
+	;di
+	ld	a, $FF
+	out	(key_port), a
+	ld	c, 1
+	ld	d, kg_arrows
+vect_getch._loop1:
+	ld	a, d
+	rowread
+	ld	b, 8
+vect_getch._loop2:
+	rra
+	jr	nc, vect_getch._found
+	inc	c
+	djnz	vect_getch._loop2
+	rlc	d
+	bit	7, d
+	jr	nz, vect_getch._loop1
+	ld	c, sk_null
+vect_getch._found:
+	;pop	af
+	;jp	po, $+4
+	;ei
+	ld	a, c
+	pop	de
+	pop	bc
+	ret

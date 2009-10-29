@@ -1,0 +1,384 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+.nolist
+#include "compat.inc"
+.list
+
+vect_compat_start:
+	in	a, (map_bankA_port)
+	push	af
+	
+	; load ram page in bank A for it to be available from file_list callback
+	ld	a, $81
+	out	(map_bankA_port), a
+	
+	; RAM setup
+	
+	; fake VAT : start from end of bank B
+	ld	hl, $BFFF
+	; set progPtr (start of relevant part (progs/appvars) of VAT)
+	ld	(progPtr - $4000), hl
+	; set PTemp (end of VAT)
+	ld	(pTemp - $4000), hl
+	
+	ld	ix, compat.mkvat_cb
+	ld	c, bitmask(list_alloc)
+	call	zp.file_list
+	
+	; rst setup
+	ld	hl, compat.tios.rst08
+	ld	(os.hook.rst08), hl
+	ld	hl, compat.tios.rst10
+	ld	(os.hook.rst10), hl
+	ld	hl, compat.tios.rst18
+	ld	(os.hook.rst18), hl
+	ld	hl, compat.tios.rst20
+	ld	(os.hook.rst20), hl
+	ld	hl, compat.tios.rst30
+	ld	(os.hook.rst30), hl
+	
+	;ld	hl, (os.vbuf_addr)
+	
+	; set plotsscreen as vbuf for consistency
+	ld	hl, plotSScreen
+	ld	(os.vbuf_addr), hl
+	
+; 	curRow               EQU  844Bh
+; 	curCol               EQU  844Ch
+; 	penCol               EQU  86D7h
+; 	penRow               EQU  86D8h
+	
+	; font coordinates
+	ld	hl, os.curpos.col
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	ld	(penCol - $4000), bc
+	ld	b, (hl)
+	inc	hl
+	ld	c, (hl)
+	inc	hl
+	ld	(curRow - $4000), bc
+	
+	; init fp stack
+	ld	hl, 0
+	ld	(FPS), hl
+	
+	; flags...
+	ld	iy, flags
+	
+	pop	af
+	out	(map_bankA_port), a
+	
+	; SE-specific compat
+	in	a, (hw_port)
+	rlca
+	ret	nc
+	
+	; hw settings
+	
+	; set same lcd delays and mem delays as TIOS
+	ld	a, $17
+	out	(lcd_delay0_port), a
+	ld	a, $27
+	out	(lcd_delay1_port), a
+	ld	a, $2F
+	out	(lcd_delay2_port), a
+	ld	a, $3B
+	out	(lcd_delay3_port), a
+	
+	
+	ret
+
+vect_compat_stop:
+	ld	hl, os.lcd.mem
+	ld	(os.vbuf_addr), hl
+	
+	ld	hl, 0
+	ld	(os.hook.rst08), hl
+	ld	(os.hook.rst10), hl
+	ld	(os.hook.rst18), hl
+	ld	(os.hook.rst20), hl
+	ld	(os.hook.rst30), hl
+	
+	in	a, (hw_port)
+	rlca
+	ret	nc
+	
+	; compat for SE only
+	
+	; restore XOS hw settings [must match init.z80]
+	
+	; 6MHz : adds 5 clocks per I/O instruction, disable mem delays
+	ld	a, $14
+	out	(lcd_delay0_port), a
+	; 15MHz (01 : ~14.97MHz) : adds 63 clocks per I/O instruction, disable mem delays
+	ld	a, $FC
+	out	(lcd_delay1_port), a
+	; 15MHz (02 : ~14.98MHz) : adds 63 clocks per I/O instruction, disable mem delays
+	ld	a, $FC
+	out	(lcd_delay2_port), a
+	; 15MHz (03 : ~14.99MHz) : adds 63 clocks per I/O instruction, disable mem delays
+	ld	a, $FC
+	out	(lcd_delay3_port), a
+	
+	ret
+
+; we assume here that bank B is occupied by fs page
+compat.mkvat:
+	in	a, (map_bankA_port)
+	push	af
+	
+	; load compat RAM into bank A
+	ld	a, $81
+	out	(map_bankA_port), a
+	
+	; perform VAT entry creation
+	call	compat.mkvat_cb
+	
+	pop	af
+	out	(map_bankA_port), a
+	ret
+
+compat.mkvat_cb:
+	; hl -> address
+	; de -> size
+	
+	; todo : handle split files?
+	
+	; find NAME field, if any
+	ld	d, meta_NAME
+	call	vect_file_meta_find
+	ccf
+	ret	nc
+	
+	push	hl
+	
+	; skip field length and type (zero terminated string...)
+	;add	a, 2
+	; go to field contents
+	offset_hl
+	ld	b, (hl)
+	inc	hl
+	inc	hl
+	dec	b
+	
+	; truncate filename if length > 8
+	ld	a, b
+	cp	9
+	jr	c, $+4
+	ld	b, 8
+	
+	; get back pointer to metadata
+	ex	(sp), hl
+	
+	; update hl to go past meta data
+	ld	a, (hl)
+	inc	a
+	offset_hl
+	
+	in	a, (map_bankB_port)
+	
+	; get address beyond last entry : new entry
+	push	ix
+	
+	ld	ix, (pTemp - $4000)
+	ld	de, - $4000
+	add	ix, de
+	push	ix
+	pop	de
+	
+	; pretend all files are appvars (we won't have TIOS progs anyway...)
+	ld	(ix - 0), tAppvar
+	ld	(ix - 1), 0
+	ld	(ix - 2), 0
+	ld	(ix - 3), l
+	ld	(ix - 4), h
+	ld	(ix - 5), a
+	ld	(ix - 6), b
+	
+	pop	ix
+	
+	ld	hl, -7
+	add	hl, de
+	ex	de, hl
+	
+	pop	hl
+	
+	; hl -> pointer to file name
+	; de -> pointer to name field of VAT entry
+	; b -> size of file name (truncated if necessary...)
+	
+	; copy name
+compat.mkvat.nl:
+	ld	a, (hl)
+	inc	hl
+	ld	(de), a
+	dec	de
+	djnz	compat.mkvat.nl
+	
+	; set last entry address
+	ld	hl, $4000
+	add	hl, de
+	ld	(pTemp - $4000), hl
+	
+	;call	zp.dump_hl
+	
+	or	a
+	ret
+
+compat.tios.rst08:
+	; OP1toOP2
+	rst	28h
+	.dw	$0412F
+	ret
+	
+compat.tios.rst10:
+	; FindSym
+	rst	28h
+	.dw	$42F4
+	ret
+	
+compat.tios.rst18:
+	; pushrealO1
+	rst	28h
+	.dw	$43BA
+	ret
+	
+compat.tios.rst20:
+	; mov9toOP1
+	rst	28h
+	.dw	$417A
+	ret
+	
+compat.tios.rst30:
+	; fpadd
+	rst	28h
+	.dw	$4072
+	ret
+
+
+cmd_COMPAT:
+	call	zp.compat_start
+	
+	ld	a, $81
+	out	(map_bankB_port), a
+	
+	LD     HL, (progPtr)    ; Start of Symbol Table for programs
+
+MainLoop:
+    LD     DE, 0
+    LD     (curRow), DE
+    LD     C, 7             ; Counter. We can display 7 variables per screen
+FindLoop:
+    LD     DE, (pTemp)      ; Check to see if we're at the end of the symbol table
+    OR     A
+    SBC    HL, DE
+    JR     Z, Done
+    JR     C, Done
+    ADD    HL, DE           ; Restore HL
+
+    LD     A, (HL)          ; Check the [T] of entry, take appropriate action
+    AND    $1F             ; Bitmask off bits 7-5 to get type only.
+    CP     tProg
+    JR     Z, IsNormalProg
+    CP     tLockedProg
+    JR     Z, IsNormalProg
+	CP     tAppvar
+    JR     NZ, Skip
+
+    LD     A, '#'           ; We'll use a hash to signify an appvar...
+    JR     DispStatus
+
+IsNormalProg:
+    LD     A, ' '           ; ...or space padding for a normal program
+
+DispStatus:
+	push	bc
+	ld	bc, (curRow)
+    call	zp.putch_con
+	inc	c
+	ld	(curRow), bc
+	pop	bc
+	;b_call(_PutC)          ; Display protection status
+
+    ; At this point, HL -> [T], so we'll move back six bytes to [NL]
+    LD     DE, -6
+    ADD    HL, DE
+    LD     B, (HL)          ; Store number of characters in name for DJNZ
+
+DispNameLoop:
+    push	bc
+	DEC    HL
+    LD     A, (HL)
+	ld	bc, (curRow)
+    call	zp.putch_con
+	inc	c
+	ld	(curRow), bc
+    pop	bc
+	DJNZ   DispNameLoop
+	
+	push	hl
+	push	bc
+	call	zp.vbufdisp
+    call	zp.getch
+	pop	bc
+	;new line
+    ld	hl, (curRow)
+	ld	l, 0
+	ld	a, 7
+	add	a, h
+	ld	h, a
+	ld	(curRow), hl
+	pop	hl
+	
+    DEC    HL              ; Move back one byte so HL -> [T] of next entry
+
+
+    DEC    C               ; Subtract counter
+    JR     NZ, FindLoop
+
+    PUSH   HL
+	call	zp.clrscr
+	call	zp.vbufdisp
+    POP    HL
+
+    JR     MainLoop
+
+Skip:
+    ; Skip an entry
+    OR     A
+    LD     DE, 6
+    SBC    HL, DE
+    LD     E, (HL)         ; Put name length in E to skip
+    INC    E              ; Add 1 to go to [T] of next entry
+    SBC    HL, DE
+    JR     FindLoop
+Done:
+	
+	call	zp.compat_stop
+	ret
+

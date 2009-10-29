@@ -1,0 +1,303 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+; valid frequency values (WikiTI) :
+;    Value    Frequency 
+;    00h    OFF 
+;    ~      ~ 
+;    40h    10922.667 Hz (32768/3) 
+;    41h    992.9697 Hz (32768/33) 
+;    42h    99.902 Hz (32768/328) 
+;    43h    9.9993 Hz (32768/3277) 
+;    44h    32768 Hz 
+;    45h    2048 Hz 
+;    46h    128 Hz 
+;    47h    8 Hz 
+;    ~      ~ 
+;    80h    CPU clock speed 
+;    81h    CPU clock / 2 
+;    82h    CPU clock / 4 
+;    84h    CPU clock / 8 
+;    88h    CPU clock / 16 
+;    90h    CPU clock / 32 
+;    A0h    CPU clock / 64
+
+; brief : wait for a given amount of ms
+; input : bc -> amount of milliseconds to wait
+; output : none
+; destroys : a
+; note : uses third crystal timer
+vect_timer_msleep_long:
+	ld	a, b
+	or	a
+	jr	z, vect_timer_msleep
+	
+	ld	a, i
+	push	af
+	push	bc
+	
+	di
+	
+	; each step of the loop will wait 255 instead of 256ms...
+	; so a correction is required
+	;ld	c, b
+	;call	vect_timer_msleep
+	
+	ld	c, $ff
+	call	vect_timer_msleep
+	djnz	$-5
+	
+	pop	bc
+	
+	call	vect_timer_msleep
+	
+	; fall through
+	pop	af
+	ret	po
+	ei
+	ret
+
+; brief : wait for a given amount of ms
+; input : c -> amount of milliseconds to wait
+; output : none
+; destroys : a
+; note : uses third crystal timer
+vect_timer_msleep:
+	ld	a, i
+	push	af
+	push	bc
+	
+	; disable interrupts to ensure proper sleep time
+	di
+	
+	ld	a, $45					; 2kHz
+	out	(ct3_on_port), a
+	ld	a, 1 					; loop
+	out	(ct3_loop_port), a
+	ld	a, c
+	; check for null to avoid endless loop
+	or	a
+	jr	z, vect_timer_msleep.end
+	out	(ct3_count_port), a
+	
+	ld	b, 2
+	
+vect_timer_msleep.loop:
+	; polling loop
+	in	a, (irq_stat_port)
+	rlca
+	jr	nc, $-3
+	
+	; acknowledge
+	xor	a
+	out	(ct3_loop_port), a
+	
+	; loop once (2kHz beat but we need 1kHz)
+	djnz	vect_timer_msleep.loop
+	
+vect_timer_msleep.end:
+	; turn off timer
+	xor	a
+	out	(ct3_on_port), a
+	out	(ct3_loop_port), a
+	
+	pop	bc
+	pop	af
+	ret	po
+	ei
+	ret
+
+
+; brief : wait for a given amount of seconds
+; input : c -> amount of seconds to wait
+; output : none
+; destroys : a, bc
+; note : uses third crystal timer
+vect_timer_sleep:
+	ld	a, i
+	push	af
+	
+	; avoid interferences
+	di
+	
+	ld	b, 8
+	
+	ld	a, $47
+	out	(ct3_on_port), a
+	xor	a
+	out	(ct3_loop_port), a
+	
+vect_timer_sleep.loop:
+	ld	a, c
+	out	(ct3_count_port), a
+	
+	; polling loop
+	in	a, (irq_stat_port)
+	rlca
+	jr	nc, $-3
+	
+	; acknowledge
+	xor	a
+	out	(ct3_loop_port), a
+	
+	djnz	vect_timer_sleep.loop
+	
+	; turn off timer
+	xor	a
+	out	(ct3_on_port), a
+	out	(ct3_loop_port), a
+	
+	pop	af
+	ret	po
+	ei
+	ret
+
+; brief : starts one of the 8 timers
+; input : none
+; output : CF if all timer slots are already taken, otherwise a -> timer id
+; destroys : none
+; note : managed timers keep the first crystal timer busy and require interrupts on
+vect_timer_start:
+	push	hl
+	push	bc
+	push	de
+	
+	ld	hl, os.timers
+	ld	de, 4
+	ld	b, 8
+vect_timer_start.loop:
+	bit	7, (hl)
+	jr	z, vect_timer_start.found
+	add	hl, de
+	djnz	vect_timer_start.loop
+	
+	pop	de
+	pop	bc
+	pop	hl
+	
+	scf
+	ret
+	
+vect_timer_start.found:
+	ld	(hl), $80
+	inc	hl
+	xor	a
+	ld	(hl), a
+	inc	hl
+	ld	(hl), a
+	inc	hl
+	ld	(hl), a
+	
+	di
+	in	a, (ct1_on_port)
+	cp	$45
+	jr	z, vect_timer_start.hw_ready
+	
+	ld	a, $45
+	out	(ct1_on_port), a
+	ld	a, 3
+	out	(ct1_loop_port), a
+	ld	a, 2
+	out	(ct1_count_port), a
+	
+vect_timer_start.hw_ready:
+	ld	a, 8
+	sub	b
+	
+	pop	de
+	pop	bc
+	pop	hl
+	
+	ei
+	or	a
+	ret
+
+; brief : stops a given timer (does not reset elsaped time counter)
+; input : a -> timer id
+; output : none
+; destroys : none
+; note : managed timers keep the first crystal timer busy and require interrupts on
+vect_timer_stop:
+	push	af
+	push	hl
+	push	bc
+	ld	bc, os.timers
+	ld	h, 0
+	ld	l, a
+	add	hl, hl
+	add	hl, hl
+	add	hl, bc
+	res	7, (hl)
+	pop	bc
+	pop	hl
+	pop	af
+	ret
+
+; brief : restarts a previously stopped timer
+; input : a -> timer id
+; output : none
+; destroys : none
+; note : managed timers keep the first crystal timer busy and require interrupts on
+vect_timer_restart:
+	push	af
+	push	hl
+	push	bc
+	ld	bc, os.timers
+	ld	h, 0
+	ld	l, a
+	add	hl, hl
+	add	hl, hl
+	add	hl, bc
+	set	7, (hl)
+	pop	bc
+	pop	hl
+	pop	af
+	ret
+
+; brief : get elapsed time for a given timer
+; input : a -> timer id
+; output : hlbc -> elapsed time in ms
+vect_timer_elapsed:
+	push	af
+	push	de
+	ld	bc, os.timers
+	ld	h, 0
+	ld	l, a
+	add	hl, hl
+	add	hl, hl
+	add	hl, bc
+	ld	de, 3
+	add	hl, de
+	ld	c, (hl)
+	dec	hl
+	ld	b, (hl)
+	dec	hl
+	ld	a, (hl)
+	dec	hl
+	ld	h, (hl)
+	ld	l, a
+	res	7, h
+	pop	de
+	pop	af
+	ret

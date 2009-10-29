@@ -1,0 +1,329 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+; Continuation of rst 38h
+isr.continue:
+	jp	nz, isr.on_raised
+; ON key has been pressed
+	bit	calc_on, (hl)
+	jp	nz, isr.power_on
+	
+	set	calc_on, (hl)
+	pop	af
+
+	ld	hl, default.aps_time
+	ld	(os.aps.timer), hl
+	
+	; turn on LCD
+	lcd_busy
+	ld	a, $03
+	out	(lcd_cmd_port), a
+	
+	; exit test mode
+	lcd_busy
+	ld	a, $18
+	out	(lcd_cmd_port), a
+
+isr.wait_on:
+	in	a, (irq_stat_port)
+	and	$08
+	jr	z, isr.wait_on
+
+isr.on_raised:
+; Look for timer interrupt
+	in	a, (irq_stat_port)
+	and	$02
+	jr	z, isr.timer_end
+
+	bit	calc_on, (hl)
+	jr	z, isr.timer_end
+
+	bit	aps_on, (hl)
+	jr	z, isr.timer_end
+
+	ld	hl, (os.aps.timer)
+	dec	hl
+	ld	a, h
+	or	l
+	ld	(os.aps.timer), hl
+
+	call	z, isr.force_off
+	
+isr.timer_end:
+; look for link port interrupt
+	in	a, (irq_stat_port)
+	and	$10
+	jr	z, isr.link_end
+	
+	;call vect_linkdump
+	
+isr.link_end:
+	in	a, (la_stat_port)
+	rrca
+	jr	c, isr.linkassist_recbyte
+	rrca
+	jr	c, isr.linkassist_sendbyte
+	rrca
+	jr	c, isr.linkassist_error
+	
+	jr	isr.linkassist_end
+	
+isr.linkassist_recbyte:
+	; read byte to acknowledge
+	in	a, (la_in_port)
+	jr	isr.linkassist_end
+	
+isr.linkassist_sendbyte:
+	; write a byte to acknowledge
+	out	(la_out_port), a
+	jr	isr.linkassist_end
+	
+isr.linkassist_error:
+	; may need to read a second time to acknowledge
+	in	a, (la_stat_port)
+	
+isr.linkassist_end:
+; call user-supplied (program supplied actually) ISR, if any
+	ld	a, (os.flags)
+	and	bitmask(prgm_running)
+	jr	z, isr.end
+
+	;ld	hl, (psp.interrupt)
+	;ld	a, (hl)
+	;cp	$C7
+	;inc	hl
+	;call	z, zp.call_hl
+	
+isr.end:
+	; acknowledge interrupts
+	xor	a
+	out	(irq_mask_port), a
+	
+	; acknowledge crystal timers interrupts if any
+	;out (ct1_loop_port), a
+	;out (ct2_loop_port), a
+	;out (ct3_loop_port), a
+	
+	; reenable iterrupts (0B -> no linkport, ALL_IRQS -> link port)
+	ld	a, ALL_IRQS ; $0B
+	out	(irq_mask_port), a
+	
+	exx
+	ex	af, af'
+	ei
+	ret
+
+isr.power_on:
+	; check for off key combo (On+2nd)
+	ld	a, kg_func
+	rowread
+	cp	invmask(kb_2nd)
+	jr	nz, isr.2nd_raised
+
+	res	calc_on, (hl)
+	ld	hl, isr.shut_down
+	push	hl
+	jp	isr.wait_on
+
+isr.force_off:
+	ld	hl, os.flags
+	res	calc_on, (hl)
+isr.shut_down:
+	di
+	push	af
+	; turn off lcd
+	lcd_busy
+	ld	a, $02
+	out	(lcd_cmd_port), a
+	pop	af
+
+isr.off_loop:
+	push	af
+	ld	a, $36
+	out	(irq_stat_port), a
+	ld	a, $01
+	out	(irq_mask_port), a
+	pop	af
+	ei
+	halt
+	jr	isr.off_loop
+
+isr.2nd_raised:
+	; check for debug key (On + Del)
+	ld	a, kg_func
+	rowread
+	cp	invmask(kb_del)
+	jr	nz, isr.mode_raised
+	
+	; throw exception (will return to console automatically)
+	ld	hl, zp.throw
+	push	hl
+	
+	jr	isr.end
+	
+isr.mode_raised:
+	; check for contrast keys
+	ld	hl, os.contrast
+	ld	a, kg_arrows
+	rowread
+	bit	kb_up, a
+	jr	nz, isr.up_raised
+
+isr.wait_up:
+	ld	a, kg_arrows
+	rowread
+	bit	kb_up, a
+	jr	z, isr.wait_up
+
+	ld	a, (hl)
+	inc	a
+	jr	z, isr.contrast_max
+	out	(lcd_cmd_port), a
+	ld	(hl), a
+isr.contrast_max:
+	ld	a, sk_up
+	ld	(os.prev_key), a
+	jr	isr.end
+
+isr.up_raised:
+	bit	kb_down, a
+	jp	nz, isr.end
+
+isr.wait_down:
+	ld	a, kg_arrows
+	rowread
+	bit	kb_down, a
+	jr	z, isr.wait_down
+
+	ld	a, (hl)
+	cp	$C0
+	jr	z, isr.contrast_min
+	dec	a
+	out	(lcd_cmd_port), a
+	ld	(hl), a
+isr.contrast_min:
+	ld	a, sk_down
+	ld	(os.prev_key), a
+	jp	isr.end
+
+; 84+ has USB, which is great but sucks...
+; USB is poorly documented, tricky to handle and triggers many interrupts
+isr.usb_check:
+	; if any of the first 5 bits of the stat port is reset then USB is stirring some shit
+	in	a, (usb_stat_port)
+	cpl
+	and	$1F
+	ret	z
+	
+	ld	hl, isr.usb.end
+	push	hl
+	
+	; check which event require handling
+	in	a, (usb_event_port)
+	
+	rlca
+	jr	c, isr.usb.unplugged_B
+	rlca
+	jr	c, isr.usb.pluggedin_B
+	rlca
+	jr	c, isr.usb.unplugged_A
+	rlca
+	jr	c, isr.usb.unplugged_A
+	
+	; bit 1 is now bit 5 after 4 left rotations
+	bit	5, a
+	jr	c, isr.usb.init
+	
+	ret
+
+isr.usb.pluggedin_A:
+	
+	ret
+
+isr.usb.unplugged_A:
+	
+	ret
+
+isr.usb.pluggedin_B:
+	
+	ret
+
+isr.usb.unplugged_B:
+	
+	ret
+
+isr.usb.init:
+	
+	ret
+
+
+isr.usb.end:
+	; acknowledge USB interrupts
+	xor	a
+	out	(usb_irq_port), a
+	
+	ret
+
+isr.timers:
+	in	a, (irq_stat_port)
+	bit	5, a
+	ret	z
+	
+	; update counters for all enabled timers
+	ld	hl, os.timers
+	ld	de, 3
+	ld	b, 8
+	
+isr.timers.loop:
+	; check for running timer
+	ld	a, (hl)
+	add	hl, de
+	push	hl
+	rlca
+	jr	nc, isr.timers.skip
+	
+	; update counter (31bits, stored in big-endian)
+	ld	c, 4
+isr.timers.counter:
+	inc (hl)
+	dec	hl
+	jr	nz, isr.timers.skip
+	dec	c
+	jr	nz, isr.timers.counter
+	;if pc gets here then a timer overflowed a 32bits counter...
+	;timer is automatically stopped in this case and counter reset to zero
+	
+isr.timers.skip:
+	pop	hl
+	inc	hl
+	
+	djnz	isr.timers.loop
+	
+isr.timers.end:
+	; acknowledge and loop
+	ld	a, 3
+	out	(ct1_loop_port), a
+	
+	ret
+

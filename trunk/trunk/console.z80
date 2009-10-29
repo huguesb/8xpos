@@ -1,0 +1,201 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+;
+; This is the core of XOS userspace
+; When the OS boots, the user gets a simple console where he can type
+; commands. Much attention must be devoted to the part of the OS to
+; polish it enough to avoid scaring users away...
+;
+; first area of important : the command edition. the cgets method from
+; CSX was limited and buggy so I fixed and improved it (by adding cursor
+; movement and cursor display among other things). besides, it is always
+; a pain to type the same commands again and again so a bash-like command
+; memory has been added
+;
+
+zp.console:	.export zp.console
+	di
+	; ensure proper stack...
+	ld	sp, $0000
+	ld	hl, zp.console
+	push	hl
+	
+	; console require page $1C (priviledged page, second OS page) to be swapped in bank A
+	; well behaved program should always restore bank contents but better be careful
+	ld	a, $1C
+	ld	c, map_bankA_port
+	call	zp.setflashpage
+	
+	; slow speed
+	xor	a
+	out	(cpu_speed_port), a
+	
+	; reset command recall index
+	;ld	a, $FF
+	dec	a
+	ld	(os.command_mem + 3), a
+	ei
+	
+	; clear command buffer
+ 	ld	hl, os.command
+ 	ld	de, os.command + 1
+ 	ld	(hl), 0
+ 	ld	bc, 128
+ 	ldir
+ 	
+	; show console (in case a previous command left garbage on screen)
+	call	zp.credraw
+	call	zp.cdisp
+	
+	; wait for input
+	ld	a, 128
+	ld	hl, os.command
+	ld	(os.command_buf), hl
+	ld	(os.command_buf + 2), a
+	
+	ld	ix, zp.console.callback
+	call	zp.cgets
+	
+	call	vect_memorize_command
+	
+	; remove command from display
+	ld	a, CMD_PANE
+	call	zp.clrline
+	call	zp.displine
+	
+	; "tokenize" : modify the buffer
+	ld	hl, os.command
+	call	zp.tokenize
+	
+	push	af
+	
+	; find the command invoked
+	
+	ld	de, os.command
+	ld	hl, command_mnemonics
+	call	zp.findstr
+	
+	jr	z, zp.console.exec 
+
+	pop	af
+	
+	ld	hl, str_esyntax1
+	ld	de,	os.scrap
+	ld	bc, 10
+	ldir
+	
+	ld	hl, os.command
+	call	zp.strcpy
+	dec	de
+	
+	ld	hl, str_esyntax2
+	ld	bc, 3
+	ldir
+	
+	ld	hl, os.scrap
+	call	zp.cputs
+	jp		zp.cdisp
+
+; bc : command index
+; de : command parameters
+zp.console.exec:
+	ld	hl, command_pointers
+	
+	; bc holds command index but pointers are 2 bytes
+	add	hl, bc
+	add	hl, bc
+	
+	; deref hl
+	deref_hl
+	
+	; adjust arguments (skip command)
+	ld	de, os.command
+	ex	de, hl
+	call	zp.strnext
+	ex	de, hl
+	
+	pop	af
+	
+	; adjust arg count
+	dec	a
+	
+	; exec command
+	;	hl : command address
+	;	de : command parameters (stringlist)
+	;	a  : number of parameters
+	
+	push	hl
+	ex	de, hl
+	ret
+
+; brief : handle special keypresses in console input
+; note : must preserve all registers... (callee save)
+zp.console.callback:
+	cp	k_up
+	jr	z, zp.console.cb_up
+	cp	k_down
+	jr	z, zp.console.cb_down
+	or	a
+	ret
+
+zp.console.cb_up:
+	push	af
+	ld	a, (os.command_mem + 3)
+	inc	a
+	call	vect_recall_command
+	pop	af
+	scf
+	ret
+
+zp.console.cb_down:
+	push	af
+	ld	a, (os.command_mem + 3)
+	cp	$FF
+	jr	z, zp.console.cb_down.clear
+	or	a
+	jr	z, zp.console.cb_down.clear
+	dec	a
+	call	vect_recall_command
+	pop	af
+	scf
+	ret
+
+zp.console.cb_down.clear:
+	ld	a, $FF
+	ld	(os.command_mem + 3), a
+	inc	a
+	
+	; clear command buffer
+ 	ld	hl, os.command
+ 	ld	de, os.command + 1
+ 	ld	(hl), a
+ 	ld	bc, 128
+	push	hl
+ 	ldir
+	pop	hl
+	ld	e, a
+	pop	af
+	scf
+	ret
