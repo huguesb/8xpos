@@ -28,7 +28,54 @@ cmd_LIST:
 	ld	c, bitmask(list_free) | bitmask(list_alloc)
 	call	zp.file_list
 	
+	ld	ix, cmd_LIST.cb_apps
+	call	zp.app_list
+	
 	ret
+
+cmd_LIST.cb_apps:
+	push	af
+	push	hl
+	
+	ld	de, $8040
+	call	zp.find_app_field
+	jr	z, $+5
+	pop	hl
+	pop	af
+	ret
+	
+	call	zp.get_field_size
+	
+	ld	de, os.scrap
+	call	zp.flashtoram
+	
+	ld	a, ':'
+	ld	(de), a
+	inc	de
+	
+	pop	hl
+	pop	af
+	
+	push	de
+	
+	ld	de, $8080
+	call	zp.find_app_field
+	ld	c, 1
+	
+	jr	nz, $+9
+	call	zp.get_field_size
+	ld	b, a
+	call	zp.deref_paged_byte
+	
+	pop	de
+	ld	a, c
+	call	zp.htoa_byte
+	
+	xor	a
+	ld	(de), a
+	
+	ld	hl, os.scrap
+	jp	zp.cputs
 
 cmd_LIST.callback:
 	push	de
@@ -45,7 +92,7 @@ cmd_LIST.callback:
 	; display free blocks only in debug mode
 	ld	a, (os.flags)
 	bit	debug_on, a
-	;jr	z, cmd_LIST.cb.abort
+	jr	z, cmd_LIST.cb.abort
 	
 	ld	hl, cmd_LIST.freeblock_str
 	call	zp.cputs
