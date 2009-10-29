@@ -1,0 +1,147 @@
+
+XOS : Quick documentation
+
+	1) What is it?
+  XOS is a third party OS for the 83+ series of calculator. It is primarily
+targeted to the "SE family" (83+SE, 84+ and 84+SE) but *might* still work
+on a regular 83+ though with many features disabled. 
+
+  XOS is being developed by Luc BRUANT aka fullmetalcoder. It is based on
+previous similar attempts of writing OS for the 83+ series and especially
+on Sean Mc Laughlin's CSX project (now defunct) but it has significantly
+diverged from it.
+
+  XOS is Open Source, the whole source code is available under open source
+license(s), BSD in most cases and other licenses in case bits of code are
+taken from other projects with different licenses (most flash writing code
+comesfrom PongOS for instance and is GPL'ed).
+
+  Most of CSX docs (keymapping, interface, ...) still applies so I did not
+took time to write a full manual as of yet. The kbd.png file and basic CLI
+literacy should be enough to try XOS (consider using the "help" command).
+
+	2) What does it do?
+  XOS currently provides :
+	* a simple command line interface, not particularly fancy but a lot more
+	user-friendly than that of CSX : cursor movement and command memory
+	* a (bare, no fancy directories and stuff) filesystem which allows the
+	storage of up to 64kb of user data (yeah, 64kb, using 4 extra RAM pages
+	but 0kb on a 83+BE due to lack of these pages...) with long filenames
+	(though metadata size must remain under 255 bytes)
+	* (pseudo)silent linking : using the "host" command the calc can be put
+	in host mode and receive files from a PC (or send files to it or any other
+	features supported by the link protocol) [this does not require special
+	linking software since TIOS link protocol is used]
+	* the ability to run assembly program up to 32kb large (without exec limit
+	on these 32kb)
+	* a large library of syscalls with a fast calling convention (direct call
+	instead of clumsy bcall)
+	* the ability to create dynamic libraries of functions and load them from
+	programs (creation of libs is slightly more complicated than that of programs
+	since some form of Position Independence has to be achieved somehow)
+	* a hex editor (enhanced version of CSX hexedit)
+	
+	* (minimal) on calc debugging : interrupt program execution (when interrupts
+	are enabled...) by pressing On+Del, watch reg/stack dump and choose between
+	returning to console (Mode), Resuming execution (Clear) [potentially harmful]
+	and opeing hex editor (Enter, will jump to the selected address)
+	* execution of Flash apps / basic TIOS compat layer
+
+	3) What doesn't it do?
+	
+	* math (hopefully someday but in userspace)
+	* writing of data to flash
+	* execution of BASIC program (never but maybe BBCBASIC support if the source
+	for it is released...)
+	* anything else not mentionned in the previous paragraph
+	
+	4) Getting started
+	
+	* send the OS to your calc as you would do with a regular TIOS update. Choose
+	the correct version! This has nothing to do with a difference in code but in
+	the key used to sign the OS, a step required for the OS update to be successful.
+	OS signed with the 04 key will be accepted by 83+ BE/SE while OS signed with
+	the 0A key will be accepted by 84+ BE/SE. In case the key which supposed to
+	work with your calc fail you can always use Brandon Wilson's free83+ program
+	to allow the loading of OS signed with the 05 key.
+	
+	* refer to the manual for more detailed explanations on XOS interface and features
+	
+	* hold DEL while removing and reinserting a battery to install another OS (either
+	a XOS update or TIOS or any other other OS).
+	
+	* writing programs for XOS is quite easy. You just need to include xos.inc and xos.exp
+	and start your code with the following statements (tasm syntax, you may need to
+	adapt it to work with your assembler of choice) :
+	.org prgm.start - 2
+	.db magic.executable, 0
+	
+	XOS API is not finalized yet but backward and forward binary compat will be preserved
+	between versions : new routines will be added but none will be removed and, more
+	importantly, entrypoints address won't change.
+	
+	Routines are documented inside XOS sources (later on these Doxy-like comments will be
+	turned into a nice looking html or pdf file).
+	
+	
+	5) Legal
+	
+	XOS package, as part of XOS build system, includes a copy of tasm.exe obtained
+	from ticalc.org :
+	
+	Copyright 1985-1993 by Speech Technology Incorporated, all rights reserved.
+	Copyright 1998,1999,2001 by Thomas N. Anderson       , all rights reserved.
+	
+	
+	XOS package, as part of XOS build system, includes copies of the sources of the
+	following GPL programs (refer to the files in tools/sources for full copyright
+	notices) :
+	* multihex : Copyright 2003 Benjamin Moody
+	* packxxu : Copyright 2003 Benjamin Moody
+	* rabbitsign : Copyright 2004-2009 Benjamin Moody
+	* rom8x : Copyright 2005 Andree Chea
+	* bin8x : (see the source for a list of copyright holders/contributors)
+	
+	Each of these tools, except rabbitsign,  are contained in a single source file
+	and can be compiled as easily as (after replacing 'x' with the name of the tool) :
+	
+	gcc x.c -o x
+	
+	
+	XOS package, as part of XOS build system, includes the source of the encdos
+	tool, copied from BAOS build system and assumed to be public domain.
+	
+	6) Contact
+	
+	You can reach me by mail : non.deterministic.finite.organism@gmail.com
+	
+	Alternatively you may use UnitedTI forum to communicate since I sometimes
+	visit it.
+	
+	7) Thanks
+
+	Sean Mc Laughlin : author of the great Learn TI Assembly in 28 days, of the
+	CSX source code, of the malloc code and many other nice things which taught
+	me a lot.
+
+	Benjamin Moody : author of PongOS, of most of the tools used to build a 8xu
+	file and initiator of the RSA factoring effort which finally allowed third
+	party OS loading on z80 calcs without any nasty trick.
+
+	Brandon Wilson : Author of Free83p and host of WikiTI, a great knowledge
+	database on TI-8x calculators software and hardware.
+
+	All the people who documented 83+ series hardware making it possible to write
+	an OS for it.
+	
+	8) History
+	
+	/10/2009 : 0.2 ->
+		* TIOS compat layer
+		* app search and execution
+		* floating point support
+		* much improved on-calc debugging
+		* support for the SCR command of link protocol (take screenshot)
+		* app listing available through link protocol
+	
+	04/10/2009 : 0.1 -> first public release

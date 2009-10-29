@@ -1,0 +1,620 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+.nolist
+; OS config file
+#include "xos.inc"
+; syscalls addresses
+#include "xos.exp"
+; library header file
+#include "apps/gui.inc"
+.list
+
+.org	prgm.start - 2
+	.db magic.executable, 0
+	
+	; load custom keymap
+	ld	hl, keymap.normal
+	ld	(os.keymap.normal), hl
+	ld	hl, keymap.shift
+	ld	(os.keymap.shift), hl
+	ld	hl, keymap.alpha
+	ld	(os.keymap.alpha), hl
+	
+	ld	hl, os.lcd.back
+	ld	de, os.lcd.back + 1
+	ld	(hl), 0
+	ld	bc, 255
+	ldir
+	
+	ld	a, 255
+	ld	hl, os.lcd.back + 16
+	ld	(os.command_buf), hl
+	ld	(os.command_buf + 2), a
+	
+	; ptr to last command
+	ld	hl, 0
+	ld	(os.lcd.back + $110), hl
+	
+cmdloop:
+	ld	ix, 0
+	call	zp.cgets
+	
+	; save expression if not empty
+	ld	hl, os.lcd.back + 16
+	call	zp.strlen
+	
+	call	cmd_mem
+	
+	call	zp.timer_start
+	push	af
+	
+	call	vect_expr_eval
+	
+	jr	c, _error
+	
+	pop	af
+	call	zp.timer_stop
+	
+	push	af
+	ld	c, 6
+	ld	de, os.lcd.back
+	call	zp.ftoa
+	pop	af
+	ex	de, hl
+	ld	(hl), ' '
+	inc	hl
+	ld	(hl), '['
+	inc	hl
+	ex	de, hl
+	call	zp.timer_elapsed
+	call	zp.htoa_dword
+	ex	de, hl
+	ld	(hl), ']'
+	inc	hl
+	ld	(hl), 0
+	
+	ld	hl, os.lcd.back
+	call	zp.cputs
+	call	zp.cdisp
+	
+	
+; 	; test atof
+; 	ld	hl, fp_a
+; 	ld	de, os.lcd.back + 16
+; 	call	vect_atof
+; 	jr	c, _error
+; 	
+; 	push	de
+; 	; test atof/ftoa
+; 	ld	c, 4
+; 	ld	hl, fp_a
+; 	ld	de, os.scrap
+; 	call	zp.ftoa
+; 	
+; 	ld	a, ':'
+; 	ld	(de), a
+; 	inc	de
+; 	
+; 	pop	hl
+; 	ld	bc, -(os.lcd.back + 16)
+; 	add	hl, bc
+; 	call	zp.htoa_word
+	
+; 	; test ftoi
+; 	call	zp.ftoi
+; 	push	hl
+; 	call	zp.dtoa_word
+; 	pop	hl
+; 	
+; 	ld	a, ':'
+; 	ld	(de), a
+; 	inc	de
+; 	
+; 	; test itof
+; 	push	de
+; 	ld	de, fp_a
+; 	call	zp.itof
+; 	pop	de
+; 	
+; 	; test itof/ftoa
+; 	ld	c, 4
+; 	ld	hl, fp_a
+; 	call	zp.ftoa
+; 	
+; 	xor	a
+; 	ld	(de), a
+; 	
+; 	ld	hl, os.scrap
+; 	call	zp.cputs
+; 	call	zp.cdisp
+	
+	jr	cmdloop
+	
+_error:
+	pop	af
+	call	zp.timer_stop
+	
+	ld	hl, error_str
+	call	zp.cputs
+	call	zp.cdisp
+	
+	; free command memory
+	call	cmd_cleanup
+	
+	; restore OS keymap
+	ld	hl, 0
+	ld	(os.keymap.normal), hl
+	ld	(os.keymap.shift), hl
+	ld	(os.keymap.alpha), hl
+	
+	ret
+
+cmd_mem:
+	ld	a, b
+	or	c
+	jr	z, cmd_restore
+
+cmd_save:
+	push	bc
+	call	cmd_cleanup
+	pop	bc
+	
+	call	zp.malloc
+	ld	(os.lcd.back + $110), hl
+	ex	de, hl
+	ld	hl, (os.command_buf)
+	ldir
+	
+	ld	ix, os.lcd.back + 16
+	ret
+	
+cmd_restore:
+	ld	ix, (os.lcd.back + $110)
+	ret
+
+cmd_cleanup:
+	ld	hl, (os.lcd.back + $110)
+	jp	zp.free
+
+keymap.normal:
+.DB	$00, $01, $02, $03, $04, $00, $00, $00, $00
+.DB	$0A, '+', '-', '*', '/', '^', $0C, $00
+.DB	'?', '3', '6', '9', ')', ']', '}', $00
+.DB	'.', '2', '5', '8', '(', '[', '{', $00
+.DB	'0', '1', '4', '7', ',', '#', '>', $05
+.DB	$00, '|', '&', '%', '!', '$', '<', $00
+.DB	$15, $14, $13, $12, $11, $00, $1B, $08
+
+keymap.shift:		
+.DB	$00, $01, $02, $03, $04, $00, $00, $00, $00
+.DB	$0A, $22, 'W', 'R', 'M', 'H', $0C, $00
+.DB	'=', '`', 'V', 'Q', 'L', 'G', '~', $00
+.DB	';', 'Z', 'U', 'P', 'K', 'F', 'C', $00
+.DB	' ', 'Y', 'T', 'O', 'J', 'E', 'B', $05
+.DB	$00, 'X', 'S', 'N', 'I', 'D', 'A', $00
+.DB	$15, $14, $13, $12, $11, $00, $1B, $08
+
+keymap.alpha:		
+.DB	$00, $01, $02, $03, $04, $00, $00, $00, $00
+.DB	$0A, $27, 'w', 'r', 'm', 'h', $0C, $00
+.DB	'_', '@', 'v', 'q', 'l', 'g', '\', $00
+.DB	':', 'z', 'u', 'p', 'k', 'f', 'c', $00
+.DB	' ', 'y', 't', 'o', 'j', 'e', 'b', $05
+.DB	$00, 'x', 's', 'n', 'i', 'd', 'a', $00
+.DB	$15, $14, $13, $12, $11, $00, $1B, $08
+
+vect_fp_sqr:
+	call	zp.fp_cpy
+	call	zp.fp_mult
+	ret
+
+; brief : computes hl!
+vect_fp_fact:
+	call	zp.fp_int
+	call	zp.fp_push
+	
+vect_fp_fact.loop:
+	call	zp.fp_pop
+	ex	de, hl
+	call	zp.fp_dec
+	call	zp.fp_bool
+	jr	z, vect_fp_fact.end
+	call	zp.fp_push
+	ex	de, hl
+	call	zp.fp_mult
+	jr	vect_fp_fact.loop
+	
+vect_fp_fact.end:
+	ex	de, hl
+	ret
+	
+; 	push	hl
+; 	call	zp.ftoi
+; 	ld	b, h
+; 	ld	c, l
+; 	pop	hl
+; 	ld	a, b
+; 	or	c
+; 	ret	z
+; loop:
+; 	dec	bc
+; 	ld	a, b
+; 	or	c
+; 	ret	z
+; 	push	bc
+; 	push	hl
+; 	ld	h, b
+; 	ld	l, c
+; 	call	zp.itof
+; 	ex	de, hl
+; 	pop	hl
+; 	;call	dump.scrap
+; 	call	zp.fp_mult
+; 	pop	bc
+; 	jr	loop
+
+; dump.scrap:
+; 	push	af
+; 	push	bc
+; 	push	hl
+; 	push	de
+; 	push	de
+; 	ld	de, os.console
+; 	ld	b, 7
+; 	call	zp.memdump
+; 	inc	hl
+; 	djnz	$-4
+; 	pop	hl
+; 	ld	de, os.console + 24
+; 	ld	b, 7
+; 	call	zp.memdump
+; 	inc	hl
+; 	djnz	$-4
+; 	call	zp.cdisp
+; 	call	zp.getch
+; 	pop	de
+; 	pop	hl
+; 	pop	bc
+; 	pop	af
+; 	ret
+
+; Newton-Raphson division
+;	* compute 1/divisor using Netwon's method
+;	* multiply by dividend
+;
+;	if X(i) are successive approx of 1/D then X(i+1) = X(i) * (2 - divisor * X(i))
+;
+
+#include "expr.z80"
+
+error_str:
+	.db "Invalid string", 0
+	
+; 	ld	de, os.scrap
+; 	
+; 	ld	hl, fp_a
+; 	call	zp.ftoa
+; 	
+; 	ld	a, $0A
+; 	ld	(de), a
+; 	inc	de
+; 	ld	a, '+'
+; 	ld	(de), a
+; 	inc	de
+; 	ld	a, $0A
+; 	ld	(de), a
+; 	inc	de
+; 	
+; 	ld	hl, fp_b
+; 	call	zp.ftoa
+; 	
+; 	ld	a, $0A
+; 	ld	(de), a
+; 	inc	de
+; 	ld	a, '='
+; 	ld	(de), a
+; 	inc	de
+; 	ld	a, $0A
+; 	ld	(de), a
+; 	inc	de
+; 	
+; 	push	de
+; 	
+; 	ld	hl, fp_a
+; 	ld	de, fp_b
+; 	call	zp.fp_add
+; 	
+; 	ld	b, d
+; 	ld	c, e
+; 	
+; 	pop	de
+; 	push	bc
+; 	call	zp.ftoa
+; 	
+; 	ld	a, $0A
+; 	ld	(de), a
+; 	inc	de
+; 	
+; 	pop	hl
+; 	call	zp.ftoa
+; 	
+; 	xor	a
+; 	ld	(de), a
+; 	
+; 	ld	hl, os.scrap
+; 	call	zp.cputs
+; 	call	zp.cdisp
+; 	call	zp.getch
+; 	
+	ret
+
+fp_a:
+	.db $00, $80, $12, $00, $00, $00, $00, $00, $00
+fp_b:
+	.db $00, $80, $34, $00, $00, $00, $00, $00, $00
+; fp_a:
+; 	.db $00, $80, $12, $34, $56, $78, $90, $12, $34
+; fp_b:
+; 	.db $00, $80, $34, $56, $78, $90, $12, $34, $45
+; 	
+; 	ld	a, 0
+; 	ld	hl, ver.1.2.3
+; 	ld	de, ver.1.2.3
+; 	call	ver_test
+; 	
+; 	ld	a, 1
+; 	ld	hl, ver.0.1.0
+; 	ld	de, ver.0.1.0
+; 	call	ver_test
+; 	
+; 	ld	a, 2
+; 	ld	hl, ver.1.2.3
+; 	ld	de, ver.1.2.3
+; 	call	ver_test
+; 	
+; 	ld	a, 3
+; 	ld	hl, ver.0.1.0
+; 	ld	de, ver.0.1.0
+; 	call	ver_test
+; 	
+; 	ld	a, 4
+; 	ld	hl, ver.1.2.3
+; 	ld	de, ver.0.1.0
+; 	call	ver_test
+	
+	ld	hl, xos.gui.spec
+	call	zp.dylib_load
+	
+	ret	c
+	
+; 	ld	hl, str_good
+; 	call	zp.cputs
+; 	call	zp.cdisp
+; 	
+; 	ld	hl, xos.gui.tabs + 1
+; 	deref_hl
+; 	ld	de, os.scrap
+; 	call	zp.htoa_word
+; 	ld	a, '>'
+; 	ld	(de), a
+; 	inc	de
+; 	deref_hl
+; 	call	zp.htoa_word
+; 	xor	a
+; 	ld	(de), a
+; 	ld	hl, os.scrap
+; 	call	zp.cputs
+; 	call	zp.cdisp
+; 	call	zp.getch
+	
+	ld	hl, info.data
+	call	xos.gui.tabs
+	
+; 	ld	bc, $005F
+; _loop:
+; 	push	bc
+; 	call	zp.clrscr
+; 	ld	a, 10
+; 	pop	bc
+; 	push	bc
+; 	call	zp.inv_hline
+; 	call	zp.vbufdisp
+; 	call	zp.getch
+; 	pop	bc
+; 	
+; 	cp	k_left
+; 	jr	z, _left
+; 	cp	k_right
+; 	jr	z, _right
+; 	cp	k_quit
+; 	jr	nz, _loop
+; 	
+; 	ret
+; 
+; _left:
+; 	ld	a, c
+; 	dec	a
+; 	jr	z, _loop
+; 	ld	c, a
+; 	jr	_loop
+; 
+; _right:
+; 	inc	c
+; 	jr	_loop
+; 	
+	ret
+
+str_good:
+	.db "GUI lib loaded.", 0
+
+ver.1.2.3: .db 1, 2, 3
+ver.0.1.0: .db 0, 1, 0
+
+ver_test:
+	ret
+	push	hl
+	push	de
+	push	af
+	call	zp.version_check
+	push	af
+	pop	bc
+	pop	af
+	ld	de, os.scrap
+	call	zp.htoa_byte
+	ld	a, ':'
+	ld	(de), a
+	inc	de
+	pop	hl
+	call	zp.htoa_word
+	ld	a, ':'
+	ld	(de), a
+	inc	de
+	pop	hl
+	call	zp.htoa_word
+	ld	a, ':'
+	ld	(de), a
+	inc	de
+	ld	a, c
+	call	zp.htoa_byte
+	xor	a
+	ld	(de), a
+	ld	hl, os.scrap
+	call	zp.cputs
+	call	zp.cdisp
+	call	zp.getch
+	ret
+
+libs.spec:
+	.db	1
+	.dw	xos.gui.spec
+
+; todo : have auto generated files to simply include...
+;
+; input would look like :
+;
+; xos.gui>=0.1.0 {
+; 	tabs
+; }
+
+xos.gui.spec:
+	.db	"xos.gui", 0
+	.db	">=", 0
+	.db	0, 1, 0
+	.dw	1
+	.dw	xos.gui.jump
+
+xos.gui.jump:
+xos.gui.tabs:	jp	xos.gui._tabs
+
+info.data:
+	.db	"OS info", 0
+	.db	2
+	.dw	info.version
+	.dw	info.settings
+
+	    ;012345678901234567890123
+info.version:
+	.db	"Version", 0
+	.db	gui_widget_custom
+	.dw	info.version.draw
+	.dw	info.version.handle
+
+info.settings:
+	.db	"Settings", 0
+	.db	gui_widget_layout
+	.db	9
+	
+	.db	gui_control_check
+	.db	"Debug mode", 0
+	.db	bitmask(gui_check_bit) | bitmask(gui_check_addr) | debug_on
+	.dw	os.flags + osf.general
+	
+	.db	gui_control_check
+	.db	"Link proto debug", 0
+	.db	bitmask(gui_check_bit) | bitmask(gui_check_addr) | proto_dump_on
+	.dw	os.flags + osf.silentlink
+	
+	.db	gui_control_check
+	.db	"Another setting", 0
+	.db	0, 0
+	
+	.db	gui_control_check
+	.db	"Debug mode 2", 0
+	.db	bitmask(gui_check_bit) | bitmask(gui_check_addr) | debug_on
+	.dw	os.flags + osf.general
+	
+	.db	gui_control_check
+	.db	"Link proto debug 2", 0
+	.db	bitmask(gui_check_bit) | bitmask(gui_check_addr) | proto_dump_on
+	.dw	os.flags + osf.silentlink
+	
+	.db	gui_control_check
+	.db	"Another setting 2", 0
+	.db	0, 0
+	
+	.db	gui_control_check
+	.db	"Debug mode 3", 0
+	.db	bitmask(gui_check_bit) | bitmask(gui_check_addr) | debug_on
+	.dw	os.flags + osf.general
+	
+	.db	gui_control_check
+	.db	"Link proto debug 3", 0
+	.db	bitmask(gui_check_bit) | bitmask(gui_check_addr) | proto_dump_on
+	.dw	os.flags + osf.silentlink
+	
+	.db	gui_control_check
+	.db	"Another setting 3", 0
+	.db	0, 0
+	
+	
+	.db	gui_control_input
+	.db	"Type text", 0
+	.db	bitmask(gui_input_passwd) | bitmask(gui_input_addr)
+	.dw	os.lcd.back
+
+info.version.draw:
+	push	bc
+	ld	hl, os.version
+	call	zp.puts_con
+	
+	ld	de, os.scrap
+	push	de
+	call	zp.hw_str
+	pop	hl
+	
+	pop	bc
+	ld	a, 6
+	add	a, b
+	ld	b, a
+	
+	call	zp.puts_con
+	
+	ret
+
+info.version.handle:
+	or	a
+	ret
+
+.end

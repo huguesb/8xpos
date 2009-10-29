@@ -1,0 +1,562 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+#define	LINK_TIMEOUT	$0600
+
+; brief : lowest level routine for link output
+; input : a -> byte to send
+; output : carry flag set if error, reset if byte successfully sent
+; destroys : a
+vect_output:
+	push	bc
+	push	hl
+	ld	b, 8		; counter
+	ld	c, a
+	ld	hl, TIMEOUT	; timer
+	ld	a, RED1_WHITE1
+	out	(link_port), a	; Set W = 1, R = 1
+
+vect_output._Start:
+	in	a, (link_port)
+	and	%00000011
+	cp	%00000011
+	jr	z, vect_output._Send_Bit
+	call	vect_output._Chk_Timeout
+	jr	vect_output._Start
+
+vect_output._Send_Bit:
+	ld	a, c
+	and	1
+	jr	z, vect_output._Send_0
+
+vect_output._Send_1:
+	ld	a, RED1_WHITE0
+	out	(link_port), a
+	jr	vect_output._Acknowledge
+
+vect_output._Send_0:
+	ld	a, RED0_WHITE1
+	out	(link_port), a
+
+vect_output._Acknowledge:
+	call	vect_output._Chk_Timeout
+	in	a, (link_port)
+	and	%00000011
+	jr	nz, vect_output._Acknowledge
+
+	ld	a, RED1_WHITE1
+	out	(link_port), a
+
+	srl	c
+	ld	hl, TIMEOUT
+	djnz	vect_output._Start
+	or	a
+vect_output._Exit:
+	pop	hl
+	pop	bc
+	ret
+
+vect_output._Chk_Timeout:
+	dec	hl
+	ld	a, h
+	or	l
+	ret	nz
+vect_output._Error:
+	pop	af
+	ld	a, RED1_WHITE1
+	out	(link_port), a
+	scf
+	jr	vect_output._Exit
+
+; brief : lowest level routine for link input
+; input : none
+; output : a -> byte recieved (if no error), carry flag set if error, reset if byte successfully sent
+; destroys : none
+vect_input:
+	push	bc
+	push	hl
+
+	ld	b, 8		; counter
+	ld	hl, TIMEOUT	; timer
+	ld	a, RED1_WHITE1
+	out	(link_port), a	; Set W = 1, R = 1
+
+vect_input._Start:
+	in	a, (link_port)
+	and	%00000011
+	cp	%00000011
+	jr	nz, vect_input._Get_Bit
+	call	vect_input._Chk_Timeout
+	jr	vect_input._Start
+
+vect_input._Get_Bit:
+	cp	%00000010	; If W = 1, R = 0, a zero is incoming
+	jr	z, vect_input._Receive_0
+
+vect_input._Receive_1:
+	srl	c		; Shift accumulator and set bit
+	set	7, c
+
+	ld	a, RED0_WHITE1
+	out	(link_port), a
+	jr	vect_input._End_Wait
+
+vect_input._Receive_0:
+	srl	c
+
+	ld	a, RED1_WHITE0
+	out	(link_port), a
+
+vect_input._End_Wait:
+	call	vect_input._Chk_Timeout
+	in	a, (link_port)
+	and	%00000011
+	jr	z, vect_input._End_Wait
+	ld	a, RED1_WHITE1
+	out	(link_port), a
+
+	ld	hl, TIMEOUT
+	djnz	vect_input._Start
+
+	ld	a, c
+	or	a
+vect_input._Exit:
+	pop	hl
+	pop	bc
+	ret
+
+vect_input._Chk_Timeout:
+	dec	hl
+	ld	a, h
+	or	l
+	ret	nz
+vect_input._Error:
+	pop	af
+	ld	a, RED1_WHITE1
+	out	(link_port), a
+	scf
+	jr	vect_input._Exit
+
+;
+; Link Assist routines
+;
+
+vect_disableLA:
+	ld	a, i
+	push	af
+	di
+	
+	push	hl
+	ld	hl, 0
+	ld	(os.linkassist.receive), hl
+	ld	(os.linkassist.send), hl
+	ld	(os.linkassist.error), hl
+	
+	ld	hl, os.flags + osf.silentlink
+	res	silent_assist, (hl)
+	pop	hl
+	
+	; disable link assist
+	ld	a, $80
+	out	(la_en_port), a
+	
+	pop	af
+	ret	po
+	ei
+	ret
+
+vect_enableLA:
+	ld	a, i
+	push	af
+	di
+	
+	push	hl
+	; setup link default assist handlers
+	ld	hl, 0
+	ld	(os.linkassist.receive), hl
+	ld	(os.linkassist.send), hl
+	ld	hl, zp.throw_link
+	ld	(os.linkassist.error), hl
+	
+	ld	hl, os.flags + osf.silentlink
+	set	silent_assist, (hl)
+	pop	hl
+	
+	; enable link-assist
+	xor	a
+	out	(la_en_port), a
+	; enable link assist error interrupt
+	ld	a, $04
+	out	(la_en_port), a
+	
+	pop	af
+	ret	po
+	ei
+	ret
+
+; brief : wait for a byte to be received
+; input : none
+; output : a -> byte, CF set on error (hardware...)
+; destroys : none
+vect_get_byteLA:
+	; wait until a byte can be read
+	in	a, (la_stat_port)
+	; check for error
+	rlca
+	rlca
+	ret	c
+	; check for ready read
+	and	$40
+	jr	z, vect_get_byteLA
+	
+	; read it
+	in	a, (la_in_port)
+	
+	; reset carry (no error)
+	or	a
+	ret
+
+; brief : send a byte
+; input : a -> byte
+; output : CF set on error (hardware...)
+; destroys : none
+vect_send_byteLA:
+	; wait until a byte can be written
+	push	af
+	in	a, (la_stat_port)
+	bit	6, a
+	jr	nz, vect_send_byteLA.error
+	and	$20
+	jr	z, vect_send_byteLA + 1
+	pop	af
+	
+	; write it
+	out	(la_out_port), a
+	
+	; reset carry
+	or	a
+	ret
+
+vect_send_byteLA.error:
+	pop	af
+	scf
+	ret
+
+; output : CF set if link assist is disabled
+vect_LA_enabled:
+	push	af
+	ld	a, (os.flags + osf.silentlink)
+	rlca
+	jp	nc, vect_LA_enabled.no
+	
+vect_LA_enabled.yes:
+	pop	af
+	or	a
+	ret
+
+vect_LA_enabled.no:
+	pop	af
+	scf
+	ret
+
+;   ; ;  ; ; ;    ;;  ;;  ;
+;   ; ;\ ; ;;    ;__; ;_; ;
+;;; ; ; \; ; ;   ;  ; ;   ;
+
+; brief : checks whether link communication may begin
+; input : none
+; output : NZ if can read byte, Z otherwise
+; destroys : a
+vect_can_read:
+	in	a, (hw_port)
+	rlca
+	jr	nc, vect_can_read.be
+	
+	in	a, (la_en_port)
+	rlca
+	jr	c, vect_can_read.low
+	
+	in	a, (la_stat_port)
+	and	$10
+	ret
+
+vect_can_read.be:
+	; use link assist ?
+vect_can_read.low:
+	; err... does that work???
+	
+	ld	a, RED1_WHITE1
+	out	(link_port), a	; Set W = 1, R = 1
+	
+	in	a, (link_port)
+	and	%00000011
+	cp	%00000011
+	ret
+
+; brief : get a byte
+; input : none
+; output : a -> byte read
+; destroys : none
+; note : use link assist whenever possible, fallback on low-level linking otherwise
+; note : a link error is thrown upon timeout
+vect_get_byte:
+	call	vect_LA_enabled
+	jp	nc, vect_get_byteLA
+	
+	; fallback to low-level input
+	
+	push	bc
+	ld	bc, LINK_TIMEOUT
+vect_get_byte.loop:
+	halt
+	call	zp.input
+	jr	c, vect_get_byte.error
+	pop	bc
+	ret
+vect_get_byte.error:
+	dec	c
+	jr	nz, vect_get_byte.loop
+	dec	b
+	jr	nz, vect_get_byte.loop
+	
+	pop	bc
+	jp	zp.throw_link
+
+
+; brief : send a byte
+; input : a -> byte to send
+; output : none
+; destroys : none
+; note : use link assist whenever possible, fallback on low-level linking otherwise
+; note : a link error is thrown upon timeout
+vect_send_byte:
+	call	vect_LA_enabled
+	jp	nc, vect_send_byteLA
+	
+	; fallback to low-level output
+	
+	push	bc
+	ld	bc, LINK_TIMEOUT
+vect_send_byte.loop:
+	call	zp.output
+	jp	nc, vect_send_byte.ok
+	halt
+	dec	c
+	jr	nz, vect_send_byte.loop
+	dec	b
+	jr	nz, vect_send_byte.loop
+	pop	bc
+	jp	zp.throw_link
+
+vect_send_byte.ok:
+	pop	bc
+	ret
+
+; brief : wait for a command header to be received
+; input : none
+; output : a -> command id, bc -> packet size
+; destroys : none
+vect_get_command:
+	call	vect_get_byte
+vect_get_command.skip:
+	call	vect_get_byte
+	push	af
+	call	vect_get_byte
+	ld	c, a
+	call	vect_get_byte
+	ld	b, a
+	pop	af
+	ret
+
+; brief : wait for command data to be received
+; input : hl -> command data buffer, bc -> packet size
+; output : data written in buffer, hl -> end of data, bc -> 0, de -> checksum
+; destroys : a, bc
+vect_get_data_raw:
+	ld	de, 0
+vect_get_data.loop:
+	call	vect_get_byte
+	ld	(hl), a
+	inc	hl
+	ex	de, hl
+	offset_hl
+	ex	de, hl
+	dec	bc
+	ld	a, b
+	or	c
+	jr	nz, vect_get_data.loop
+	
+	ret
+
+; brief : wait for command data to be received (and checksum)
+; input : bc -> packet size
+; output : hl -> data (allocated with malloc : must be free'd), bc -> 0, de -> checksum, CF set on checksum mismatch
+; destroys : a, bc
+vect_get_data:
+	push	bc
+	call	zp.malloc
+	pop	bc
+	ret	c
+	
+	push	hl
+	call	vect_get_data_raw
+	
+	call	vect_get_byte
+	ld	l, a
+	call	vect_get_byte
+	ld	h, a
+	
+	cmp_hlde
+	pop	hl
+	
+	jr	nz, vect_get_data.mismatch
+	or	a
+	ret
+
+vect_get_data.mismatch:
+	scf
+	ret
+
+; brief : send a command with no attached data
+; input : d -> command id
+; output : none
+; destroys : a
+vect_send_command_nodata:
+; Send a packet of the form 73 d 00 00
+	ld	a, link_83P
+	call	vect_send_byte
+	ld	a, d
+	call	vect_send_byte
+	xor	a
+	call	vect_send_byte
+	call	vect_send_byte
+	ret
+
+; brief : send an error command
+; input : d -> error id
+; output : none
+; destroys : a
+vect_send_error:
+; Send a packet of the form 73 36 01 00 : d : cs cs
+	ld	a, link_83P
+	call	vect_send_byte
+	ld	a, link_REJ
+	call	vect_send_byte
+	
+	ld	a, 1
+	call	vect_send_byte
+	xor	a
+	call	vect_send_byte
+	
+	ld	a, d
+	call	vect_send_byte
+	
+	; send checksum
+	ld	a, d
+	call	vect_send_byte
+	xor	a
+	call	vect_send_byte
+	ret
+
+; brief : send a command with two bytes of attached data
+; input : d -> command id, bc -> command data (sent in little endian)
+; output : none
+; destroys : a, hl
+vect_send_command_2bytes:
+; Send a packet of the form 73 d 02 00 : c b : cs cs
+	; send packet header
+	ld	a, link_83P
+	call	vect_send_byte
+	ld	a, d
+	call	vect_send_byte
+	
+	; send packet size
+	ld	a, $02
+	call	vect_send_byte
+	xor	a
+	call	vect_send_byte
+	
+	; send data
+	ld	a, c
+	call	vect_send_byte
+	ld	a, b
+	call	vect_send_byte
+	
+	; compute checksum
+	ld	h, 0
+	ld	l, b
+	ld	a, c
+	offset_hl
+	
+	; send checksum
+	ld	a, l
+	call	vect_send_byte
+	ld	a, h
+	call	vect_send_byte
+	ret
+
+; brief : send a command and attached data
+; input : 
+;	hl -> data
+;	bc -> data size
+;	d -> command
+; output : none
+; destroys : a, hl, bc, de
+vect_send_command:
+; Send a packet of the form 73 d c b : stuff ... stuff : cs cs
+	ld	a, link_83P
+	call	vect_send_byte
+	ld	a, d
+	call	vect_send_byte
+	
+	; send data size
+	ld	a, c
+	call	vect_send_byte
+	ld	a, b
+	call	vect_send_byte
+	
+	ld	de, 0
+	
+	; send data
+vect_send_command.loop:
+	ld	a, (hl)
+	call	vect_send_byte
+	inc	hl
+	ex	de, hl
+	
+	offset_hl
+	
+	ex	de, hl
+	dec	bc
+	ld	a, b
+	or	c
+	jr	nz, vect_send_command.loop
+	
+	; send checksum
+	ld	a, e
+	call	vect_send_byte
+	ld	a, d
+	call	vect_send_byte
+	
+	ret

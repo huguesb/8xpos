@@ -1,0 +1,294 @@
+.nolist
+;Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Copyright (c) 2004, Sean McLaughlin.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+; brief : clear the display buffer (fast, interrupt disabled/reenabled)
+; input : none
+; output : none
+; destroys : a, bc, hl, de
+vect_clrscr:
+	ld	a, i
+	push	af
+	di
+	ld	hl, 0
+	ld	d, h
+	ld	e, l
+	add	hl, sp
+	ex	de, hl
+	ld	hl, 768
+	ld	sp, (os.vbuf_addr)
+	add	hl, sp
+	ld	sp, hl
+	ld	hl, 0
+	ex	de, hl
+	ld	b, 48
+vect_clrscr._loop:
+	push	de
+	push	de
+	push	de
+	push	de
+	push	de
+	push	de
+	push	de
+	push	de
+	djnz	vect_clrscr._loop
+	ld	sp, hl
+	pop	af
+	ret	po
+	ei
+	ret
+
+; brief : clears a *console* line in the display buffer (6 screen rows)
+; input : a -> row to clear
+; output : none
+; destroys : none
+vect_clrline:
+	push	hl
+	push	bc
+	push	de
+	ld	h, 0
+	ld	l, a
+	ld	d, h
+	ld	e, l
+	ld	bc, 6*12-1
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	add	hl, hl
+	ld	de, (os.vbuf_addr) ; os.lcd.mem
+	add	hl, de
+	ld	d, h
+	ld	e, l
+	inc	de
+	ld	(hl), 0
+	ldir
+	pop	de
+	pop	bc
+	pop	hl
+	ret
+
+; brief : inverts a *console* line in the display buffer (6 screen rows)
+; input : a -> row to invert
+; output : none
+; destroys : none
+vect_invline:
+	push	af
+	push	hl
+	push	bc
+
+	ld	h, 0
+	ld	l, a
+	ld	b, h
+	ld	c, l
+	add	hl, hl
+	add	hl, bc
+	add	hl, hl
+	add	hl, hl
+	ld	bc, (os.vbuf_addr) ; os.lcd.mem
+	add	hl, bc
+
+	ld	b, 6*12
+
+vect_invline._loop:
+	ld	a, (hl)
+	cpl
+	ld	(hl), a
+	inc	hl
+
+	djnz	vect_invline._loop
+
+	pop	bc
+	pop	hl
+	pop	af
+	ret
+
+
+; brief : writes the content of a *console* line of display buffer to the LCD
+; input : a -> starting row
+; output : none
+; destroys : none
+vect_displine:
+	push	af
+	push	hl
+	push	bc
+	push	de
+
+	ld	h, 0
+	ld	l, a
+	ld	b, h
+	ld	c, l
+	add	hl, hl
+	add	hl, bc
+	add	hl, hl
+	add	hl, hl
+	ld	bc, (os.vbuf_addr) ;os.lcd.mem
+	add	hl, bc
+
+	add	a, $80
+	ld	d, a
+	ld	e, 0
+vect_displine._row:
+	ld	a, d
+	out	(lcd_cmd_port), a
+	lcd_busy
+	ld	a, e
+	add	a, $20
+	out	(lcd_cmd_port), a
+	lcd_busy
+	ld	b, 6
+
+vect_displine._column:
+	ld	a, (hl)
+	out	(lcd_data_port), a
+	lcd_busy
+	ld	a, 12
+	offset_hl
+	djnz	vect_displine._column
+
+	ld	bc, -(6*12)+1
+	add	hl, bc
+	inc	e
+	ld	a, e
+	cp	12
+	jr	nz, vect_displine._row
+	
+	pop	de
+	pop	bc
+	pop	hl
+	pop	af
+	ret
+
+; brief : writes the content of the display buffer to the LCD
+; input : none
+; output : none
+; destroys : none
+vect_vbufdisp:
+	push	af
+	push	hl
+	push	de
+	push	bc
+	ld	hl, (os.vbuf_addr)
+	ld	c, 0
+vect_vbufdisp._oloop:
+	ld	a, $80			; 80 - BF: x-address
+	out	(lcd_cmd_port), a
+	lcd_busy
+	ld	a, c
+	add	a, $20
+	out	(lcd_cmd_port), a	; 20 - 2B: y-address
+	lcd_busy
+	ld	b, 64
+vect_vbufdisp._iloop:
+	ld	a, (hl)
+	out	(lcd_data_port), a
+	lcd_busy
+	ld	de, 12
+	add	hl, de
+	djnz	vect_vbufdisp._iloop
+	
+	ld	de, -(64*12)+1
+	add	hl, de
+	inc	c
+	ld	a, c
+	cp	12
+	jr	nz, vect_vbufdisp._oloop
+	pop	bc
+	pop	de
+	pop	hl
+	pop	af
+	ret
+
+; brief : writes the content of the LCD memory to a given address
+; input : hl -> buffer
+; output : hl = hl + 768
+; destroys : none
+vect_screenshot:
+	push	af
+	push	de
+	push	bc
+	ld	c, 0
+vect_screenshot._oloop:
+	ld	a, $80			; 80 - BF: x-address
+	out	(lcd_cmd_port), a
+	lcd_busy
+	ld	a, c
+	add	a, $20
+	out	(lcd_cmd_port), a	; 20 - 2B: y-address
+	lcd_busy
+	ld	b, 64
+	in	a, (lcd_data_port)	; dummy read
+vect_screenshot._iloop:
+	lcd_busy
+	in	a, (lcd_data_port)
+	ld	(hl), a
+	ld	de, 12
+	add	hl, de
+	djnz	vect_screenshot._iloop
+	
+	ld	de, -(64*12)+1
+	add	hl, de
+	inc	c
+	ld	a, c
+	cp	12
+	jr	nz, vect_screenshot._oloop
+	sbc	hl, de
+	pop	bc
+	pop	hl
+	pop	af
+	ret
+
+; brief : clear the LCD without affecting the vbuf
+; input : none
+; output : none
+; destroys : none
+vect_clrlcd:
+	push	af
+	push	hl
+	push	de
+	push	bc
+	ld	c, 0
+vect_clrlcd._oloop:
+	ld	a, $80			; 80 - BF: x-address
+	out	(lcd_cmd_port), a
+	lcd_busy
+	ld	a, c
+	add	a, $20
+	out	(lcd_cmd_port), a	; 20 - 2B: y-address
+	lcd_busy
+	ld	b, 64
+vect_clrlcd._iloop:
+	xor	a
+	out	(lcd_data_port), a
+	lcd_busy
+	djnz	vect_clrlcd._iloop
+	
+	inc	c
+	ld	a, c
+	cp	12
+	jr	nz, vect_clrlcd._oloop
+	pop	bc
+	pop	de
+	pop	hl
+	pop	af
+	ret

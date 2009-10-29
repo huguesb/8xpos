@@ -1,0 +1,256 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+
+init:
+	di
+	im	1
+	
+	; link port
+	xor	a
+	out	(link_port), a
+	
+	; reset keypad
+	dec	a
+	out (key_port),a  
+	
+	; set stack pointer
+	ld	sp, $0000
+	
+	; set page $1C in memory bank A (4000-7FFF)
+	ld	a, $1C
+	ld	c, map_bankA_port
+	call	zp.setflashpage
+	
+	call	zp.hw_version
+	rlca
+	ld	d, 0
+	ld	e, a
+	ld	hl, init.jmp_table
+	add	hl, de
+	
+	ld	a, (hl)
+	inc	hl
+	ld	h, (hl)
+	ld	l, a
+	
+	jp	(hl)
+
+init.jmp_table:
+	.dw init.83pBE
+	.dw init.83pSE
+	.dw init.84pBE
+	.dw init.84pSE
+					;exit test mode, 8bit bus, contrast, default Z address, x-increment
+init.lcd_out	.db	$18, $01, default.contrast, $40, $05
+init.str_clear	.db	"Mem Cleared", 0
+init.str_soft	.db	"Soft restart", 0
+
+init.83pBE:
+	; map RAM page 1 to memory bank B ($8000)
+	ld	a, $41
+	out	(map_bankB_port), a
+	
+	; initialization of protected ports (flash exec boundary...)
+	call vect_flash_exec_init_be
+	
+	jr	init.common
+
+init.84pSE:
+	
+init.84pBE:
+	; try to disable USB interrupts altogether
+	xor	a
+	out	($5B), a
+	
+init.83pSE:
+	
+	
+init.SEcommon:
+	; "unknown" port which are supposed to be nulled for mapping to work properly...
+	; more investigation would be required to see the effect of other values.
+	xor	a
+	out	($0E), a
+	out	($0F), a
+	
+	; map RAM page 1 to memory bank B ($8000)
+	ld	a, $81
+	out	(map_bankB_port), a
+	
+	; disable link assist
+	dec	a
+	out	(la_en_port), a
+	
+	; map RAM page 0 to memory bank C ($C000)
+	xor	a
+	out	(map_bankC_port), a
+	
+	; set CPU speed to 6MHz (BE compat)
+	out	(cpu_speed_port), a
+	
+	; reset crystal timers
+	out	(ct1_on_port), a
+	out	(ct2_on_port), a
+	out	(ct3_on_port), a
+	
+	; LCD delays
+	
+	; [from WikiTi] :
+	; Bit 0 enables the effects of the flash delay controlled by port 2E. 
+	; Bit 1 enables the effects of the ram delay controlled by port 2E. 
+	; Bits 2-7 control the amount of delay added at specified instructions.
+	; To calculate the number of clock cycles added, divide the contents of port 29 by 4 and round off.
+	; NOTE: The contents of this port should NOT be less than 0Ch or the LCD will no longer update.
+	
+	; TIOS use small LCD delays but enables mem delays
+	; $17, $27, $2F, $3B
+	; TIOS uses mem delays
+	; $45, $4B
+	
+	; 6MHz : adds 5 clocks per I/O instruction, disable mem delays
+	ld	a, $14
+	out	(lcd_delay0_port), a
+	
+	; 15MHz (01 : ~14.97MHz) : adds 63 clocks per I/O instruction, disable mem delays
+	ld	a, $FC
+	out	(lcd_delay1_port), a
+	
+	; 15MHz (02 : ~14.98MHz) : adds 63 clocks per I/O instruction, disable mem delays
+	ld	a, $FC
+	out	(lcd_delay2_port), a
+	
+	; 15MHz (03 : ~14.99MHz) : adds 63 clocks per I/O instruction, disable mem delays
+	ld	a, $FC
+	out	(lcd_delay3_port), a
+	
+	; +1T / (opcode read|write) flash, +1T / write ram [when delays enabled in speed ports]
+	ld	a, $45
+	out	(mem_delay_port), a
+	
+	; control reset delay of port 2 bit 1 according to cpu speed [see wikiti for details]
+	; speed = 1 -> 176 T (controlled by bits 0-1)
+	; speed = 2 -> 176 T (controlled by bits 2-4)
+	; speed = 3 -> 176 T (controlled by bits 5-7)
+	ld	a, $4A ; = %01001010
+	out	(lcd_wait_port), a
+	
+	; initialization of protected ports (flash exec boundary...)
+	call	vect_flash_exec_init_se
+	
+; all models
+init.common:
+	; interrupt setup
+	ld	a, $01
+	out	(irq_mask_port), a
+	
+	; todo : chg for 83+/84+ differentiation???
+	ld	a, $76
+	out	(irq_stat_port), a
+	
+	; LCD setup (addressing and such)
+	ld	hl, init.lcd_out
+	ld	b, 5
+init.lcd_loop:
+	lcd_busy
+	ld	a, (hl)
+	inc	hl
+	out	(lcd_cmd_port), a
+	djnz	init.lcd_loop
+	
+	; reset RAM
+	
+	; clear sys RAM
+	ld	hl, $C000
+	ld	de, $C001
+	ld	bc, $4000 - 1
+	ld	(hl), 0
+	ldir
+	
+	; init filesystem
+	call	zp.file_initfs
+	
+	; init memory allocator
+	ld	hl, os.malloc.pool
+	ld	bc, os.malloc.poolsize
+	call	zp.meminit
+	
+	; init sysram
+	
+	; default vbuf location
+	ld	hl, os.lcd.mem
+	ld	(os.vbuf_addr), hl
+	
+	; fp stack
+	ld	hl, 0
+	ld	(os.fpstack), hl
+	
+	; setup getch keymaps
+	; (when these variables are null default embedded maps are used)
+	ld	(os.keymap.normal), hl
+	ld	(os.keymap.shift), hl
+	ld	(os.keymap.alpha), hl
+	
+	; setup hooks
+	ld	(os.hook.rst08), hl
+	ld	(os.hook.rst10), hl
+	ld	(os.hook.rst18), hl
+	ld	(os.hook.rst20), hl
+	ld	(os.hook.rst30), hl
+	
+	; reset contrast
+	ld	a, default.contrast
+	ld	(os.contrast), a
+	
+	; reset OS flags
+	ld	a, bitmask(calc_on) | bitmask(aps_on) | bitmask(debug_on)
+	ld	(os.flags), a
+	
+	ld	a, bitmask(proto_dump_on)
+	ld	(os.flags + osf.silentlink), a
+	
+	; reset APS timer (Auto Power Save)
+	ld	hl, default.aps_time
+	ld	(os.aps.timer), hl
+	
+	; commmand memory
+	ld	bc, default.command_mem * 2
+	call	zp.malloc
+	ld	(os.command_mem), hl
+	xor	a
+	ld	(os.command_mem + 2), a
+	
+	in	a, (irq_stat_port)
+	and	$08
+	jr	nz, $-4
+
+	call	isr.force_off
+	
+	; boot screen (mem cleared)
+	call	zp.cclear
+	call	zp.credraw
+	call	zp.vbufdisp
+	ld	hl, init.str_clear
+	call	zp.cputs
+	call	zp.cdisp
+	

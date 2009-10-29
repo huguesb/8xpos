@@ -1,0 +1,160 @@
+.nolist
+;Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+; brief : forget all memorized commands and release related memory
+; input : none
+; output : none
+; destroys : a, b, hl, de
+vect_forget_commands:
+	ld	a, (os.command_mem + 2)
+	or	a
+	ret	z
+	
+	ld	b, a
+	ld	hl, (os.command_mem)
+	
+vect_forget_commands.loop:
+	push	hl
+	deref_hl
+	call	zp.free
+	pop	hl
+	xor	a
+	ld	(hl), a
+	inc	hl
+	ld	(hl), a
+	inc	hl
+	djnz	vect_forget_commands.loop
+	
+	ret
+
+; brief : add the current command to command memory
+; input : command string in os.command (as filled by cgets)
+; output : none
+; destroys : a, bc, hl, de
+vect_memorize_command:
+	; allocate memory for command and copy it there
+	ld	hl, os.command
+	push	hl
+	call	zp.strlen
+	inc	bc
+	call	zp.malloc
+	pop	de
+	push	hl
+	ex	de, hl
+	call	zp.strcpy
+	
+	; insert pointer into command list
+	ld	hl, (os.command_mem)
+	ld	a, (os.command_mem + 2)
+	ld	b, 0
+	ld	c, a
+	cp	default.command_mem
+	jr	z, vect_memorize_command.remove
+	; increase command count
+	inc	a
+	ld	(os.command_mem + 2), a
+	jr	vect_memorize_command.skip
+	
+vect_memorize_command.remove:
+	; move everything but the last elem which is discarded
+	; and free the memory occupied by said last elem
+	push	hl
+	dec	c
+	ld	de, (default.command_mem - 1) * 2
+	add	hl, de
+	deref_hl
+	call	zp.free
+	pop	hl
+	
+vect_memorize_command.skip:
+	ld	a, b
+	or	c
+	jr	z, vect_memorize_command.end
+	sla	c
+	rl	b
+	
+	add	hl, bc
+	ld	d, h
+	ld	e, l
+	dec	hl
+	inc	de
+	
+vect_memorize_command.moveloop:
+	ld	a, (hl)
+	ld	(de), a
+	dec	hl
+	dec	de
+	dec	bc
+	ld	a, b
+	or	c
+	jr	nz, vect_memorize_command.moveloop
+	
+vect_memorize_command.end:
+	; write last pointer to top of list
+	ld	hl, (os.command_mem)
+	pop	de
+	ld	(hl), e
+	inc	hl
+	ld	(hl), d
+	
+	ret
+
+; brief : recall a command in command memory to command pane
+; input : a -> index of command
+; output : command string in os.command, cgets internal vars set properly
+; destroys : a, hl, de, bc
+vect_recall_command:
+	push	bc
+	ld	c, a
+	ld	a, (os.command_mem + 2)
+	cp	c
+	ld	a, c
+	pop	bc
+	ret	c
+	ret	z
+	
+	ld	(os.command_mem + 3), a
+	ld	b, 0
+	ld	c, a
+	sla	c
+	rl	b
+	
+	ld	hl, (os.command_mem)
+	add	hl, bc
+	deref_hl
+	
+	ld	de, os.command
+	call	zp.strlen
+	call	zp.strcpy
+	
+	; update cgets internal variables
+	ex	de, hl
+	dec	hl
+	ld	b, c
+	ld	a, c
+	sub	23
+	jr	nc, $+3
+	xor	a
+	ld	e, a
+	ret

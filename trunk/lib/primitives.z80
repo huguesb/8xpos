@@ -1,0 +1,720 @@
+.nolist
+;Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+; brief : utility for pixel manipulation
+; input : a -> x coord, l -> y coord
+; output : hl -> address in vbuf, a -> pixel mask
+; destroys : b, de
+vect_get_pixel:
+	ld	h, 0
+	ld	d, h
+	ld	e, l
+	
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	add	hl, hl
+	
+	ld	e, a
+	srl	e
+	srl	e
+	srl	e
+	add	hl, de
+	
+	ld	de, (os.vbuf_addr)
+	add	hl, de
+	
+	and	7
+	
+	ld	a, $80
+	ret	z
+	
+	ld	b, a
+	
+	rrca
+	djnz	$-1
+	
+	ret
+
+; brief : set (darkens) a pixel in the vbuf
+; input : a -> x coord, l -> y coord
+; output : none
+; destorys : a, b, de, hl
+vect_set_pixel:
+	call	vect_get_pixel
+	or	(hl)
+	ld	(hl), a
+	ret
+
+; brief : reset (lighten) a pixel in the vbuf
+; input : a -> x coord, l -> y coord
+; output : none
+; destorys : a, b, de, hl
+vect_res_pixel:
+	call	vect_res_pixel
+	cpl
+	and	(hl)
+	ld	(hl), a
+	ret
+
+; brief : flip (invert) a pixel in the vbuf
+; input : a -> x coord, l -> y coord
+; output : none
+; destorys : a, b, de, hl
+vect_flip_pixel:
+	call	vect_get_pixel
+	xor	(hl)
+	ld	(hl), a
+	ret
+
+; brief : draws an horizontal line
+; input : a -> vbuf row, b -> start col, c -> end col
+; destroys : a, bc, de, hl
+vect_draw_hline:
+	ld	d, 0
+	ld	e, a
+	ld	h, d
+	ld	l, e
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	add	hl, hl
+	ld	de, (os.vbuf_addr)
+	add	hl, de
+	
+	ld	a, c
+	inc	a
+	sub	b
+	ld	d, a
+	ld	a, b
+	and	$07
+	srl	b
+	srl	b
+	srl	b
+	ld	e, b
+	ld	b, a
+	
+	ld	a, d
+	cp	8
+	jr	nc, vect_draw_hline.long
+	
+	ld	a, c
+	srl	a
+	srl	a
+	srl	a
+	cp	e
+	jr	nz, vect_draw_hline.long
+	
+	ld	a, c
+	inc	a
+	and	$07
+	ld	c, a
+	sub	b
+	ld	d, a
+	
+	jr	vect_draw_hline.short
+vect_draw_hline.long:
+	ld	a, b
+	or	a
+	jr	z, $+4
+	sub	8
+	add	a, d
+	
+	ld	d, a
+	and	$07
+	ld	c, a
+	; b -> number of leading white pix
+	; c -> number of trailing black pix
+	; d -> total number of black pix minus leading black pix
+	; e -> buffer offset of first pix
+	
+	ld	a, e
+	offset_hl
+	
+	ld	a, d
+	or	a
+	
+	jr	nz, vect_draw_hline.accross
+	
+	ld	a, d
+	cp	c
+	jr	c, vect_draw_hline.short
+	jr	z, vect_draw_hline.short
+vect_draw_hline.accross:
+	call	vect_draw_hline.left
+	
+	srl	d
+	srl	d
+	srl	d
+	jr	z, vect_draw_hline.nobody
+	ld	b, d
+	
+vect_draw_hline.body:
+	ld	(hl), $FF
+	inc	hl
+	djnz	vect_draw_hline.body
+	
+vect_draw_hline.nobody:
+	call	vect_draw_hline.right
+	
+	ret
+
+vect_draw_hline.short:
+	ld	a, b
+	or	a
+	jr	z, vect_draw_hline.right
+	
+	ld	d, $FF
+	
+	srl	d
+	djnz	$-2
+	
+	ld	a, c
+	or	a
+	ld	a, $FF
+	jr	z, vect_draw_hline.shortend
+	
+	ld	b, c
+	xor	a
+	
+	scf
+	rra
+	djnz	$-2
+	
+vect_draw_hline.shortend:
+	and	d
+	or	(hl)
+	ld	(hl), a
+	
+	ret
+
+vect_draw_hline.left:
+	ld	a, b
+	or	a
+	ret	z
+	
+	ld	b, a
+	ld	a, $FF
+	
+	srl	a
+	djnz	$-2
+	
+	or	(hl)
+	ld	(hl), a
+	inc	hl
+	
+	ret
+
+vect_draw_hline.right:
+	ld	a, c
+	or	a
+	ret	z
+	
+	ld	b, a
+	xor	a
+	
+	scf
+	rra
+	djnz	$-2
+	
+	or	(hl)
+	ld	(hl), a
+	inc	hl
+	
+	ret
+
+; brief : inverts an horizontal line
+; input : a -> vbuf row, b -> start col, c -> end col
+; destroys : a, bc, de, hl
+vect_inv_hline:
+	ld	d, 0
+	ld	e, a
+	ld	h, d
+	ld	l, e
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	add	hl, hl
+	ld	de, (os.vbuf_addr)
+	add	hl, de
+	
+	ld	a, c
+	inc	a
+	sub	b
+	ld	d, a
+	ld	a, b
+	and	$07
+	srl	b
+	srl	b
+	srl	b
+	ld	e, b
+	ld	b, a
+	
+	ld	a, d
+	cp	8
+	jr	nc, vect_inv_hline.long
+	
+	ld	a, c
+	srl	a
+	srl	a
+	srl	a
+	cp	e
+	jr	nz, vect_inv_hline.long
+	
+	ld	a, c
+	inc	a
+	and	$07
+	ld	c, a
+	sub	b
+	ld	d, a
+	
+	jr	vect_inv_hline.short
+vect_inv_hline.long:
+	ld	a, b
+	or	a
+	jr	z, $+4
+	sub	8
+	add	a, d
+	
+	ld	d, a
+	and	$07
+	ld	c, a
+	; b -> number of leading white pix
+	; c -> number of trailing black pix
+	; d -> total number of black pix minus leading black pix
+	; e -> buffer offset of first pix
+	
+	ld	a, e
+	offset_hl
+	
+	ld	a, d
+	or	a
+	
+	jr	nz, vect_inv_hline.accross
+	
+	ld	a, d
+	cp	c
+	jr	c, vect_inv_hline.short
+	jr	z, vect_inv_hline.short
+vect_inv_hline.accross:
+	call	vect_inv_hline.left
+	
+	srl	d
+	srl	d
+	srl	d
+	jr	z, vect_inv_hline.nobody
+	ld	b, d
+	
+vect_inv_hline.body:
+	ld	a, (hl)
+	cpl
+	ld	(hl), a
+	inc	hl
+	djnz	vect_inv_hline.body
+	
+vect_inv_hline.nobody:
+	call	vect_inv_hline.right
+	
+	ret
+
+vect_inv_hline.short:
+	ld	a, b
+	or	a
+	jr	z, vect_inv_hline.right
+	
+	ld	d, $FF
+	
+	srl	d
+	djnz	$-2
+	
+	ld	a, c
+	or	a
+	ld	a, $FF
+	jr	z, vect_inv_hline.shortend
+	
+	ld	b, c
+	xor	a
+	
+	scf
+	rra
+	djnz	$-2
+	
+vect_inv_hline.shortend:
+	and	d
+	xor	(hl)
+	ld	(hl), a
+	
+	ret
+
+vect_inv_hline.left:
+	ld	a, b
+	or	a
+	ret	z
+	
+	ld	b, a
+	ld	a, $FF
+	
+	srl	a
+	djnz	$-2
+	
+	xor	(hl)
+	ld	(hl), a
+	inc	hl
+	
+	ret
+
+vect_inv_hline.right:
+	ld	a, c
+	or	a
+	ret	z
+	
+	ld	b, a
+	xor	a
+	
+	scf
+	rra
+	djnz	$-2
+	
+	xor	(hl)
+	ld	(hl), a
+	inc	hl
+	
+	ret
+
+
+; brief : draws a line on the vbuf
+; input : (d, e), (h, l) -> (x, y) coords of extremities, a -> type of line {0, 1, 2}
+; output : none
+; destroys : a, bc, de, hl, ix
+; note : no clipping
+vect_draw_line:
+	ld	c, map_bankA_port
+	in	b, (c)
+	push	bc
+	
+	push	hl
+	ld	hl, vect_draw_line.return
+	ex	(sp), hl
+	
+	push	af
+	ld	a, $1C
+	call	zp.setflashpage
+	pop	af
+	
+; modifications for integration into XOS :
+;	-> vbuf indirection
+;	-> fixed case sensitive compilation
+;	-> added switch to draw white or inverted lines
+
+; this routine as been written by James Montelongo Jr
+; you can reuse it as long as you give him proper credit
+
+;(d,e),(h,l) = (x1,y1),(x2,y2)
+;NO clipping
+line:
+	push	af
+	ld a,h
+	cp d
+	jp nc,noswapx
+	ex de,hl
+noswapx:
+
+	ld a,h
+	sub d
+	jp nc,posx
+	neg
+posx:
+	ld b,a
+	ld a,l
+	sub e
+	jp nc,posy
+	neg
+posy:
+	ld c,a
+	ld a,l
+	ld hl,-12
+	cp e
+	jp c,lineup
+	ld hl,12
+lineup:
+	ld ix,Xbit.res
+	ld a,b
+	cp c
+	jp nc,xline
+	ld b,c
+	ld c,a
+	ld ix,Ybit.res
+xline:
+	pop	af
+	or	a
+	jr	z, nooffset
+	; offset bit table by 16*a
+	add	a, a
+	add	a, a
+	add	a, a
+	add	a, a
+	add	a, ixl
+	ld	ixl, a
+	adc	a, ixh
+	sub	ixl
+	ld	ixh, a
+nooffset:
+	push hl
+	ld a,d
+	ld d,0
+	ld h,d
+	sla e
+	sla e
+	ld l,e
+	add hl,de
+	add hl,de
+	ld e,a
+	and %00000111
+	srl e
+	srl e
+	srl e
+	add hl,de
+	; <modif>
+	ld	de, (os.vbuf_addr)
+	;</modif>
+	;ld de,gbuf
+	add hl,de
+	add a,a
+	ld e,a
+	ld d,0
+	add ix,de
+	ld e,(ix)
+	ld d,(ix+1)
+	push hl
+	pop ix
+	ex de,hl
+	pop de
+	push hl
+	ld h,b
+	ld l,c
+	ld a,h
+	srl a
+	inc b
+	ret
+
+vect_draw_line.return:
+	pop	af
+	out	(map_bankA_port), a
+	ret
+
+; brief :draws a circle in the vbuf
+; input : (d, e) -> (x, y) coords of center, c -> radius
+; output : none
+; destroys : a, bc, de, hl
+; note : disable interrupts
+vect_draw_circle:
+; modificiations for integration in XOS :
+;	-> removed SMC
+;	-> indirection for vbuf addr
+FastCircle:
+;FastCircle
+;
+;Author:  Sean McLaughlin (sigma_zk@yahoo.com)
+;Date:    01/18/04 (mm/dd/yy)
+;Calc:    TI-83 Plus
+;Notes:   Uses SMC
+;
+;D = center_x
+;E = center_y
+;C = radius
+			; REGS			STACK
+	LD	A,C	;
+	OR	A	;
+	RET	Z	;
+	RET	M	;
+	; <modif>
+	; we want to reenable interrupts automatically if they were on...
+	ld	a, i
+	push	af
+	push	hl
+	ld	hl, vect_draw_circle.return
+	ex	(sp), hl
+	
+	; to get rid of SMC we need to use stack instead
+	push	de
+	;LD	(_x),DE	;
+	; </modif>
+	LD	B,0	; B = y
+	LD	H,B	;
+	LD	L,C	;
+	ADD	HL,HL	;
+	LD	DE,3	;
+	EX	DE,HL	;
+	SBC	HL,DE	;
+	DI		;
+_loop:			;
+	; <modif>
+	pop	de
+;_x .equ $+1		;
+;	LD	DE,0	; DE = (xc,yc)
+	; </modif>
+	LD	A,C	; A = x
+	CP	B	; nc if (x <= y)
+	RET	C	;
+	; <modif>
+	push	de
+	; </modif>
+;PSet(xc + x, yc + y)	;
+	LD	A,E	; A = yc
+	ADD	A,B	; A = yc + y
+	LD	E,A	; E = yc + y
+	EX	AF,AF'	;
+	LD	A,D	; A = xc
+	ADD	A,C	; A = xc + x
+	LD	D,A	; DE = (xc+x,yc+y)
+	CALL	PSet	;
+;PSet(xc + x, yc - y)	;
+	LD	A,E	; A = yc + y
+	SUB	B	; A = yc
+	SUB	B	; A = yc - y
+	LD	E,A	; DE = (xc+x,yc-y)
+	CALL	PSet	;
+;PSet(xc - x, yc - y)	;
+	LD	A,D	; A = xc + x
+	SUB	C	; A = xc
+	SUB	C	; A = xc - x
+	LD	D,A	; DE = (xc-x,yc-y)
+	CALL	PSet	;
+;PSet(xc - x, yc + y)	;
+	EX	AF,AF'	;
+	LD	E,A	; DE = (xc-x,yc+y)
+	CALL	PSet	;
+;PSet(xc + y, yc + x)	;
+	LD	A,E	; A = yc + y
+	SUB	B	; A = yc
+	ADD	A,C	; A = yc + x
+	LD	E,A	; E = yc + x
+	LD	A,D	; A = xc - x
+	ADD	A,C	; A = xc
+	ADD	A,B	; A = xc + y
+	LD	D,A	; DE = (xc+y,yc+x)
+	PUSH	AF	;			[XC+Y]
+	CALL	PSet	;
+;PSet(xc - y, yc + x)	;
+	LD	A,D	; A = xc + y
+	SUB	B	; A = xc
+	SUB	B	; A = xc - y
+	LD	D,A	; DE = (xc-y,yc+x)
+	CALL	PSet	;
+;PSet(xc - y, yc - x)	;
+	LD	A,E	; A = yc + x
+	SUB	C	; A = yc
+	SUB	C	; A = yc - x
+	LD	E,A	; DE = (xc-y,yc-x)
+	CALL	PSet	;
+;PSet(xc + y, yc - x)	;
+	POP	AF	; A = xc + y		-
+	LD	D,A	; DE = (xc+y,yc-x)
+	CALL	PSet	;
+
+;if(d < 0) err += y << 2 + 6
+	BIT	7,H	;
+	JR	Z,_PosError
+	EX	DE,HL	;
+	LD	H,0	;
+	LD	L,B	;
+	ADD	HL,HL	;
+	ADD	HL,HL
+	ADD	HL,DE
+	LD	DE,6
+	ADD	HL,DE
+	INC	B
+	JP	_loop
+
+_PosError:
+;err += (y - x) << 2 + 10: y--
+	LD	DE,10
+	ADD	HL,DE
+	DEC	D
+	LD	A,B
+	SUB	C
+	ADD	A,A
+	RL	D
+	ADD	A,A
+	RL	D
+	LD	E,A
+	ADD	HL,DE
+	INC	B
+	DEC	C
+	JP	_loop
+
+.MODULE PSET
+_LCD_MEM .EQU $9340
+_PixTable:	.DB	128,64,32,16,8,4,2,1
+PSet:
+; DE = (x,y)
+	LD	A,E
+	OR	A
+	RET	M
+	CP	64
+	RET	NC
+	LD	A,D
+	OR	A
+	RET	M
+	CP	96
+	RET	NC
+	PUSH	DE
+	PUSH	HL
+	SLA	E
+	SLA	E
+	LD	D,0
+	LD	H,D
+	LD	L,E
+	ADD	HL,HL
+	ADD	HL,DE
+	LD	E,A
+	SRA	E
+	SRA	E
+	SRA	E
+	ADD	HL,DE
+	; <modif>
+	ld	de, (os.vbuf_addr)
+	;LD	DE,_LCD_MEM
+	; </modif>
+	ADD	HL,DE
+	AND	7
+	EX	DE,HL
+	LD	HL,_PixTable
+	ADD	A,L
+	LD	L,A
+	ADC	A,H
+	SUB	L
+	LD	H,A
+	LD	A,(DE)
+	OR	(HL)
+	LD	(DE),A
+	POP	HL
+	POP	DE
+	RET
+
+vect_draw_circle.return:
+	pop	af
+	ret	po
+	ei
+	ret

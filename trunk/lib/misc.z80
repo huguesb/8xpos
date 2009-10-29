@@ -1,0 +1,293 @@
+.nolist
+;Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+; brief : determine calculator hardware version
+; input : none
+; output : a = {0, 1, 2, 3} -> hw model (bit 0 BE/SE, bit 1, 83p/34p)
+; destroys : none
+;;; boot call equiv : $80BA
+vect_hw_version:
+	in	a, (hw_port)
+	rlca
+	jp	nc, vect_hw_version.83p
+	and	$40
+	jp	z, vect_hw_version.SE
+	in	a, (hw_se_port)
+	rrca
+	ld	a, 2
+	ret	nc
+vect_hw_version.SE:
+	or	1
+	ret
+vect_hw_version.83p:
+	xor	a
+	ret
+
+; brief : copy calculator model string (TI-8x+ xE) to RAM (and change it according to HW)
+; input : de -> address of string buffer
+; ouptut : none
+; destroys : hl, de, b, a
+vect_hw_str:
+	push	de
+	
+	ld	hl, os.calcmodel
+	call	zp.strcpy
+	call	zp.hw_version
+	
+	pop	hl
+	ld	de, 7
+	add	hl, de
+	
+	ld	b, 'B'
+	
+	rrca
+	jr	nc, $+4
+	ld	b, 'S'
+	ld	(hl), b
+	
+	dec	hl
+	dec	hl
+	dec	hl
+	
+	ld	b, '3'
+	
+	rrca
+	jr	nc, $+3
+	inc	b
+	ld	(hl), b
+	ret
+
+; brief : copy boot code version string to given address
+; input : de -> destination (must be in $8000-$FFFF range)
+; output : de is at end of copied string (at zero terminator to be precise)
+; destroys : a, c, hl
+vect_bootcode_str:
+	in	a, (map_bankA_port)
+	
+	push	af
+	
+	ld	a, $1F
+	ld	c, map_bankA_port
+	call	zp.setflashpage
+	
+	; address of zero terminated boot code version string (courtesy of WikiTi)
+	ld	hl, $400F
+	call	zp.strcpy
+	
+	pop	af
+	
+	out	(map_bankA_port), a
+	
+	ret
+
+; brief : get bootcode version
+; input : none
+; output : hl -> bootcode version (major:minor)
+; destroys : a, bc
+;;; boot call (near) equiv : $80B7 -> a:b instead of h:l
+vect_bootcode_version:
+	in	a, (map_bankA_port)
+	
+	push	af
+	push	de
+	
+	ld	a, $1F
+	ld	c, map_bankA_port
+	call	zp.setflashpage
+	
+	; address of zero terminated boot code version string (courtesy of WikiTi)
+	ld	de, $400F
+	call	zp.atod_version
+	
+	pop	de
+	pop	af
+	
+	out	(map_bankA_port), a
+	
+	ret
+
+; brief : get OS version
+; input : none
+; output : hl -> OS version (major:minor)
+; destroys : a, bc
+vect_os_version:
+	push	de
+	
+	ld	hl, 0
+	ld	de, os.version
+vect_os_version.loop:
+	ld	a, (de)
+	inc	de
+	or	a
+	jr	z, vect_os_version.end
+	cp ' '
+	jr	nz, vect_os_version.loop
+	
+	call	zp.atod_version
+	
+vect_os_version.end:
+	pop	de
+	ret
+
+; brief : copy OS version string to a given location
+; input : de -> destination
+; output : hl, de -> in post-strcpy state
+; destroys : a, hl, de
+vect_os_str:
+	ld	hl, os.version
+	jp	zp.strcpy
+
+; brief determines the battery level
+; input : none
+; output : a -> battery level (0 : good, 1 : low)
+; destroys : none
+vect_battery_level:
+	in	a, (hw_port)
+	and	1
+	xor	1
+	ret
+
+; brief : dump memory into hex string
+; input:
+;   hl : memory to dump
+;   de : where to write ascii
+;
+; output:
+;   a destroyed
+;	de incremented (twice)
+vect_memdump:
+	xor	a
+	rld
+	call	vect_memdump.nibble
+vect_memdump.nibble:
+	push	af
+	daa
+	add	a,$F0
+	adc	a,$40
+	
+	ld	(de), a
+	inc	de
+	
+	pop	af
+	rld
+	ret
+
+
+im2.setup:
+	di
+	push	af
+	
+	; interrupt vector table starts at $0400
+	ld	a, $04
+	ld	i, a
+	
+	ld	a, ALL_IRQS  ;%00001011
+	out	(irq_mask_port), a
+	
+	pop	af
+	
+	im 2
+	
+	ei
+	ret
+
+; brief : paged memcopy
+; input : a -> abs page, hl -> src offset ($4000-$7FFF), de -> ram dest ($8000-$FFFF), bc -> size
+; output :
+; destroys : a, bc, de, hl
+vect_flashtoram:
+	push	bc
+	ld	c, map_bankA_port
+	in	b, (c)
+	out	(c), a
+	ld	a, b
+	pop	bc
+	
+	push	af
+	in	a, (map_bankA_port)
+	
+vect_flashtoram.loop:
+	bit	7, h
+	jr	z, vect_flashtoram.noswap
+	
+	push	de
+	ld	de, - $4000
+	add	hl, de
+	pop	de
+	
+	inc	a
+	out	(map_bankA_port), a
+	
+	jr	vect_flashtoram.loop
+	
+vect_flashtoram.noswap:
+	ldi
+	jp	pe, vect_flashtoram.loop
+	
+	pop	af
+	out	(map_bankA_port), a
+	ret
+
+; brief : reads a byte from flash
+; input : b -> rom page, hl -> address ($4000-$7FFF)
+; output : c -> byte read
+; destroys : none
+; note : backward compatible with TIOS LoadCIndPaged
+vect_deref_paged_byte:
+	push	af
+	ld	c, map_bankA_port
+	in	a, (c)
+	out	(c), b
+	ld	c, (hl)
+	;inc	hl
+	out	(map_bankA_port), a
+	pop	af
+	ret
+
+; brief : reads a word from flash (in little endian)
+; input : b -> rom page, hl -> address ($4000-$7FFF)
+; output : de -> word read, (b, hl) -> address of second byte read
+; destroys : none
+; note : backward compatible with TIOS LoadDEIndPaged
+vect_deref_paged_word:
+	push	af
+	ld	c, map_bankA_port
+	in	a, (c)
+	out	(c), b
+	ld	e, (hl)
+	inc	hl
+	
+	bit	7, h
+	jr	z, $+9
+	inc	b
+	out	(c), b
+	res	7, h
+	set	6, h
+	
+	ld	d, (hl)
+	;inc	hl
+	out	(map_bankA_port), a
+	pop	af
+	ret
+

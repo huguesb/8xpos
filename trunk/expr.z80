@@ -1,0 +1,1046 @@
+;
+; recursive top/down expression parser
+;	* ix : string pointer (free lookahead)
+;	* hl : pointer to fp accumulator
+;	* de : pointer to alternate fp accumulator (mostly useful for binary ops)
+
+ERR_BAD_OPERATION  =  1 ; Bad operation
+ERR_MISSING_LPAREN = 14 ; Missing (
+ERR_SYNTAX         = 16 ; Syntax error
+ERR_DIV_BY_ZERO    = 18 ; Division by zero
+ERR_TOO_BIG        = 20 ; Too big
+ERR_NEGATIVE_ROOT  = 21 ; -ve root
+ERR_LOG_RANGE      = 22 ; Log range
+ERR_ACCURACY_LOST  = 23 ; Accuracy lost
+ERR_EXP_RANGE      = 24 ; Exp range
+ERR_MISSING_RPAREN = 27 ; Missing )
+
+; brief : evaluates an expression into a fp number
+; input : ix -> string to eval
+; output : hl -> result
+; destroys : a, bc, de, ix
+
+;
+; loosely based on Ben Ryves' ExpressionEvaluator.2009.02.24.01
+;	* stripped from BBCBASIC dependency (uses XOS fp routines instead)
+;	* made lighter on register use (only hl and de are required to be preserved all along)
+;	* removed requirement of disabled interrupts
+;	* added support for functions with arbitrary (though < 256) number of coma-separated parameters
+;	* added support for (parameter and parenthesis)-less functions (mostly useful for constants)
+;	* reduced stack use and moved value stack out of hardware stack to reduce risks of stack overflow
+;	while taking advantage of XOS dynamic memory alloc
+;	* [temporary?] : all bitwises are no longer bit-level but turn fp numbers into booleans
+;	* added min/max functions that take arbitrary number of params
+;	* added support for factorial
+;
+
+vect_expr_eval:
+	; stack save (with support for recursive save using a single memory location)
+	ld	hl, (os.savedsp)
+	push	hl
+	ld	(os.savedsp), sp
+	
+	; fp routines (esp mult) may use os.scrap but not all of it
+	ld	hl, os.scrap + 128
+	ld	de, os.scrap + 128 + 9
+	
+	call	Eval.Top
+	
+	; stack restore
+	ld	sp, (os.savedsp)
+	pop	de
+	ld	(os.savedsp), de
+	or	a
+	ret
+
+
+; ========================================================================== ;
+; Report an error                                                            ;
+; ========================================================================== ;
+Error:
+	; emergency stack restore
+	ld sp,(os.savedsp)
+	pop	de
+	ld	(os.savedsp), de
+	scf
+	ret
+
+
+; ========================================================================== ;
+; Level: Top level                                                           ;
+; ========================================================================== ;
+Eval.Top
+
+; ========================================================================== ;
+; Level: LogOr                                                           ;
+; ========================================================================== ;
+Eval.LogOr
+	call Eval.LogXor
+Eval.LogOr.Loop
+
+	call ReadCharacter
+	ret z
+	
+	cp '|'
+	ret nz
+
+; -------------------------------------------------------------------------- ;
+; Operator: Or (|)                                                           ;
+; -------------------------------------------------------------------------- ;
+Eval.LogOr.Or
+	inc ix
+	
+	call	zp.fp_bool
+	push	af
+	
+	call Eval.LogXor
+	
+	call	zp.fp_bool
+	pop	bc
+	
+	; do bitwise
+	or	b
+	; "boolean" returned by fp_bool are either $00 or $FF
+	and	$01
+	; load either zero or one into acc
+	call	zp.fp_const
+	
+	jr Eval.LogOr.Loop
+
+; ========================================================================== ;
+; Level: LogXor                                                          ;
+; ========================================================================== ;
+Eval.LogXor
+	call Eval.LogAnd
+Eval.LogXor.Loop
+
+	call ReadCharacter
+	ret z
+	
+	cp '^'
+	ret nz
+
+; -------------------------------------------------------------------------- ;
+; Operator: Xor (^)                                                          ;
+; -------------------------------------------------------------------------- ;
+Eval.LogXor.Xor
+	inc ix
+	
+	call	zp.fp_bool
+	push	af
+	
+	call Eval.LogAnd
+	
+	call	zp.fp_bool
+	pop	bc
+	
+	; do bitwise
+	xor	b
+	; "boolean" returned by fp_bool are either $00 or $FF
+	and	$01
+	; load either zero or one into acc
+	call	zp.fp_const
+	
+	jr Eval.LogXor.Loop
+
+; ========================================================================== ;
+; Level: LogAnd                                                          ;
+; ========================================================================== ;
+Eval.LogAnd
+	call Eval.Equ
+Eval.LogAnd.Loop
+
+	call ReadCharacter
+	ret z
+	
+	cp '&'
+	ret nz
+
+; -------------------------------------------------------------------------- ;
+; Operator: And (&)                                                          ;
+; -------------------------------------------------------------------------- ;
+Eval.LogAnd.And
+	inc ix
+	
+	call	zp.fp_bool
+	push	af
+	
+	call Eval.Equ
+	
+	call	zp.fp_bool
+	pop	bc
+	
+	; do bitwise
+	and	b
+	; "boolean" returned by fp_bool are either $00 or $FF
+	and	$01
+	; load either zero or one into acc
+	call	zp.fp_const
+	
+	jr Eval.LogAnd.Loop	
+
+; ========================================================================== ;
+; Level: Equ (== !=)                                                    ;
+; ========================================================================== ;
+Eval.Equ
+	call Eval.Rel
+Eval.Equ.Loop
+
+	call ReadCharacter
+	ret z
+	
+	cp '='
+	jr z,Eval.Equ.Equ
+	cp '!'
+	jr z,Eval.Equ.Inequality
+	
+	ret
+
+; -------------------------------------------------------------------------- ;
+; Operator: Equ (==)                                                    ;
+; -------------------------------------------------------------------------- ;
+Eval.Equ.Equ
+	ld a,(ix+1)
+	cp '='
+	ret nz
+	
+	inc ix
+	inc ix
+	
+	call	zp.fp_push
+	
+	call Eval.Rel
+	
+	call	zp.fp_pop
+	call	zp.fp_cmp
+	ld	a, 0
+	jr	nz, $+3
+	inc	a
+	call	zp.fp_const
+	jr Eval.Equ.Loop
+	
+; -------------------------------------------------------------------------- ;
+; Operator: Inequality (!=)                                                  ;
+; -------------------------------------------------------------------------- ;
+Eval.Equ.Inequality
+	ld a,(ix+1)
+	cp '='
+	ret nz
+	
+	inc ix
+	inc ix
+	
+	call	zp.fp_push
+	
+	call Eval.Rel
+	
+	call	zp.fp_pop
+	call	zp.fp_cmp
+	ld	a, 0
+	jr	z, $+3
+	inc	a
+	call	zp.fp_const
+	jr Eval.Equ.Loop
+
+; ========================================================================== ;
+; Level: Rel (< > <= >= <? ?>)                                        ;
+; ========================================================================== ;
+Eval.Rel
+	call Eval.Shift
+Eval.Rel.Loop
+
+	call ReadCharacter
+	ret z
+	
+	cp '<'
+	jr z,Eval.Rel.LessThan
+	cp '>'
+	jr z,Eval.Rel.GreaterThan
+	ret
+
+; -------------------------------------------------------------------------- ;
+; Operator: Less than (<)                                                    ;
+; -------------------------------------------------------------------------- ;
+Eval.Rel.LessThan
+	inc ix
+	ld a,(ix)
+	cp '='
+	jr z,Eval.Rel.LessThanEqual
+	cp '?'
+	jr z,Eval.Rel.Minimum
+	
+	call	zp.fp_push
+	
+	call Eval.Shift
+	
+	call	zp.fp_pop
+	call	zp.fp_cmp
+	ld	a, 0
+	jr	nc, $+3
+	inc	a
+	call	zp.fp_const
+	
+	jr Eval.Rel.Loop
+
+; -------------------------------------------------------------------------- ;
+; Operator: Minimum (<?)                                                     ;
+; -------------------------------------------------------------------------- ;
+Eval.Rel.Minimum
+	inc ix
+
+	call	zp.fp_push
+	
+	call Eval.Shift
+	
+	call	zp.fp_pop
+	call	fn.min.sub
+	
+	jp Eval.Rel.Loop
+
+
+; -------------------------------------------------------------------------- ;
+; Operator: Less than or equal to (<=)                                       ;
+; -------------------------------------------------------------------------- ;
+Eval.Rel.LessThanEqual
+	inc ix
+
+	call	zp.fp_push
+	
+	call Eval.Shift
+	
+	ex	de, hl
+	call	zp.fp_pop
+	call	zp.fp_cmp
+	ld	a, 0
+	jr	c, $+3
+	inc	a
+	call	zp.fp_const
+	
+	jr Eval.Rel.Loop
+
+; -------------------------------------------------------------------------- ;
+; Operator: Greater than (>)                                                 ;
+; -------------------------------------------------------------------------- ;
+Eval.Rel.GreaterThan
+	inc ix
+	ld a,(ix)
+	cp '='
+	jr z,Eval.Rel.GreaterThanEqual
+	cp '?'
+	jr z,Eval.Rel.Maximum
+	
+	call	zp.fp_push
+	
+	call Eval.Shift
+	
+	ex	de, hl
+	call	zp.fp_pop
+	call	zp.fp_cmp
+	ld	a, 0
+	jr	nc, $+3
+	inc	a
+	call	zp.fp_const
+	
+	jp Eval.Rel.Loop
+
+; -------------------------------------------------------------------------- ;
+; Operator: Greater than or equal to (>=)                                    ;
+; -------------------------------------------------------------------------- ;
+Eval.Rel.GreaterThanEqual
+	inc ix
+	
+	call	zp.fp_push
+	
+	call Eval.Shift
+	
+	call	zp.fp_pop
+	call	zp.fp_cmp
+	ld	a, 0
+	jr	c, $+3
+	inc	a
+	call	zp.fp_const
+	
+	jp Eval.Rel.Loop
+
+; -------------------------------------------------------------------------- ;
+; Operator: Maximum (>?)                                                     ;
+; -------------------------------------------------------------------------- ;
+Eval.Rel.Maximum
+	inc ix
+	
+	call	zp.fp_push
+	
+	call Eval.Shift
+	
+	call	zp.fp_pop
+	call	fn.max.sub
+	
+	jp Eval.Rel.Loop
+
+; ========================================================================== ;
+; Level: Shift (<< >> >>>)                                                   ;
+; ========================================================================== ;
+Eval.Shift
+	call Eval.Additive
+Eval.Shift.Loop
+
+	call ReadCharacter
+	ret z
+	
+	cp (ix+1)
+	ret nz
+	
+	cp '<'
+	jr z,Eval.Shift.ShiftLeft
+	cp '>'
+	jr z,Eval.Shift.ShiftRight
+	ret
+
+; -------------------------------------------------------------------------- ;
+; Operator: Shift left (<<)                                                  ;
+; -------------------------------------------------------------------------- ;
+Eval.Shift.ShiftLeft
+	inc ix
+	inc ix
+	
+; 	call Eval.Shift.GetOperands
+; 
+; 	jr z,$+2+1+(4*2)+2
+; 	ld b,a
+; ;-
+; 	sla l
+; 	rl h
+; 	rl e
+; 	rl d
+; 	djnz $-(4*2)
+; ;+
+; ; 	ld (Accumulator+0),hl
+; ; 	ld (Accumulator+2),de
+	jr Eval.Shift.Loop
+
+; -------------------------------------------------------------------------- ;
+; Operator: Shift right (>>)                                                 ;
+; -------------------------------------------------------------------------- ;
+Eval.Shift.ShiftRight
+	inc ix
+	inc ix
+
+; 	ld a,(ix)
+; 	cp '>'
+; 	jr z,Eval.Shift.ShiftRightUnsigned
+; 	
+; 	call Eval.Shift.GetOperands
+; 
+; 	jr z,$+2+1+(4*2)+2
+; 	ld b,a
+; ;-
+; 	sra d
+; 	rr e
+; 	rr h
+; 	rr l
+; 	djnz $-(4*2)
+; ;+
+; ; 	ld (Accumulator+0),hl
+; ; 	ld (Accumulator+2),de	
+	jp Eval.Shift.Loop
+
+; -------------------------------------------------------------------------- ;
+; Operator: Shift right unsigned (>>>)                                       ;
+; -------------------------------------------------------------------------- ;
+Eval.Shift.ShiftRightUnsigned
+	inc ix
+	
+; 	call Eval.Shift.GetOperands
+; 
+; 	jr z,$+2+1+(4*2)+2
+; 	ld b,a
+; ;-
+; 	srl d
+; 	rr e
+; 	rr h
+; 	rr l
+; 	djnz $-(4*2)
+; ;+
+; ; 	ld (Accumulator+0),hl
+; ; 	ld (Accumulator+2),de	
+	jr Eval.Shift.Loop
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  ;
+; Get shift operands: DEHL is the integer to shift, A is number of places to ;
+; shift it and Z is set if A = 0.                                            ;
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  ;
+Eval.Shift.GetOperands
+; 	call LoadOP1
+; 	ld a,FPP_FIX
+; 	call FPP_PushIX
+; 	jp c,Error
+; 	call PushOP1
+; 	
+	call Eval.Additive
+	
+; 	call LoadOP1
+; 	ld a,FPP_FIX
+; 	call FPP_PushIX
+; 	jp c,Error
+; 	
+; 	call PopOP2
+; 	
+; 	exx
+; 	ld a,l
+; 	push de
+; 	exx
+; 	pop hl
+; 	
+; 	and 31
+	ret
+
+; ========================================================================== ;
+; Level: Additive (+ -)                                                      ;
+; ========================================================================== ;
+Eval.Additive
+	call Eval.Multiplicative
+Eval.Additive.Loop
+	
+	call ReadCharacter
+	ret z
+	
+	cp '+'
+	jp z,Eval.Additive.Add
+	cp '-'
+	jp z,Eval.Additive.Subtract
+	ret
+
+; -------------------------------------------------------------------------- ;
+; Operator: Add (+)                                                          ;
+; -------------------------------------------------------------------------- ;
+Eval.Additive.Add
+	inc ix
+	
+	call	zp.fp_push
+	
+	call Eval.Multiplicative
+	
+	call	zp.fp_pop
+	ex	de, hl
+	
+	call	zp.fp_add
+	
+	jp Eval.Additive.Loop
+
+; -------------------------------------------------------------------------- ;
+; Operator: Subtract (-)                                                     ;
+; -------------------------------------------------------------------------- ;
+Eval.Additive.Subtract
+	inc ix
+	
+	call	zp.fp_push
+	
+	call Eval.Multiplicative
+	
+	call	zp.fp_pop
+	ex	de, hl
+	call	zp.fp_sub
+	
+	jp Eval.Additive.Loop
+
+; ========================================================================== ;
+; Level: Multiplicative (* / \ %)                                            ;
+; ========================================================================== ;
+Eval.Multiplicative
+	call Eval.Power
+Eval.Multiplicative.Loop
+	
+	call ReadCharacter
+	ret z
+	
+	cp '*'
+	jr z,Eval.Multiplicative.Multiply
+	cp '/'
+	jr z,Eval.Multiplicative.FDivide
+	cp $5C ; '\\' tasm sucks
+	jr z,Eval.Multiplicative.IDivide
+	cp '%'
+	jr z,Eval.Multiplicative.Modulo
+	cp '!'
+	jr z,Eval.Multiplicative.Factorial
+	ret
+
+; -------------------------------------------------------------------------- ;
+; Operator: Multiply (*)                                                     ;
+; -------------------------------------------------------------------------- ;
+Eval.Multiplicative.Multiply
+	inc ix
+	call	zp.fp_push
+	
+	call Eval.Power
+	
+	call	zp.fp_pop
+	ex	de, hl
+	call	zp.fp_mult
+	
+	jp Eval.Multiplicative.Loop
+
+; -------------------------------------------------------------------------- ;
+; Operator: Floating point divide (/)                                        ;
+; -------------------------------------------------------------------------- ;
+Eval.Multiplicative.FDivide
+	inc ix
+	call	zp.fp_push
+	
+	call Eval.Power
+	
+	call	zp.fp_pop
+	ex	de, hl
+	call	zp.fp_div
+		
+	jp Eval.Multiplicative.Loop
+
+; -------------------------------------------------------------------------- ;
+; Operator: Integer divide (\)                                               ;
+; -------------------------------------------------------------------------- ;
+Eval.Multiplicative.IDivide
+	inc ix
+	
+	call	zp.fp_push
+	
+	call Eval.Power
+	
+	; todo : have integer division...
+	call	zp.fp_pop
+	ex	de, hl
+	;call	zp.fp_div
+	
+	jp Eval.Multiplicative.Loop
+
+; -------------------------------------------------------------------------- ;
+; Operator: Modulo (%)                                                       ;
+; -------------------------------------------------------------------------- ;
+Eval.Multiplicative.Modulo
+	inc ix
+	
+	call	zp.fp_push
+	
+	call Eval.Power
+	
+	; todo : have modulo...
+	call	zp.fp_pop
+	ex	de, hl
+	;call	zp.fp_mod
+	
+	jp Eval.Multiplicative.Loop
+
+
+; -------------------------------------------------------------------------- ;
+; Operator: Factorial (!)                                                    ;
+; -------------------------------------------------------------------------- ;
+Eval.Multiplicative.Factorial:
+	inc	ix
+	
+	call	vect_fp_fact
+	
+	jp Eval.Multiplicative.Loop
+
+; ========================================================================== ;
+; Level: Power (**)                                                          ;
+; ========================================================================== ;
+Eval.Power
+	call Eval.Literal
+Eval.Power.Loop
+
+	call ReadCharacter
+	ret z
+	cp '*'
+	ret nz
+	ld a,(ix+1)
+	cp '*'
+	ret nz
+
+; -------------------------------------------------------------------------- ;
+; Operator: Power (**)                                                       ;
+; -------------------------------------------------------------------------- ;
+Eval.Power.Power
+	inc ix
+	inc ix
+	call	zp.fp_push
+	
+	call Eval.Literal
+	
+	; todo : have power...
+	call	zp.fp_pop
+	ex	de, hl
+	;call	zp.fp_pow
+	jr Eval.Power.Loop	
+
+; ========================================================================== ;
+; Level: Literals (also handles unary +/- and parens).                       ;
+; ========================================================================== ;
+Eval.Literal
+	call ReadCharacter
+	jr nz,$+7
+	ld a,ERR_SYNTAX
+	jp Error
+	cp '('
+	jr nz,Eval.Literal.NotParen
+	inc ix
+	call Eval.Top ; Recursively evaluate expressions.
+	call ReadCharacter
+	cp ')'
+	ld a,ERR_MISSING_RPAREN
+	jp nz,Error
+	inc ix
+	ret
+	
+Eval.Literal.NotParen
+
+	cp '-'
+	jr nz,Eval.Literal.NotUnaryNegate
+	
+	inc ix
+	
+	ld	a, (ix)
+	cp	'-'
+	jr	z, Eval.Literal.Decrement
+	
+	call Eval.Literal
+	call	zp.fp_neg
+	ret
+	
+Eval.Literal.Decrement
+	; -- operator : decrement
+	inc	ix
+	
+	call Eval.Literal
+	call	zp.fp_dec
+	ret
+
+Eval.Literal.NotUnaryNegate
+
+	cp '+'
+	jr nz,Eval.Literal.NotUnaryAdd
+	inc ix
+	ld	a, (ix)
+	cp	'+'
+	jr	nz, Eval.Literal
+
+Eval.Literal.Increment
+	; ++ operator : increment
+	inc	ix
+	
+	call Eval.Literal
+	call	zp.fp_inc
+	ret
+	
+Eval.Literal.NotUnaryAdd
+
+	cp '~'
+	jr nz,Eval.Literal.NotComplement
+	
+	inc ix
+	call Eval.Literal
+	
+	; cpl it
+	ret
+	
+Eval.Literal.NotComplement
+
+	cp '!'
+	jr nz,Eval.Literal.NotNot
+
+	inc ix
+	call Eval.Literal
+	
+	; not it
+	call	zp.fp_bool
+	inc	a
+	call	zp.fp_const
+	ret
+
+Eval.Literal.NotNot
+	; Search through function names.
+	
+	push	hl
+	
+	; get the list of length prefixed func names
+	ld	hl, Eval.Function.Names
+	
+Eval.Literal.SearchFunction:
+	ld	b, (hl)
+	inc	hl
+	
+	push	ix
+	
+Eval.Function.loop:
+	; look for match
+	ld	a, (hl)
+	inc	hl
+	cp	(ix)
+	inc	ix
+	jr	nz, Eval.Function.fail
+	djnz	Eval.Function.loop
+	
+Eval.Function.Exec:
+	pop	af ; discard old ix
+	
+	ld	b, 0
+	
+	; get function pointer
+	deref_hl
+	; store it into stack and get back accumulator
+	ex	(sp), hl
+	
+	; push all params into the stack
+	call	ReadCharacter
+	jr	z, $+7
+	cp	'('
+	call	z, Eval.Function.Param
+	
+	; pop params into accs if param count is 1 or 2
+	ld	a, b
+	cp	3
+	jr	nc, Eval.Function.StdCall
+Eval.Function.FastCall
+	; (hl, de) -> accumulators, params in right order (if any)
+	; b -> param count
+	or	a
+	ret	z
+	dec	a
+	jr	z, $+6
+	call	zp.fp_pop
+	ex	de, hl
+	call	zp.fp_pop
+	ex	de, hl
+	ret
+	
+Eval.Function.StdCall:
+	; (hl, de) -> accumulators (input has no meaning)
+	; b -> param count
+	; params on stack (last on top)
+	
+	ret
+
+Eval.Function.Param
+	inc	ix
+	; eval param
+	push	bc
+	call Eval.Top
+	call	zp.fp_push
+	pop	bc
+	inc	b
+	
+	;ld	a, (ix)
+	call	ReadCharacter
+	cp	')'
+	ret	z
+	cp	','
+	jr	z, Eval.Function.Param
+	
+	ld	a, ERR_SYNTAX
+	jp	Error
+
+Eval.Function.fail:
+	pop	ix
+	; move to end of func entry (past name but also past pointer)
+	ld	c, b
+	ld	b, 0
+	add	hl, bc
+	inc	hl
+	
+	; check for end of func list, try to parse a literal if so
+	ld	a, (hl)
+	or	a
+	jr	nz, Eval.Literal.SearchFunction
+	
+	pop	hl
+
+Eval.Literal.IsNumeric
+	push	de
+	
+	push ix
+	pop	de
+	
+	; read a fp literal
+	call	zp.atof
+	
+	; check for valid input
+	ld	a, ERR_SYNTAX
+	jp	c, Error
+	
+	; check whether ix changed
+	push	hl
+	push	ix
+	pop	hl
+	sbc	hl, de
+	pop	hl
+	jp	z, Error
+	
+	; update ix
+	push	de
+	pop	ix
+	
+	pop	de
+	ret
+
+Eval.Function.Names
+.db 3, "abs"	\ .dw fn.abs
+.db 4, "acos"	\ .dw fn.acos
+.db 4, "asin"	\ .dw fn.asin
+.db 4, "atan"	\ .dw fn.atan
+.db 4, "ceil"	\ .dw fn.ceil
+.db 3, "cos"	\ .dw fn.cos
+.db 3, "deg"	\ .dw fn.deg
+.db 1, "e"		\ .dw fn.e
+.db 3, "exp"	\ .dw fn.exp
+.db 5, "floor"	\ .dw fn.floor
+.db 3, "int"	\ .dw fn.int
+.db 2, "ln"		\ .dw fn.ln
+.db 3, "log"	\ .dw fn.log
+.db 3, "max"	\ .dw fn.max
+.db 3, "min"	\ .dw fn.min
+.db 2, "pi"		\ .dw fn.pi
+.db 3, "rad"	\ .dw fn.rad
+.db 3, "sgn"	\ .dw fn.sgn
+.db 3, "sin"	\ .dw fn.sin
+.db 4, "sqrt"	\ .dw fn.sqrt
+.db 3, "tan"	\ .dw fn.tan
+.db 0
+
+;	range_test(, , fn.paramerror, fn.paramerror)
+
+fn.paramerror:
+	call	fn.cleanup
+	
+	ld	a, ERR_SYNTAX ; todo : add a ERR_PARAM_COUNT error id
+	jp	Error
+
+fn.cleanup:
+	ld	a, b
+	cp	3
+	ret	c
+	
+	call	zp.fp_drop
+	djnz	$-3
+	ret
+
+fn.e:
+	ld	a, b
+	or	a
+	jp	nz, fn.paramerror
+	
+	ld	a, FP_E
+	jp	zp.fp_const
+
+fn.pi:
+	ld	a, b
+	or	a
+	jp	nz, fn.paramerror
+	
+	ld	a, FP_PI
+	jp	zp.fp_const
+
+fn.abs:
+	dec	b
+	jp	nz, fn.paramerror
+	jp	zp.fp_abs
+
+fn.sgn:
+	dec	b
+	jp	nz, fn.paramerror
+	jp	zp.fp_sign
+
+; accepts 1..255 params
+fn.max:
+	ld	a, b
+	or	a
+	jp	z, fn.paramerror
+	dec	a
+	ret	z
+	dec	a
+	jp	nz, fn.max_n
+fn.max.sub:
+	call	zp.fp_cmp
+	ret	nc
+	ex	de, hl
+	ret
+
+fn.max_n:
+	dec	b
+	call	zp.fp_pop
+	ex	de, hl
+fn.max_n.loop:
+	call	zp.fp_pop
+	call	fn.max.sub
+	djnz	fn.max_n.loop
+	ret
+
+; accepts 1..255 params
+fn.min:
+	ld	a, b
+	or	a
+	jp	z, fn.paramerror
+	dec	a
+	ret	z
+	dec	a
+	jp	nz, fn.min_n
+fn.min.sub:
+	call	zp.fp_cmp
+	ret	c
+	ex	de, hl
+	ret
+
+fn.min_n:
+	dec	b
+	call	zp.fp_pop
+	ex	de, hl
+fn.min_n.loop:
+	call	zp.fp_pop
+	call	fn.min.sub
+	djnz	fn.min_n.loop
+	ret
+
+fn.int:
+	dec	b
+	jp	nz, fn.paramerror
+	call	zp.fp_int
+	ret
+
+fn.acos:
+fn.asin:
+fn.atan:
+fn.ceil:
+fn.cos:
+fn.deg:
+fn.exp:
+fn.floor:
+fn.ln:
+fn.log:
+fn.rad:
+fn.sin:
+fn.sqrt:
+fn.tan:
+	ret
+
+; ========================================================================== ;
+; Reads a character from the input string, skipping whitespace. Returns Z if ;
+; the end of the input has been reached.                                     ;
+; ========================================================================== ;
+ReadCharacter.next
+	inc ix
+ReadCharacter
+	ld a,(ix)
+	cp ' '
+	jr z,ReadCharacter.next
+	or a
+	ret
+
+; ========================================================================== ;
+; Reads a right parenthesis character from the input string.                 ;
+; ========================================================================== ;
+ReadRightParen
+	call ReadCharacter
+	cp ')'
+	jr nz,ReadRightParen.error
+	inc ix
+	ret
+ReadRightParen.error
+	ld a,ERR_MISSING_RPAREN
+	jp Error

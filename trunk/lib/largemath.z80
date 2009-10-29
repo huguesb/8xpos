@@ -1,0 +1,382 @@
+.nolist
+;Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+;
+; arbritrary size integer arithmetic (raw binary, no bcd)
+;
+
+;
+; number data must be stored in heap.
+;
+; linked list of 128 bit (16bytes) blocks, the first one knows
+; the size of the whole number. the caller knows only the address
+; of this first block
+;
+
+vect_div_hl_16:
+	ld	a, l
+	srl	h
+	rra
+	srl	h
+	rra
+	srl	h
+	rra
+	srl	h
+	rra
+	ld	l, a
+	ret
+
+vect_div_de_16:
+	ld	a, e
+	srl	d
+	rra
+	srl	d
+	rra
+	srl	d
+	rra
+	srl	d
+	rra
+	ld	e, a
+	ret
+
+vect_div_bc_16:
+	ld	a, c
+	srl	b
+	rra
+	srl	b
+	rra
+	srl	b
+	rra
+	srl	b
+	rra
+	ld	c, a
+	ret
+
+; brief : creates a bigint
+; input : bc -> initial number of bytes
+; output : hl -> address of created bigint
+; destroys : a, de, bc
+vect_bigint_create:
+	push	bc
+	; create first chunk
+	ld	bc, 20
+	call	zp.malloc
+	pop	bc
+	
+	ld	(hl), c
+	inc	hl
+	ld	(hl), b
+	dec	hl
+	
+	; compute number of blocks
+	ld	d, b
+	ld	e, c
+	call	vect_div_de_16
+	
+	dec	de
+	ld	a, d
+	or	e
+	ret	z
+	
+	; create next chunks
+	push	hl
+	
+	ld	bc, 18
+	
+vect_bigint_create.loop:
+	push	de
+	
+	add	hl, bc
+	
+	push	hl
+	call	zp.malloc
+	pop	de
+	
+	ex	de, hl
+	ld	(hl), e
+	inc	hl
+	ld	(hl), d
+	ex	de, hl
+	dec	hl
+	dec	hl
+	
+	pop	de
+	dec	de
+	ld	a, d
+	or	e
+	jr	nz, vect_bigint_create.loop
+	
+	pop	hl
+	ret
+
+; brief : destroys a bigint (large integer) freeing all allocated memory
+; input : hl -> address of bigint
+; output : none
+; destroys : a, hl, de, bc
+vect_bigint_destroy:
+	push	hl
+	call	zp.free
+	pop	hl
+	
+	ld	bc, 16
+	call	zp.deref_hl_alt
+	call	vect_div_de_16
+	add	hl, bc
+	deref_hl
+	
+vect_bigint_destroy.loop:
+	dec	de
+	ld	a, e
+	or	d
+	ret	z
+	
+	push	hl
+	call	zp.free
+	pop	hl
+	
+	ld	bc, 16
+	call	zp.deref_hl_alt
+	call	vect_div_de_16
+	add	hl, bc
+	deref_hl
+	
+	jr	vect_bigint_destroy.loop
+
+; brief : resizes a bigint
+; input : hl -> bigint address, bc -> new size in bytes
+; output : none
+; destroys : a, de
+vect_bigint_resize:
+	push	hl
+	deref_hl
+	or	a
+	sbc	hl, bc
+	jr	nc, vect_bigint_grow
+	
+vect_bigint_shrink:
+	add	hl, bc
+	ld	a, l
+	push	af
+	call	vect_div_hl_16
+	pop	af
+	and	$F0
+	jr	z, $+3
+	inc	hl
+	
+	
+	
+	pop	hl
+	
+	
+	ret
+	
+vect_bigint_grow:
+	ld	d, h
+	ld	e, l
+	pop	hl
+	
+	push	hl
+	ld	(hl), c
+	inc	hl
+	ld	(hl), b
+	inc	hl
+	
+	ld	de, 16
+	
+	call	vect_div_bc_16
+	
+vect_bigint_grow.loop:
+	ld	a, b
+	or	c
+	jr	z, vect_bigint_grow.end:
+	
+	add	hl, de
+	deref_hl
+	jr	vect_bigint_grow.loop
+	
+vect_bigint_grow.end:
+	add	hl, de
+	
+	pop	hl
+	ret
+
+; brief : creates a bignum (large integer)
+; input : hl -> address of bignum, de -> bignum data ((word)size prefixed little endian number)
+; output :
+; destroys : bc, de
+vect_bigint_set:
+	push	hl
+	
+	ex	de, hl
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	ex	de, hl
+	
+	push	de
+	call	vect_bigint_resize
+	pop	de
+	
+	ld	a, c
+	and	$0F
+	push	af
+	
+	inc	hl
+	inc	hl
+	
+	pop	af
+	
+	pop	hl
+	ret
+
+; brief : bigint + operator
+; input : hl, de -> bigint operands
+; output : hl points to result
+; destroys : 
+vect_bigint_add:
+	
+	ret
+
+; brief : bigint - operator
+; input : hl, de -> bigint operands
+; output : hl points to result
+; destroys : 
+vect_bigint_sub:
+	
+	ret
+
+; brief : bigint * operator
+; input : hl, de -> bigint operands
+; output : hl points to result
+; destroys : 
+vect_bigint_mlt:
+	
+	ret
+
+; brief : bigint * 16 (or << 4) operator
+; input : hl -> bigint operand
+; output : hl points to result
+; destroys : 
+vect_bigint_mlt_16:
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	inc	hl
+	
+	xor	a
+	push	af
+vect_bigint_mlt_16.block:
+	ld	b, 16
+	pop	af
+	
+vect_bigint_mlt_16.loop:
+	rrd
+	inc	hl
+	
+	djnz	vect_bigint_mlt_16.loop
+	
+	push	af
+	dec	de
+	ld	a, e
+	or	d
+	jp	nz, vect_bigint_mlt_16.block
+	
+	ret
+
+; brief : bigint / operator
+; input : hl, de -> bigint operands
+; output : hl points to result
+; destroys : 
+vect_bigint_div:
+	
+	ret
+
+; brief : bigint % operator
+; input : hl, de -> bigint operands
+; output : hl points to result
+; destroys : 
+vect_bigint_mod:
+	
+	ret
+
+; brief : bigint OR operator
+; input : hl, de -> bigint operands
+; output : hl points to result
+; destroys : 
+vect_bigint_or:
+	
+	ret
+
+; brief : bigint XOR operator
+; input : hl, de -> bigint operands
+; output : hl points to result
+; destroys : 
+vect_bigint_xor:
+	
+	ret
+
+; brief : bigint AND operator
+; input : hl, de -> bigint operands
+; output : hl points to result
+; destroys : 
+vect_bigint_and:
+	
+	ret
+
+; brief : bigint NOT operator
+; input : hl bigint operand
+; output : hl points to result
+; destroys : 
+vect_bigint_not:
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	
+	ld	a, c
+	and	$0F
+	
+	push	af
+vect_bigint_not.loop:
+	ld	a, (hl)
+	cpl
+	ld	(hl), a
+	inc	hl
+	dec	bc
+	
+	ld	a, b
+	or	c
+	ret	z
+	
+	pop	af
+	push	af
+	xor	c
+	and	$0F
+	jr	nz, vect_bigint_not.loop
+	
+	; move to next chunk
+	deref_hl
+	
+	jr	vect_bigint_not.loop

@@ -1,0 +1,234 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+cmd_LIST:
+	ld	ix, cmd_LIST.callback
+	
+	ld	c, bitmask(list_free) | bitmask(list_alloc)
+	call	zp.file_list
+	
+	ret
+
+cmd_LIST.callback:
+	push	de
+	push	hl
+	
+	dec	hl
+	dec	hl
+	ld	a, (hl)
+	inc	hl
+	inc	hl
+	rlca
+	jr	c, cmd_LIST.cb.occupied
+	
+	; display free blocks only in debug mode
+	ld	a, (os.flags)
+	bit	debug_on, a
+	;jr	z, cmd_LIST.cb.abort
+	
+	ld	hl, cmd_LIST.freeblock_str
+	call	zp.cputs
+	
+	jp	cmd_LIST.cb.common
+
+cmd_LIST.freeblock_str:
+	.db "~free~", 0
+
+cmd_LIST.cb.abort:
+	pop	bc
+	pop	hl
+	or	a
+	ret
+	
+cmd_LIST.cb.occupied:
+	; move to filename field
+	ld	d, meta_NAME
+	call	zp.file_meta_find
+	jr	c, cmd_LIST.cb.abort
+	
+	push	hl
+	
+	; go to contents (skip size byte and field type)
+	add	a, 2
+	offset_hl
+	
+	call	zp.cputs
+	
+	pop	hl
+	
+	; check for split file and adjust size
+	ld	d, meta_SIZE
+	call	zp.file_meta_find
+	jr	c, cmd_LIST.cb.common
+	
+	add	a, 2
+	offset_hl
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	ld	hl, 2
+	add	hl, sp
+	ld	(hl), e
+	inc	hl
+	ld	(hl), d
+	
+cmd_LIST.cb.common:
+	ld	de, os.scrap
+	
+	ld	a, ':'
+	ld	(de), a
+	inc	de
+	
+	in	a, (map_bankB_port)
+	
+	; write page number
+	call	zp.htoa_byte
+	
+	ld	a, ':'
+	ld	(de), a
+	inc	de
+	
+	pop	hl
+	
+	; write block address
+	call	zp.htoa_word
+	
+	ld	a, ':'
+	ld	(de), a
+	inc	de
+	
+	pop	hl
+	
+	; write block size
+	call	zp.htoa_word
+	
+	xor	a
+	ld	(de), a
+	
+	ld	hl, os.scrap
+	call	zp.cprint
+	call	zp.cdisp
+	
+	or	a
+	ret
+
+
+cmd_DEL:
+	or	a
+	ret	z
+	
+	call	zp.file_delete
+	
+	ret
+
+cmd_TOUCH:
+	or	a
+	ret	z
+	
+	push	hl
+	call	zp.strnext
+	ex	de, hl
+	call	zp.atoh
+	ld	b, h
+	ld	c, l
+	pop	hl
+	
+	call	zp.file_create
+	
+	ret
+
+
+cmd_MEM:
+	ld	de, os.scrap
+	
+	ld	hl, cmd_MEM.strings
+	call	zp.strcpy
+	dec	de
+	
+	; fetch file meminfo here
+	call	zp.file_meminfo
+	
+	; write free file here
+	push	hl
+	ld	hl, (os.fmeminfo)
+	call	zp.htoa_word
+	pop	hl
+	
+	; TASM does not support line feed as char literal...
+	ld	a, 10
+	ld	(de), a
+	inc	de
+	
+	call	zp.strcpy
+	dec	de
+	
+	; write occupied file here
+	push	hl
+	ld	hl, (os.fmeminfo + 2)
+	call	zp.htoa_word
+	pop	hl
+	
+	ld	a, 10
+	ld	(de), a
+	inc	de
+	
+	call	zp.strcpy
+	dec	de
+	
+	; fetch dynamic meminfo here
+	call	zp.meminfo
+	
+	push	hl
+	ld	hl, (os.dmeminfo)
+	call	zp.htoa_word
+	pop	hl
+	
+	ld	a, 10
+	ld	(de), a
+	inc	de
+	
+	call	zp.strcpy
+	dec	de
+	
+	; write occupied dynamic here
+	push	hl
+	ld	hl, (os.dmeminfo + 2)
+	call	zp.htoa_word
+	pop	hl
+	
+	xor	a
+	ld	(de), a
+	
+	ld	hl, os.scrap
+	call	zp.cputs
+	jp	zp.cdisp
+
+cmd_MEM.strings:
+	.db "Filesystem :\n"
+	.db "  - free : ", 0
+	.db "  - occupied : ", 0
+	.db "Dynamic :\n"
+	.db "  - free : ", 0
+	.db "  - occupied : ", 0
+

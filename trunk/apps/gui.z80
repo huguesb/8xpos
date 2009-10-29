@@ -1,0 +1,982 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+.nolist
+; OS config file
+#include "xos.inc"
+; syscalls addresses
+#include "xos.exp"
+; own header file
+#include "apps/gui.inc"
+.list
+
+.org	$0000
+	.db	magic.dynamiclib
+	
+header_start:
+	.db	"xos.gui", 0
+	.db	0, 1, 0
+	
+	.dw	reloc_data_end - reloc_table
+	
+reloc_table:
+	.dw	29
+	.dw	_reloc_1_
+	.dw	_reloc_2_
+	.dw	_reloc_3_
+	.dw	_reloc_4_
+	.dw	_reloc_5_
+	.dw	_reloc_6_
+	.dw	_reloc_7_
+	.dw	_reloc_8_
+	.dw	_reloc_9_
+	.dw	_reloc_10_
+	.dw	_reloc_11_
+	.dw	_reloc_12_
+	.dw	_reloc_13_
+	.dw	_reloc_14_
+	.dw	_reloc_15_
+	.dw	_reloc_16_
+	.dw	_reloc_17_
+	.dw	_reloc_18_
+	.dw	_reloc_19_
+	.dw	_reloc_20_
+	.dw	_reloc_21_
+	.dw	_reloc_22_
+	.dw	_reloc_23_
+	.dw	_reloc_24_
+	.dw	_reloc_25_
+	.dw	_reloc_26_
+	.dw	_reloc_27_
+	.dw	_reloc_28_
+	.dw	_reloc_29_
+
+vector_table:
+	.dw	1
+	.dw	vect_gui_tabs
+reloc_data_end:
+
+	.dw	code_end - code_start
+code_start:
+
+; sources
+
+; goal : have a decent and consistent GUI
+; widget arch : "tab widget" with either big texts or layouts containing
+; a collection of controls (checkbox, input, ...)
+; secondary goal : compacity of widget data struct, speed, look
+; 
+; left TODO : input box, labels in layouts, scrolling of layouts, size and pos constraints on layouts
+
+; brief : show tabbed widgets
+; input : hl -> data
+; output : none
+; destroys :
+vect_gui_tabs:
+	push	hl
+	call	zp.clrscr
+	pop	hl
+	ld	bc, $0000
+	call	zp.puts_con
+	xor	a
+	call	zp.invline
+	ld	d, a
+	ld	e, a
+	ld	b, a
+	ld	c, (hl)
+	inc	hl
+vect_stt.update:
+	push	hl
+	push	bc
+	
+	push	de
+	push	hl
+	push	bc
+	
+	; save title line
+	ld	hl, (os.vbuf_addr)
+	ld	de, os.scrap
+	ld	bc, 12*7
+	push	hl
+	push	de
+	push	bc
+	ldir
+	
+	; clear screen
+	call	zp.clrscr
+	
+	; restore title line
+	pop	bc
+	pop	hl
+	pop	de
+	ldir
+	
+	pop	bc
+	pop	hl
+	
+	; display entry name, centered
+	ld	a, b
+	add	a, a
+	offset_hl
+	deref_hl
+	call	zp.strlen
+	ld	a, 24
+	sub	c
+	rra
+	ld	c, a
+	ld	b, $07
+	call	zp.puts_con
+	
+	pop	de
+	
+	; draw widget
+	ld	a, (hl)
+	inc	hl
+	ld	c, a
+	add	a, a
+	add	a, c
+	ld	ixh, 0
+	ld	ixl, a
+_reloc_1_	= $+1
+	ld	bc, vect_gui_draw
+	add	ix, bc
+	ld	bc, $0F00
+	call	zp.call_ix
+	
+	; display arrows if needed
+	pop	bc
+	push	bc
+	ld	a, b
+	or	a
+	ld	bc, $0700
+	ld	a, '<'
+	call	nz, zp.putch_con
+	pop	bc
+	push	bc
+	ld	a, b
+	inc	a
+	cp	c
+	ld	bc, $0717
+	ld	a, '>'
+	call	c, zp.putch_con
+	
+	; draw line between entry name and entry content
+	push	de
+	ld	a, $0D
+	ld	bc, $005F
+	call	zp.draw_hline
+	pop	de
+	
+	call	zp.vbufdisp
+	
+	pop	bc
+	pop	hl
+	
+vect_stt.loop:
+	call	zp.getch
+	
+	cp	k_left
+	jr	z, vect_stt.prev
+	cp	k_right
+	jr	z, vect_stt.next
+	
+	or	a
+	push	hl
+	push	bc
+	push	af
+	ld	a, b
+	add	a, a
+	offset_hl
+	deref_hl
+	call	zp.strend
+	ld	a, (hl)
+	inc	hl
+	ld	c, a
+	add	a, a
+	add	a, c
+	ld	ixh, 0
+	ld	ixl, a
+_reloc_2_	= $+1
+	ld	bc, vect_gui_handle
+	add	ix, bc
+	pop	af
+	pop	bc
+	call	zp.call_ix
+	pop	hl
+_reloc_3_	= $+1
+	jp	c, vect_stt.update
+	
+	cp	k_quit
+	ret	z
+	
+	jr	vect_stt.loop
+
+vect_stt.prev:
+	ld	a, b
+	or	a
+	jr	z, vect_stt.loop
+	dec	b
+	ld	de, 0
+_reloc_4_	= $+1
+	jp	vect_stt.update
+
+vect_stt.next:
+	ld	a, b
+	inc	a
+	cp	c
+	jr	nc, vect_stt.loop
+	inc	b
+	ld	de, 0
+_reloc_5_	= $+1
+	jp	vect_stt.update
+
+
+vect_gui_draw:
+_reloc_6_	= $+1
+	jp	vect_gui_draw_layout
+_reloc_7_	= $+1
+	jp	vect_gui_draw_text
+_reloc_8_	= $+1
+	jp	vect_gui_draw_custom
+
+vect_gui_handle:
+_reloc_9_	= $+1
+	jp	vect_gui_handle_layout
+_reloc_10_	= $+1
+	jp	vect_gui_handle_text
+_reloc_11_	= $+1
+	jp	vect_gui_handle_custom
+
+vect_gui_control:
+_reloc_12_	= $+1
+	jp	vect_gui_control_check
+_reloc_13_	= $+1
+	jp	vect_gui_control_input
+
+vect_gui_draw_layout:
+	ld	iy, os.scrap
+	; iy + 0 : starting display row
+	; iy + 1 : number of layout controls
+	; iy + 2 : start column
+	; iy + 3 : end column
+	ld	(iy + 0), b
+	ld	(iy + 1), 3 ; 8
+	ld	(iy + 2), 6 ; 0
+	ld	(iy + 3), 89 ; 95
+	
+	ld	e, (hl)
+	inc	hl
+	push	de
+	ld	a, -6
+	add	a, b
+	ld	b, a
+	ld	a, e
+vect_gui_draw_layout.loop:
+	push	af
+	
+	; compute index of current control (reverse counter...)
+	sub	e
+	neg
+	push	af
+	
+	; compute first control index of layout page (cur_index -= cur_index / num_control_per_page)
+	push	de
+	ld	e, (iy + 1)
+	call	zp.div_d_e
+	pop	de
+	sub	d
+	neg
+	ld	c, a
+	
+	pop	af
+	
+	; range check
+	cp	c
+	jr	c, vect_gui_draw_layout.skip
+	sub	c
+	sub (iy + 1)
+	jr	nc, vect_gui_draw_layout.skip
+	
+	push	de
+	
+	; draw control label
+	ld	a, (hl)
+	inc	hl
+	push	af
+	ld	a, 6
+	add	a, b
+	ld	b, a
+	ld	c, (iy + 2) ; 0
+	ld	a, c
+	and	$03
+	ld	a, c
+	jr	z, $+4
+	add	a, 4
+	and	$FC
+	rra
+	rra
+	ld	c, a
+	call	zp.puts_con
+	pop	af
+	
+	; draw control-specific graphics
+	push	bc
+	ld	b, 0
+	ld	c, a
+	add	a, a
+	add	a, c
+	ld	c, a
+_reloc_14_	= $+2
+	ld	ix, vect_gui_control
+	add	ix, bc
+	pop	bc
+	call	zp.call_ix
+	
+	pop	de
+	pop	af
+	push	af
+	; check for current control and mark selection (invert line) if so
+	sub e
+	neg
+	cp	d
+_reloc_15_	= $+1
+	call	z, vect_gui_draw_layout_line
+	
+vect_gui_draw_layout.skipped:
+	pop	af
+	dec	a
+	jr	nz, vect_gui_draw_layout.loop
+	
+	pop	de
+	ret
+
+vect_gui_draw_layout.skip:
+_reloc_16_	= $+1
+	call	vect_stt.layout.skip_control
+	jr	vect_gui_draw_layout.skipped
+
+
+vect_gui_draw_layout_line:
+	push	hl
+	push	de
+	push	bc
+	; todo : find a way not to use a hardcoded constant...
+	ld	e, (iy + 1) ; 8
+	call	zp.div_d_e
+	ld	d, a
+	
+	add	a, a
+	add	a, d
+	add	a, a
+	; todo : find a way not to use a hardcoded constant...
+	add	a, (iy + 0) ; $0F
+	
+	ld	b, 6
+	
+vect_gui_draw_layout_line.loop:
+	push	af
+	push	bc
+	ld	b, (iy + 2)
+	ld	c, (iy + 3)
+	call	zp.inv_hline
+	pop	bc
+	pop	af
+	inc	a
+	djnz	vect_gui_draw_layout_line.loop
+	
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+vect_gui_draw_text:
+	; display text
+	add	hl, de
+	ld	d, 8*24
+	call	zp.putsn_con
+	ret
+
+vect_gui_draw_custom:
+	push	af
+	ld	a, (hl)
+	ld	ixl, a
+	inc	hl
+	ld	a, (hl)
+	ld	ixh, a
+	inc	hl
+	pop	af
+	jp	(ix)
+
+vect_gui_handle_layout:
+	cp	k_down
+_reloc_17_	= $+1
+	jp	z, vect_stt.layout_down
+	cp	k_up
+_reloc_18_	= $+1
+	jp	z, vect_stt.layout_up
+	cp	k_enter
+_reloc_19_	= $+1
+	jp	z, vect_stt.layout_enter
+	or	a
+	ret
+
+vect_stt.layout_down:
+	ld	a, d
+	inc	a
+	cp	e
+	ret	z
+	ld	d, a
+	scf
+	ret
+
+vect_stt.layout_up:
+	ld	a, d
+	or	a
+	ret	z
+	dec	d
+	scf
+	ret
+
+vect_stt.layout_enter:
+	push	bc
+	push	de
+	inc	hl
+	ld	b, d
+	
+	ld	a, b
+	or	a
+	jr	z, vect_stt.layout_enter.skipped
+	
+vect_stt.layout_enter.skiploop:
+_reloc_20_	= $+1
+	call	vect_stt.layout.skip_control
+	djnz	vect_stt.layout_enter.skiploop
+
+vect_stt.layout_enter.skipped:
+	; todo : handle other cases than checkbox...
+	
+	ld	a, (hl)
+	inc	hl
+	push	af
+	call	zp.strend
+	pop	af
+	cp	gui_control_check
+	jr	nz, $+7
+_reloc_21_	= $+1
+	call	vect_gui_control_check.toggle
+	jr	vect_stt.layout_enter.end
+	
+	cp	gui_control_input
+	;...
+	
+vect_stt.layout_enter.end:
+	pop	de
+	pop	bc
+	ret
+
+vect_stt.layout.skip_control:
+	; get control type
+	ld	a, (hl)
+	inc	hl
+	
+	; skip control name
+	push	af
+	call	zp.strend
+	pop	af
+	
+	cp	gui_control_check
+	jr	nz, vect_stt.lsc.notcheck
+	; skip flags
+	ld	a, (hl)
+	inc	hl
+	; skip data / data address
+	rlca
+	jr	nc, $+3
+	inc	hl
+	inc	hl
+	ret
+	
+vect_stt.lsc.notcheck
+	cp	gui_control_input
+	jr	nz, vect_stt.lsc.notinput
+	; skip flags
+	ld	a, (hl)
+	inc	hl
+	; skip address
+	inc	hl
+	inc	hl
+	
+	ret
+	
+vect_stt.lsc.notinput:
+	
+	ret
+
+vect_gui_handle_text:
+	cp	k_down
+	jr	z, vect_stt.scroll_down
+	cp	k_up
+	jr	z, vect_stt.scroll_up
+	or	a
+	ret
+
+vect_stt.scroll_up:
+	ld	a, d
+	or	e
+	scf
+	ret	z
+	
+	push	hl
+	ld	hl, -24
+	add	hl, de
+	ex	de, hl
+	pop	hl
+	
+	scf
+	ret
+
+vect_stt.scroll_down:
+	push	bc
+	push	hl
+	ld	a, b
+	add	a, a
+	offset_hl
+	deref_hl
+	call	zp.strnext
+	inc	hl
+	add	hl, de
+	call	zp.strlen
+	ld	hl, 24*8
+	cmp_hlbc
+	ld	hl, 24
+	jr	nc,	$+4
+	add	hl, de
+	ex	de, hl
+	pop	hl
+	pop	bc
+	
+	scf
+	ret
+
+vect_gui_handle_custom:
+	push	af
+	inc	hl
+	inc	hl
+	ld	a, (hl)
+	ld	ixl, a
+	inc	hl
+	ld	a, (hl)
+	ld	ixh, a
+	inc	hl
+	pop	af
+	jp	(ix)
+
+vect_gui_control_check.data:
+	ld	a, gui_check_bitmsk
+	and	(hl)
+	
+	ld	e, a
+	add	a, a
+	add	a, e
+	ld	e, a
+	
+	ld	a, (hl)
+	inc	hl
+	
+	push	hl
+	pop	ix
+	
+	rlca
+	jr	nc, vect_gui_cc.noaddr
+	
+	ld	d, (hl)
+	inc	hl
+	inc	ix
+	ld	h, (hl)
+	ld	l, d
+	
+vect_gui_cc.noaddr:
+	ex	(sp), ix
+	push	ix
+	
+	rlca
+	jr	nc, vect_gui_cc.nobit
+	
+	ld	d, 0
+_reloc_22_	= $+2
+	ld	ix, vect_gui_cc.bits
+	add	ix, de
+	jp	(ix)
+	
+vect_gui_cc.nobit:
+	ld	a, (hl)
+	or	a
+	ret
+
+vect_gui_control_check.toggle:
+_reloc_23_	= $+1
+	call	vect_gui_control_check.data
+	ex	(sp), hl
+	ld	a, (hl)
+	ex	(sp), hl
+	jr	nz, $+7
+_reloc_24_	= $+1
+	call	vect_gui_control_check.set
+	jr	$+5
+_reloc_25_	= $+1
+	call	vect_gui_control_check.res
+	pop	hl
+	scf
+	ret
+
+vect_gui_control_check.res:
+	bit gui_check_bit, a
+	jr	z, vect_gui_cc.res.nobit
+_reloc_26_	= $+2
+	ld	ix, vect_gui_cc.ress
+	add	ix, de
+	jp	(ix)
+vect_gui_cc.res.nobit
+	ld	(hl), 0
+	ret
+
+vect_gui_control_check.set:
+	bit gui_check_bit, a
+	jr	z, vect_gui_cc.set.nobit
+_reloc_27_	= $+2
+	ld	ix, vect_gui_cc.sets
+	add	ix, de
+	jp	(ix)
+vect_gui_cc.set.nobit
+	ld	(hl), 1
+	ret
+
+vect_gui_control_check:
+	push	de
+	push	bc
+	
+_reloc_28_	= $+1
+	call	vect_gui_control_check.data
+	
+	ld	de, 5
+_reloc_29_	= $+1
+	ld	hl, vect_gui_check.sprite
+	jr	z, $+3
+	add	hl, de
+	
+	ex	de, hl
+	ld	l, b
+	ld	b, $05
+	ld	a, (iy + 3)
+	sub	7
+	ld	c, a
+	;ld	bc, $0558
+	ld	h, 1	; 0:XOR, 1:OR
+	call	zp.putsprite
+	
+	pop	hl
+	inc	hl
+	pop	bc
+	pop	de
+	
+	ret
+
+vect_gui_cc.bits:
+	bit	0, (hl)
+	ret
+	bit	1, (hl)
+	ret
+	bit	2, (hl)
+	ret
+	bit	3, (hl)
+	ret
+	bit	4, (hl)
+	ret
+	bit	5, (hl)
+	ret
+	bit	6, (hl)
+	ret
+	bit	7, (hl)
+	ret
+
+vect_gui_cc.ress:
+	res	0, (hl)
+	ret
+	res	1, (hl)
+	ret
+	res	2, (hl)
+	ret
+	res	3, (hl)
+	ret
+	res	4, (hl)
+	ret
+	res	5, (hl)
+	ret
+	res	6, (hl)
+	ret
+	res	7, (hl)
+	ret
+
+vect_gui_cc.sets:
+	set	0, (hl)
+	ret
+	set	1, (hl)
+	ret
+	set	2, (hl)
+	ret
+	set	3, (hl)
+	ret
+	set	4, (hl)
+	ret
+	set	5, (hl)
+	ret
+	set	6, (hl)
+	ret
+	set	7, (hl)
+	ret
+
+vect_gui_check.sprite:
+	.db	%01111100
+	.db	%01000100
+	.db	%01000100
+	.db	%01000100
+	.db	%01111100
+	
+	.db	%01111100
+	.db	%01111100
+	.db	%01111100
+	.db	%01111100
+	.db	%01111100
+
+vect_gui_control_input:
+	
+	ret
+
+
+
+; brief : string input
+; input : ix, if non null is a callback called upon each keypress
+; output : string written in os.command (128 byte buffer)
+; destroys : a, bc, de, hl
+; vect_cgets:
+; 	ld	a, CMD_PANE
+; 	call	zp.clrline
+; 	call	zp.displine
+; 	
+; 	ld	hl, os.command
+; 	ld	b, 0
+; 	ld	c, b
+; 	ld	e, c
+; 	ld	(hl), b
+; 	
+; 	; hl -> current buffer position end
+; 	; b -> buffer size
+; 	; c -> cursor position 
+; 	; e -> buffer position corresponding to left border of cmd pane
+; vect_cgets.loop:
+; 	call	zp.getch
+; 	
+; 	ld	d, a
+; 	ld	a, ixh
+; 	or	ixl
+; 	ld	a, d
+; 	call	nz, zp.call_ix
+; 	jr	c, vect_cgets.nomove
+; 	
+; 	; check special keys
+; 	cp	k_enter
+; 	ret	z
+; 	cp	k_del
+; 	jp	z, vect_cgets.backspace
+; 	cp	k_clear
+; 	jr	z, vect_cgets
+; 	cp	k_left
+; 	jp	z, vect_cgets.prev
+; 	cp	k_right
+; 	jp	z, vect_cgets.next
+; 	
+; 	; check valid key range
+; 	cp	' '
+; 	jr	c, vect_cgets.loop
+; 	
+; 	; save key value
+; 	ld	d, a
+; 	
+; 	; check buffer size
+; 	ld	a, b
+; 	cp	127
+; 	jr	nc, vect_cgets.loop
+; 	
+; 	sub	c
+; 	jr	z, vect_cgets.append
+; 	; insert inside buffer
+; 	push	bc
+; 	inc	a
+; 	ld	b, a
+; 	offset_hl
+; 	
+; vect_cgets.insert:
+; 	ld	a, (hl)
+; 	inc	hl
+; 	ld	(hl), a
+; 	dec	hl
+; 	dec	hl
+; 	djnz	vect_cgets.insert
+; 	
+; 	pop	bc
+; 	ld	a, (hl)
+; 	ld	(hl), d
+; 	inc	hl
+; 	ld	(hl), a
+; 	jr	vect_cgets.postinsert
+; vect_cgets.append:
+; 	; at buffer end : append
+; 	ld	(hl), d
+; 	inc	hl
+; 	ld	(hl), 0
+; 	
+; vect_cgets.postinsert:
+; 	inc	b
+; 	inc	c
+; 	
+; vect_cgets.update:
+; 	; 
+; 	ld	a, c
+; 	sub	e
+; 	sub	23
+; 	jr	c, vect_cgets.nomove
+; 	add	a, e
+; 	ld	e, a
+; vect_cgets.nomove:
+; 	
+; 	ld	a, CMD_PANE
+; 	call	zp.clrline
+; 	
+; 	push	hl
+; 	
+; 	push	de
+; 	push	bc
+; 	ld	d, 0
+; 	ex	de, hl
+; 	ld	de, os.command
+; 	add	hl, de
+; 	ld	d, 24
+; 	ld	bc, CMD_PANE*256+0
+; 	call	zp.putsn_con
+; 	pop	bc
+; 	pop	de
+; 	
+; 	push	bc
+; 	push	de
+; 	; draw cursor
+; 	ld	a, c
+; 	ld	c, %10000000
+; 	sub	e
+; 	or	a
+; 	rra
+; 	jr	nc, $+4
+; 	ld	c, %00001000
+; 	
+; 	ld	hl, (os.vbuf_addr) ;lcd(CMD_PANE, 0)
+; 	ld	de, CMD_PANE*12
+; 	add	hl, de
+; 	ld	de, 12
+; 	offset_hl
+; 	
+; 	ld	b, 6
+; vect_cgets.cursor:
+; 	ld	a, (hl)
+; 	or	c
+; 	ld	(hl), a
+; 	add	hl, de
+; 	djnz	vect_cgets.cursor
+; 	pop	de
+; 	pop	bc
+; 	
+; 	pop	hl
+; 	
+; 	ld	a, CMD_PANE
+; 	call	zp.displine
+; 	jp	vect_cgets.loop
+; 
+; vect_cgets.prev:
+; 	ld	a, c
+; 	or	a
+; 	jp	z, vect_cgets.loop
+; 	dec	c
+; 	dec	hl
+; 	cp	e
+; 	jr	nz, vect_cgets.nomove
+; 	dec	e
+; 	jr	vect_cgets.nomove
+; 	
+; vect_cgets.next:
+; 	ld	a, c
+; 	cp	b
+; 	jp	z, vect_cgets.loop
+; 	inc	c
+; 	inc	hl
+; 	jr	vect_cgets.update
+; 
+; vect_cgets.backspace:
+; 	ld	a, c
+; 	or	a
+; 	jp	z, vect_cgets.loop
+; 	sub	b
+; 	jr	z, vect_cgets.bs.atend
+; 	push	hl
+; 	push	de
+; 	push	bc
+; 	neg
+; 	inc	a
+; 	
+; 	ld	b, 0
+; 	ld	c, a
+; 	ld	d, h
+; 	ld	e, l
+; 	dec	de
+; 	lddr
+; 	
+; 	pop	bc
+; 	pop	de
+; 	pop	hl
+; 	dec	hl
+; 	jr	$+5
+; vect_cgets.bs.atend:
+; 	dec	hl
+; 	ld	(hl), 0
+; 	
+; 	dec	b
+; 	dec	c
+; 	
+; 	ld	a, c
+; 	sub	e
+; 	jr	nc, vect_cgets.nomove
+; 	dec	e
+; 	
+; 	jp	vect_cgets.nomove
+
+code_end:
+
+.end

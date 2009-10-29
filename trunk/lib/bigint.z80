@@ -1,0 +1,662 @@
+.nolist
+;Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+;
+; arbritrary size integer arithmetic (raw binary, no bcd)
+;
+
+;
+; number data must be stored in heap.
+; number data is a continuous vector (no linked list)
+; number size is fixed at creation, no possible realloc
+;
+; format : bytecount [word] followed by little endian data (raw bin)
+;
+
+; brief : creates a bigint
+; input : bc -> initial number of bytes
+; output : hl -> address of created bigint
+; destroys : a
+vect_bigint_create:
+	push	de
+	
+	push	bc
+	; create first chunk
+	inc	bc
+	inc	bc
+	call	zp.malloc
+	pop	bc
+	
+	ld	(hl), c
+	inc	hl
+	ld	(hl), b
+	dec	hl
+	
+	pop	de
+	ret
+
+; brief : creates a bigint and zero it out
+; input : bc -> initial number of bytes
+; output : hl -> address of created bigint
+; destroys : a
+vect_bigint_create_null:
+	push	bc
+	push	de
+	
+	push	bc
+	; create first chunk
+	inc	bc
+	inc	bc
+	call	zp.malloc
+	pop	bc
+	
+	push	hl
+	
+	ld	(hl), c
+	inc	hl
+	ld	(hl), b
+	inc	hl
+	
+	ld	d, h
+	ld	e, l
+	inc	de
+	ld	(hl), 0
+	dec	bc
+	ld	a, b
+	or	c
+	jr	z, $+4
+	
+	ldir
+	
+	pop	hl
+	
+	pop	de
+	pop	bc
+	ret
+
+; brief : destroys a bigint
+; input : hl -> address of bigint
+; ouptut : none
+; destroys : a
+vect_bigint_destroy:
+	push	hl
+	push	bc
+	push	de
+	call	zp.free
+	pop	de
+	pop	bc
+	pop	hl
+	ret
+
+; brief : clone a bigint
+; input : hl -> address of bigint
+; ouptut : hl -> address of cloned bigint
+; destroys : a
+vect_bigint_clone:
+	push	bc
+	push	de
+	
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	push	hl
+	call	vect_bigint_create
+	pop	de
+	push	hl
+	ldir
+	pop	hl
+	
+	pop	de
+	pop	bc
+	ret
+
+; brief : clone a bigint but change the size
+; input : hl -> address of bigint, bc -> size of clone
+; ouptut : hl -> address of cloned bigint
+; destroys : a
+vect_bigint_clone_x:
+	push	de
+	push	bc
+	
+	push	hl
+	call	vect_bigint_create
+	pop	de
+	
+	push	hl
+	
+	ex	de, hl
+	inc	hl
+	ld	a, (hl)
+	cp	b
+	dec	hl
+	jr	c, vect_bigint_clone_x.grow
+	ld	a, (hl)
+	cp	c
+	jr	c, vect_bigint_clone_x.grow
+	
+	; new size smaller than old
+	ldir
+	
+	pop	hl
+	
+	pop	bc
+	pop	de
+	ret
+
+vect_bigint_clone_x.grow:
+	; new size bigger than old : pad with zeroes
+	push	hl
+	ld	a, (hl)
+	cpl
+	inc	hl
+	ld	h, (hl)
+	ld	l, a
+	ld	a, h
+	cpl
+	ld	h, a
+	inc	hl
+	add	hl, bc
+	ex	(sp), hl
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	inc	de
+	inc	de
+	ldir
+	pop	bc
+	
+	ex	de, hl
+	
+vect_bigint_clone_x.pad:
+	ld	(hl), 0
+	inc	hl
+	dec	bc
+	ld	a, b
+	or	c
+	jr	nz, vect_bigint_clone_x.pad
+	
+	pop	hl
+	
+	pop	bc
+	pop	de
+	ret
+
+; brief : add two bigints
+; input : hl, de -> address of bigints
+; ouptut : hl -> result (new bigint is created)
+; destroys : a, de
+; O(n + m), ~80 T-states per byte of operand
+vect_bigint_add:
+	push	bc
+	
+	push	hl
+	push	de
+	deref_hl
+	ex	de, hl
+	deref_hl
+	call	zp.max_hlde
+	ld	b, h
+	ld	c, l
+	pop	de
+	pop	hl
+	
+	push	de
+	push	hl
+	
+	push	bc
+	; determine likeliness of overflow to know
+	; whether alloc size should be increased
+	
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	add	hl, bc
+	
+	ex	de, hl
+	
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	add	hl, bc
+	
+	ld	a, (hl)
+	ex	de, hl
+	add	a, (hl)
+	
+	pop	bc
+	jr	nc, $+5
+	inc	bc
+	jr	$+6
+	inc	a
+	jr	nz, $+3
+	inc	bc
+	
+	; create result and initialize to the value of the first param
+	pop	hl
+	call	vect_bigint_clone_x
+	
+	pop	de
+	
+	push	hl
+	
+	; get right size
+	push	bc
+	inc	hl
+	inc	hl
+	ex	de, hl
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	ex	de, hl
+	ex	(sp), hl
+	or	a
+	sbc	hl, bc
+	ex	(sp), hl
+	
+	or	a
+	push	af
+vect_bigint_add.loop:
+	pop	af
+	ld	a, (de)
+	adc	a, (hl)
+	ld	(hl), a
+	inc	de
+	inc	hl
+	push	af
+	dec	bc
+	ld	a, b
+	or	c
+	jr	nz, vect_bigint_add.loop
+	pop	af
+	
+	pop	bc
+	jr	nc, vect_bigint_add.done
+	
+	ld	a, b
+	or	c
+	jr	z, vect_bigint_add.done
+	
+vect_bigint_add.carry:
+	inc	(hl)
+	jr	nz, vect_bigint_add.done
+	inc	hl
+	dec	bc
+	ld	a, b
+	or	c
+	jr	nz, vect_bigint_add.carry
+vect_bigint_add.done:
+	pop	hl
+	
+	pop	bc
+	ret
+
+
+; brief : multiply two bigints
+; input : hl, de -> address of bigints
+; ouptut : hl -> result (new bigint is created)
+; destroys : a, de
+; O(n*m)
+vect_bigint_mult:
+	;
+	; algorithm : hand mult in binary (add and shift...)
+	; -> clone multiplicand and rlc it
+	; -> skip adding zeroes by keeping track of rotation alignments (every eight
+	; rotations, increase destination pointer)
+	; -> gently iterate over multiplier without cloning/modifying it
+	;
+	; => goal :
+	;	outer loop -> less than 50 T-states per bit of the multiplier
+	;	inner loop -> less than 50 T-states per byte of the multiplicand
+	
+	push	bc
+	
+	push	hl
+	push	de
+	
+	deref_hl
+	
+	ex	de, hl
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	
+	add	hl, bc
+	
+	push	bc
+	; create result
+	ld	b, h
+	ld	c, l
+	call	vect_bigint_create_null
+	pop	bc
+	
+	pop	de
+	
+	ex	(sp), hl
+	
+	ex	(sp), hl
+	
+	
+	pop	bc
+	ret
+
+; full range of shift/rotates
+
+; brief : srl a bigint
+; input : hl -> address of bigint
+; ouptut : CF and bigint modified as defined
+; destroys : a
+vect_bigint_srl:
+	push	hl
+	push	bc
+	
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	
+	add	hl, bc
+	
+	srl	(hl)
+	dec	hl
+	dec	bc
+	push	af
+vect_bigint_srl.loop:
+	ld	a, b
+	or	c
+	jr	z, vect_bigint_srl.end
+	pop	af
+	rr	(hl)
+	push	af
+	dec	hl
+	dec	bc
+	jr	vect_bigint_srl.loop
+	
+vect_bigint_srl.end:
+	pop	af
+	
+	pop	bc
+	pop	hl
+	ret
+
+; brief : sll a bigint
+; input : hl -> address of bigint
+; ouptut : CF and bigint modified as defined
+; destroys : a
+vect_bigint_sll:
+	push	hl
+	push	bc
+	
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	
+	sll	(hl)
+	inc	hl
+	dec	bc
+	push	af
+vect_bigint_sll.loop:
+	ld	a, b
+	or	c
+	jr	z, vect_bigint_sll.end
+	pop	af
+	rl	(hl)
+	push	af
+	inc	hl
+	dec	bc
+	jr	vect_bigint_sll.loop
+	
+vect_bigint_sll.end:
+	pop	af
+	
+	pop	bc
+	pop	hl
+	ret
+
+; brief : sra a bigint
+; input : hl -> address of bigint
+; ouptut : CF and bigint modified as defined
+; destroys : a
+vect_bigint_sra:
+	push	hl
+	push	bc
+	
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	
+	add	hl, bc
+	
+	sra	(hl)
+	dec	hl
+	dec	bc
+	push	af
+vect_bigint_sra.loop:
+	ld	a, b
+	or	c
+	jr	z, vect_bigint_sra.end
+	pop	af
+	rr	(hl)
+	push	af
+	dec	hl
+	dec	bc
+	jr	vect_bigint_sra.loop
+	
+vect_bigint_sra.end:
+	pop	af
+	
+	pop	bc
+	pop	hl
+	ret
+
+; brief : sla a bigint
+; input : hl -> address of bigint
+; ouptut : CF and bigint modified as defined
+; destroys : a
+vect_bigint_sla:
+	push	hl
+	push	bc
+	
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	
+	sla	(hl)
+	inc	hl
+	dec	bc
+	push	af
+vect_bigint_sla.loop:
+	ld	a, b
+	or	c
+	jr	z, vect_bigint_sla.end
+	pop	af
+	rl	(hl)
+	push	af
+	inc	hl
+	dec	bc
+	jr	vect_bigint_sla.loop
+	
+vect_bigint_sla.end:
+	pop	af
+	
+	pop	bc
+	pop	hl
+	ret
+
+; brief : rr a bigint
+; input : hl -> address of bigint
+; ouptut : CF and bigint modified as defined
+; destroys : a
+vect_bigint_rr:
+	push	hl
+	push	bc
+	
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	
+	add	hl, bc
+	
+	rr	(hl)
+	dec	hl
+	dec	bc
+	push	af
+vect_bigint_rr.loop:
+	ld	a, b
+	or	c
+	jr	z, vect_bigint_rr.end
+	pop	af
+	rr	(hl)
+	push	af
+	dec	hl
+	dec	bc
+	jr	vect_bigint_rr.loop
+	
+vect_bigint_rr.end:
+	pop	af
+	
+	pop	bc
+	pop	hl
+	ret
+
+; brief : rl a bigint
+; input : hl -> address of bigint
+; ouptut : CF and bigint modified as defined
+; destroys : a
+vect_bigint_rl:
+	push	hl
+	push	bc
+	
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	
+	rl	(hl)
+	inc	hl
+	dec	bc
+	push	af
+vect_bigint_rl.loop:
+	ld	a, b
+	or	c
+	jr	z, vect_bigint_rl.end
+	pop	af
+	rl	(hl)
+	push	af
+	inc	hl
+	dec	bc
+	jr	vect_bigint_rl.loop
+	
+vect_bigint_rl.end:
+	pop	af
+	
+	pop	bc
+	pop	hl
+	ret
+
+; brief : rr a bigint
+; input : hl -> address of bigint
+; ouptut : CF and bigint modified as defined
+; destroys : a
+vect_bigint_rrc:
+	push	hl
+	push	bc
+	
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	
+	add	hl, bc
+	
+	; put a zero by default
+	rr	(hl)
+	res	7, (hl)
+	dec	hl
+	dec	bc
+	push	af
+vect_bigint_rrc.loop:
+	ld	a, b
+	or	c
+	jr	z, vect_bigint_rrc.end
+	pop	af
+	rr	(hl)
+	push	af
+	dec	hl
+	dec	bc
+	jr	vect_bigint_rrc.loop
+	
+vect_bigint_rrc.end:
+	add	hl, bc
+	pop	af
+	
+	jr	nc, $+4
+	set 7, (hl)
+	
+	pop	bc
+	pop	hl
+	ret
+
+; brief : rlc a bigint
+; input : hl -> address of bigint
+; ouptut : CF and bigint modified as defined
+; destroys : a
+vect_bigint_rlc:
+	push	hl
+	push	bc
+	
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	
+	; put a zero by default
+	rl	(hl)
+	res	0, (hl)
+	inc	hl
+	dec	bc
+	push	af
+vect_bigint_rlc.loop:
+	ld	a, b
+	or	c
+	jr	z, vect_bigint_rlc.end
+	pop	af
+	rl	(hl)
+	push	af
+	inc	hl
+	dec	bc
+	jr	vect_bigint_rlc.loop
+	
+vect_bigint_rlc.end:
+	pop	af
+	
+	pop	bc
+	pop	hl
+	ret	nc
+	set 0, (hl)
+	ret
+

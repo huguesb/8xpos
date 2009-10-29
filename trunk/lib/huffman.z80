@@ -1,0 +1,181 @@
+
+;
+; Huffman nibble decompression routine, written in a hurry and UNTESTED (got to write a
+; compression routine as well to test it...)
+;
+
+; compressed data structure :
+; * 0-D : compressed nibble
+; * E : var length compressed (i.e the byte to compress end up taking a byte) followed by a nibble
+; * F : uncompressed byte
+
+; Huff table struct : 30 bytes, in that order
+;	* the 14 most common bytes in the uncompressed data to which are assigned the 0-D representation
+;	in the compressed data
+;	* the 16 next most common bytes in the uncompressed data to which are assigned the E0-EF
+;	representation in the compressed data
+
+; hl -> compressed data
+; bc -> size of compressed data
+; de' -> buffer to hold decompressed data
+; hl' -> huffman table (30 bytes)
+; b' -> 0
+; d -> 2
+; !!! require interrupts disabled !!!
+; destroys : af, bc, de, hl, af', bc', de',  hl'
+
+; timing per byte decompressed :
+; bounds : 119-243
+; inaccurate average : ~196
+;
+; accurate timing require a knowledge of the distribution of the three branches
+; in the compressed file so it is impossible to do generally but we know for
+; sure that branch 1 (the quickest, yay!) is going to be the most frequent,
+; followed by branch 2 and then branch 3. 
+; slightly more accurate average :
+;	* frequencies : b1 = 0.5 | b2 = 0.2 | b3 = 0.3 [estimation for GuitCalc]
+;	-> ~189
+;
+; to compute a really accurate timing, one must actually consider not only the frequencies
+; of branching but also the probability for the processed nibble to be aligned. This is not
+; undoable but just compilcated enough that I won't do it right now...
+;
+huff.decomp:
+	di
+	xor	a
+huff.decomp.loop:
+	; common : 35
+	rld			; 18
+	cp	$0E		; 7
+	jp	nc, huff.decomp.special	; 10
+	
+	; branch 1 : 84/166 : avg = 125 per compressed nibble
+	
+	exx			; 4
+	ld	c, a	; 4
+	add	hl, bc	; 11
+	ex	af, af'	; 4
+	ld	a, (hl)	; 7
+	or	a		; 4
+	sbc	hl, bc	; 15
+	ld	(de), a	; 7
+	ex	af, af'	; 4
+	inc	de		; 6
+	exx			; 4
+	
+	dec	d		; 4
+	jp	nz, huff.decomp.loop	; 10
+	; one byte done
+	dec	bc		; 6
+	ex	af, af'	; 4
+	ld	a, b	; 4
+	or	c		; 4
+	ret	z		; 5 (11 when cond true) 
+	ex	af, af'	; 4
+	rld			; 18
+	inc	hl		; 6
+	ld	d, 2	; 7
+	jp	huff.decomp.loop	; 10
+	
+
+huff.decomp.special:
+	rrca		; 4
+	jp	c, huff.decomp.uncompressed	; 10
+	
+	; branch 2 : 14 + 22 + 37/0 + 110 + 0/68 -> 183/214 : avg = 199 per compressed nibble
+	
+	rlca		; 4
+	ld	e, a	; 4
+	dec	d		; 4
+	jp	nz, huff.decomp.special.samebyte	; 10
+	; extended nibble was the lower nibble : go to next byte to find the other nibble
+	; restore input (compressed) byte
+	rld			; 18
+	; update counters, don't bother checking for bc = 0 here, that would mean corrupt data...
+	dec	bc		; 6
+	inc	hl		; 6
+	ld	d, 2	; 7
+huff.decomp.special.samebyte:
+	rld			; 18
+	add	a, e	; 4
+	
+	exx			; 4
+	ld	c, a	; 4
+	add	hl, bc	; 11
+	ex	af, af'	; 4
+	ld	a, (hl)	; 7
+	or	a		; 4
+	sbc	hl, bc	; 15
+	ld	(de), a	; 7
+	in	de		; 6
+	exx			; 4
+	
+	ex	af, af'	; 4
+	sub	e		; 4
+	
+	dec	d		; 4
+	jp	nz, huff.decomp.loop	; 10
+	rld			; 18
+	inc	hl		; 6
+	ld	d, 2	; 7
+	dec	bc		; 6
+	ex	af, af'	; 4
+	ld	a, b	; 4
+	or	c		; 4
+	ret	z		; 5 (11 when true)
+	ex	af, af'	; 4
+	jp	huff.decomp.loop	; 10
+
+huff.decomp.uncompressed:
+	rlca		; 4
+	dec	d		; 4
+	jp	nz, huff.decomp.uncomp.split	; 10
+	
+	; branch 3 : 32 + 105/149 : avg = 159 per nibble
+	
+	; extended nibble was the lower nibble : go to next byte to find the other nibble
+	; restore input (compressed) byte
+	rld			; 18
+	; update counters, don't bother checking for bc = 0 here, that would mean corrupt data...
+	dec	bc		; 6
+	inc	hl		; 6
+	ld	d, 2	; 7
+	
+	; uncompressed byte is aligned on byte boundary, yay!
+	ld	a, (hl)	; 7
+	inc	hl		; 6
+	dec	bc		; 6
+	
+	exx			; 4
+	ld	(de), a	; 7
+	inc	de		; 7
+	exx			; 4
+	
+	ld	a, b	; 4
+	or	c		; 4
+	ret	z		; 5 (11 when cond true)
+	xor	a		; 4
+	jp	huff.decomp.loop	; 10
+	
+huff.decomp.uncomp.split:
+	; uncompressed byte is split accross two bytes, damn!
+	
+	rld			; 18
+	ld	e, a	; 4
+	sla	e		; 8
+	sla	e		; 8
+	sla	e		; 8
+	sla	e		; 8
+	rld			; 18
+	inc	hl		; 6
+	dec	bc		; 6
+	rld			; 18
+	xor	e		; 4
+	exx			; 4
+	ld	(de), a	; 7
+	inc	de		; 7
+	exx			; 4
+	xor	e		; 4
+	ld	d, 1	; 7
+	
+	jp	huff.decomp.loop	; 10

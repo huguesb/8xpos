@@ -1,0 +1,676 @@
+
+#ifndef _HEXEDIT_EMBED_
+.nolist
+; OS config file
+#include "xos.inc"
+
+; syscalls addresses
+#include "xos.exp"
+.list
+
+.org	prgm.start - 2
+	.db magic.executable, 0
+	
+	jr	app.hexedit
+	
+_address:	.dw $0000
+_cur_y:		.db $00
+_cur_x:		.db $00
+_mode:		.db $00	; 0 = hex   !0 = ascii
+_string		= os.scrap
+#else
+_address:	= os.scrap
+_cur_y:		= _address + 2
+_cur_x:		= _cur_y + 1
+_mode:		= _cur_x + 1 ; 0 = hex   !0 = ascii
+_string		= _mode + 1
+#endif
+
+app.hexedit:
+	; upon prgm start :
+	;	a -> argc (also in psp.argc for persistent storage)
+	;	hl -> argv (also in psp.argv for persistent storage)
+	push	af
+	push	hl
+	call	zp.credraw
+	pop	de
+	pop	af
+	
+	ld	hl, 0
+	or	a
+	jr	z, _NoArg
+	ld	b, 4
+	call	zp.atoh
+_NoArg:
+	ld	(_address), hl
+	ld	hl, 0
+	ld	(_cur_y), hl
+	ld	(_mode), hl
+	jp	_Refresh
+
+_loop:
+	ld	hl, _Refresh
+	push	hl
+_inkey:
+	call	zp.getch
+	
+	cp	k_enter
+	jp	z, _Set
+	cp	k_down
+	jr	z, _CurDown
+	cp	k_up
+	jr	z, _CurUp
+	cp	k_left
+	jr	z, _CurLeft
+	cp	k_right
+	jp	z, _CurRight
+
+	range_test('C','S',_inkey,_lc)
+	or	$20
+
+_lc:
+	cp	'c'
+	jp	z, _Compare
+	cp	'e'
+	jp	z, _Enter
+	cp	'f'
+	jp	z, _Fill
+	cp	'g'
+	jp	z, _Goto
+	cp	'h'
+	jp	z, _Help
+	cp	'k'
+	jp	z, _PageBack
+	cp	'l'
+	jp	z, _PageAhead
+	cp	'm'
+	jp	z, _Mode
+	cp	'p'
+	jp	z, _Page
+	cp	's'
+	jp	z, _Search
+	cp	'q'
+	jr	nz, _inkey
+
+; Exit
+_Quit:
+	pop	af
+	ret
+
+; Move the cursor down one row
+_CurDown:
+	call	_Func_PrepCursor
+_CurDown_2:
+	ld	a, l
+	cp	7
+	jr	z, _ScrollDown
+	inc	l
+_CurExit:
+	ld	(_cur_y), hl
+	call	_XORCursor
+	call	zp.vbufdisp
+	jr	_inkey
+_ScrollDown:
+	ld	de, 8
+_CurMod:
+	ld	hl, (_address)
+	add	hl, de
+	ld	(_address), hl
+	ret
+
+; Move the cursor up one row
+_CurUp:
+	call	_Func_PrepCursor
+_CurUp_2:
+	ld	a, l
+	or	a
+	jr	z, _ScrollUp
+	dec	l
+	jr	_CurExit
+_ScrollUp:
+	ld	de, -8
+	jr	_CurMod
+	ret
+
+; Move the cursor left one byte
+_CurLeft:
+	call	_Func_PrepCursor
+	ld	a, h
+	or	a
+	jr	z, _WrapLeft
+	dec	h
+	jr	_CurExit
+_WrapLeft:
+	ld	h, 7
+	ld	(_cur_y), hl
+	jr	_CurUp_2
+
+_CurRight:
+	call	_Func_PrepCursor
+	ld	a, h
+	sub	7
+	jr	z, _WrapRight
+	inc	h
+	jr	_CurExit
+_WrapRight:
+	ld	h, a
+	ld	(_cur_y), hl
+	jr	_CurDown_2
+
+
+_Help:
+	call	zp.clrscr
+	ld	hl, _str_help
+	ld	bc, 0
+	call	zp.puts_con
+	call	zp.vbufdisp
+	call	zp.getch
+	call	zp.credraw
+	ret
+
+; Set a byte
+_Set:
+	call	_Func_AddressTest
+
+	ld	hl, _str_set
+	call	_DispCommand
+
+	ld	a, (_mode)
+	or	a
+	jr	z, _SHex
+	ld	a, (os.command)
+	ld	d, a
+	jr	_SWrite
+
+_SHex:
+	ld	de, os.command
+	ld	b, 2
+	call	zp.atoh
+	jp	c, _HexError
+	ld	d, l
+
+_SWrite:
+	call	_Get_Cur_Address
+	ld	(hl), d
+	ret
+
+
+_Mode:	
+	ld	a, (_mode)
+	cpl
+	ld	(_mode), a
+	ret
+
+
+_PageAhead:
+	ld	hl, (_address)
+	ld	de, 64
+_PageAhead_2:
+	add	hl, de
+	ld	(_address), hl
+	ret
+
+_PageBack:
+	ld	hl, (_address)
+	ld	de, -64
+	jr	_PageAhead_2
+
+
+; Warp to a specified address
+_Goto:
+	ld	hl, _str_goto
+	call	_DispCommand
+
+	ld	de, os.command
+	ld	b, 4
+	call	zp.atoh
+	jp	c, _HexError
+	ld	(_address), hl
+	ret
+
+_Page:
+	ld	hl, _str_bank
+	call	_DispCommand
+	
+	ld	de, os.command
+	ld	a, (de)
+	inc	de
+	cp	'a'
+	jr	z, _BankA
+	cp	'A'
+	jr	z, _BankA
+	cp	'b'
+	jr	z, _BankB
+	cp	'B'
+	jr	z, _BankB
+	cp	'c'
+	jr	z, _BankC
+	cp	'C'
+	jr	z, _BankC
+	jp	_InputError
+_BankC:
+	ld	c, map_bankC_port
+	jr	_Bank.done
+_BankA:
+	ld	c, map_bankA_port
+	jr	_Bank.done
+_BankB:
+	ld	c, map_bankB_port
+_Bank.done:
+	ld	a, (de)
+	or	a
+	jp	nz, _InputError
+	
+	push	bc
+	ld	hl, _str_page
+	call	_DispCommand
+	
+	ld	de, os.command
+	ld	b, 2
+	call	zp.atoh
+	pop	bc
+	jp	c, _HexError
+	ld	a, l
+	out	(c), a
+	ret
+
+_Compare:
+	ld	hl, _str_comp
+	call	_DispCommand
+	call	_ParseC
+	call	_Get_Cur_Address
+	ld	a, b
+	or	c
+	jp	z, _inkey
+
+_CLoop:
+	ld	a, (de)
+	inc	de
+	cpi
+	jr	nz, _CMismatch
+	jp	pe, _CLoop
+	ld	hl, _str_match
+	jp	_HE2
+_CMismatch:
+	dec	hl
+	ld	(_address), hl
+	push	de
+	ld	hl, _str_mismatch
+_C2:
+	ld	de, _string
+	call	zp.strcpy
+	dec	de
+	pop	hl
+	dec	hl
+	call	zp.htoa_word
+	xor	a
+	ld	(de), a
+	sbc	hl, hl
+	ld	(_cur_y), hl
+	ld	hl, _string
+	jp	_HE2
+
+
+_Enter:
+	call	_Func_AddressTest
+	push	hl
+	ld	hl, _str_enter
+	call	_DispCommand
+	ld	de, os.command
+	ld	a, (_mode)
+	or	a
+	jr	z, _EWriteH
+
+	ex	de, hl
+	pop	de
+_EWriteA:
+	ld	a, (hl)
+	or	a
+	ret	z
+	ldi
+	jr	_EWriteA
+	
+
+_EWriteH:
+	pop	bc
+	push	bc
+	ld	b, 2
+	call	zp.atoh
+	pop	bc
+	jp	c, _HexError
+	ld	a, l
+	ld	(bc), a
+	inc	bc
+	ld	a, (de)
+	or	a
+	jr	nz, _EWriteH+1
+	ret
+
+_Search:
+	ld	hl, _str_search
+	call	_DispCommand
+
+	ld	de, os.command
+	ld	a, (_mode)
+	or	a
+	jr	nz, _SAsc
+	ld	ix, os.command
+	ld	c, 0
+_SConvHex:
+	ld	b, 2
+	call	zp.atoh
+	jp	c, _HexError
+	ld	(ix), l
+	inc	ix
+	inc	c
+	ld	a, (de)
+	or	a
+	jr	nz, _SConvHex
+	jr	_SDoSearch
+
+_SAsc:
+	ld	hl, os.command
+	call	zp.strlen
+_SDoSearch:
+	call	_Get_Cur_Address
+	ld	ixh, c
+	ld	de, os.command
+	ld	bc, 65535
+_SBegin:
+	ld	a, (de)
+	cpir
+	push	de
+	push	ix
+_SStep:
+	inc	de
+	dec	ixh
+	jr	z, _SFound
+	ld	a, (de)
+	cpi
+	jr	z, _SStep
+_SFound:
+	pop	ix
+	pop	de
+	jr	nz, _SBegin
+	ld	d, 0
+	ld	e, ixh
+	sbc	hl, de
+	ld	(_address), hl
+	inc	hl
+	push	hl
+	ld	hl, _str_found
+	jp	_C2
+
+_Fill:
+	call	_Func_AddressTest
+
+	ld	hl, _str_fill
+	call	_DispCommand
+	call	_ParseFS
+	call	_Get_Cur_Address
+	ld	a, b
+	or	c
+	jp	z, _inkey
+_Fill_Loop:
+	ld	(hl), e
+	inc	hl
+	dec	bc
+	ld	a, b
+	or	c
+	jr	nz, _Fill_Loop
+	ret	
+	
+_Get_Cur_Address:
+	ld	hl, (_address)
+	ld	a, (_cur_y)
+	add	a, a
+	add	a, a
+	add	a, a
+	ld	e, a
+	ld	a, (_cur_x)
+	add	a, e
+	offset_hl
+	ret
+
+	pop	af
+_HexError:
+	ld	a, CMD_PANE
+	call	zp.clrline
+	ld	hl, _str_hex
+_HE2:
+	ld	bc, CMD_PANE*256+0
+	call	zp.puts_con
+	ld	a, CMD_PANE
+	call	zp.displine
+	call	zp.getch
+	ret
+
+_InputError:
+	ld	a, CMD_PANE
+	call	zp.clrline
+	ld	hl, _str_input
+	ld	bc, CMD_PANE*256+0
+	call	zp.puts_con
+	ld	a, CMD_PANE
+	call	zp.displine
+	call	zp.getch
+	ret
+
+; Parse for FIND and SEARCH:
+; <hex16> <hex8/ascii8>
+_ParseFS:
+	call	_Func_UnivParse
+	push	bc
+	jr	c, _HexError-1
+	ld	a, (_mode)
+	or	a
+	ld	a, (de)
+	ld	l, a
+	ld	b, 2
+	call	z, zp.atoh
+	jr	c, _HexError-1
+	ld	d, h
+	ld	e, l
+	pop	bc
+	ret
+
+; Parse for COMPARE:
+; <hex16> <hex16>
+_ParseC:
+	call	_Func_UnivParse
+	push	bc
+	jr	c, _HexError-1
+	ld	b, 4
+	call	zp.atoh
+	jr	c, _HexError-1
+	ld	d, h
+	ld	e, l
+	pop	bc
+	ret
+
+
+; Rebuild the display from nothing
+_Refresh:
+	ld	a, MSG_PANE
+	call	zp.clrline
+	ld	a, CMD_PANE
+	call	zp.clrline
+
+	ld	hl, (_address)
+	ld	bc, 0
+
+_Refresh_Line:
+	push	bc
+
+	ld	de, _string
+	call	zp.htoa_word
+	ld	a, ':'
+	ld	(de), a
+	inc	de
+	ld	a, ' '
+	ld	(de), a
+	inc	de
+
+	call	_Func_Conv
+	call	_Func_Conv
+	call	_Func_Conv
+	call	_Func_Conv
+
+	pop	bc
+	push	bc
+
+	ld	de, _string
+_Refresh_Write:
+	ld	a, (de)
+	inc	de
+	call	zp.putch_con
+	inc	c
+	ld	a, c
+	cp	22
+	jp	nz, _Refresh_Write
+
+	pop	bc
+	ld	a, b
+	add	a, 6
+	ld	b, a
+	cp	8*6
+	jp	nz, _Refresh_Line
+
+	call	_XORCursor
+	call	zp.vbufdisp
+	jp	_loop
+
+_XORCursor:
+	ld	hl, (_cur_y)
+	ld	a, h
+	ld	h, 0
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	ld	d, h
+	ld	e, l
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	add	hl, de
+	add	a, 3
+	offset_hl
+	ld	de, os.lcd.mem
+	add	hl, de
+	ld	b, 6
+	ld	de, 12
+_InvLoop:
+	ld	a, (hl)
+	cpl
+	ld	(hl), a
+	add	hl, de
+	djnz	_InvLoop
+	ret
+
+_DispCommand:
+	ld	a, MSG_PANE		; Display function name
+	call	zp.clrline
+	ld	bc, MSG_PANE*256
+	call	zp.puts_con
+	ld	a, MSG_PANE
+	call	zp.invline
+	ld	a, MSG_PANE
+	call	zp.displine
+	ld	ix, 0
+	ld	a, 128
+	ld	hl, os.command
+	ld	(os.command_buf), hl
+	ld	(os.command_buf + 2), a
+	jp	zp.cgets
+
+
+; Bunches of silly functions to shorten code size
+
+; Code used by both parsing functions
+_Func_UnivParse:
+	ld	hl, os.command
+	call	zp.tokenize
+	
+	; check for at least two args
+	cp	2
+	ret	c
+	
+	ex	de, hl
+	ld	b, 4
+	call	zp.atoh
+	ret	c
+	ld	b, h
+	ld	c, l
+	ret
+
+_Func_PrepCursor:
+	call	_XORCursor		; Erase cursor highlight
+	ld	hl, (_cur_y)
+	ret
+
+; Convert bytes to ASCII or Hex
+_Func_Conv:
+	ld	a, (_mode)
+	or	a
+	jr	z, _Func_Conv_Hex
+
+	ld	a, ' '
+	ldi
+	ld	(de), a
+	inc	de
+	ldi
+	ld	(de), a
+	inc	de
+	ret
+
+_Func_Conv_Hex:
+	ld	b, (hl)
+	inc	hl
+	ld	c, (hl)
+	inc	hl
+	push	hl
+	ld	h, b
+	ld	l, c
+	call	zp.htoa_word
+	pop	hl
+	ret
+
+; Test if in Flash
+; todo : check port based on address
+_Func_AddressTest:
+	call	_Get_Cur_Address
+	pop	de
+	bit	7, h
+	jp	z, _inkey
+	push	de
+	ret
+;			"0         1         2   "
+;			"012345678901234567890123"
+_str_comp	.db	"COMPARE MEMORY", 0
+_str_enter	.db	"ENTER STRING", 0
+_str_fill	.db	"FILL MEMORY", 0
+_str_goto	.db	"GO TO ADDRESS", 0
+_str_bank	.db	"SELECT BANK (A/B/C)", 0
+_str_page	.db "SELECT PAGE", 0
+_str_set	.db	"SET BYTE", 0
+_str_hex	.db	"Invalid Hex Value", 0
+_str_input	.db "Invalid input value", 0
+_str_match	.db	"Memory matches", 0
+_str_mismatch	.db	"Mismatch at ", 0
+_str_search	.db	"SEARCH", 0
+_str_found	.db	"String found at ", 0
+
+_str_help:
+	.db "Hex Editor Help\n"
+	.db "C:compare E:enter string"
+	.db "F:fill    G:goto address"
+	.db "K:page up L:page down   "
+	.db "M:mode    P:set page map"
+	.db "Q:quit    S:search"
+	.db 0
+
+.echo	"Hex Editor\t"
+.echo	$-app.hexedit
+.echo	"\n"
+
+.end

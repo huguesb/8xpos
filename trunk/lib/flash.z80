@@ -1,0 +1,577 @@
+.nocodes
+;Copyright (c) 2009, Luc BRUANT aka fullmetalcoder, unless notified otherwise
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.codes
+
+;
+; quick Flash "doc" taken from PongOS (thanks to Benjamin Moody aka FloppusMaximus)
+;
+
+;;; A "brief" introduction to the FlashROM is perhaps in order.
+
+;;; Commands are sent to the Flash chip by ordinary write cycles.
+;;; Keep in mind that a physical address pppppdddddddddddddd
+;;; corresponds to a logical address 000ppppp:01dddddddddddddd.
+
+;;; Any unrecognized command, including an attempt to read data, will
+;;; reset the chip.  Thus you cannot execute code to write Flash from
+;;; within Flash; the code must be copied into RAM and executed there.
+
+;;; When the chip is busy programming or erasing, commands written are
+;;; usually ignored.  Reading from the appropriate address will give
+;;; status information.
+
+;;;  <AA>: Write AA to address *AAAA
+;;;  <55>: Write 55 to address *5555
+;;;  [nn]: Write nn to address *AAAA
+;;;  (nn): Write nn to any relevant address
+;;;  {nn}: Write nn anywhere, address doesn't matter
+
+;;; The commands for the BE (AMD Am29F400B) are:
+;;;
+;;;  {30}                        Resume suspended erase operation
+;;;
+;;;  <AA><55>[80]<AA><55>[10]    Automatically erase entire chip
+;;;
+;;;  <AA><55>[80]<AA><55>(30)    Automatically erase single sector
+;;;
+;;;  <AA><55>[90]                Read auto-select data
+;;;                               (device ID, manufacturer, and sector
+;;;                               protect states; used by an embedded
+;;;                               device that supports many similar
+;;;                               Flash chips but doesn't know which
+;;;                               will be used; unneeded since the
+;;;                               TI's provide port 2 for this
+;;;                               purpose)
+;;;
+;;;  <AA><55>[A0](xx)            Program one byte
+;;;
+;;;  {B0}                        Temporarily suspend current erase operation
+;;;
+;;;  {F0}                        Reset (return to read mode)
+
+;;; The SE (Fujitsu MBM29LV160) supports all of the above plus:
+;;;
+;;;  <AA><55>[20]                Enable fast programming mode
+;;;
+;;;  {90}{F0}                    Exit fast mode
+;;;
+;;;  {A0}(xx)                    Program one byte while in fast mode
+;;;
+;;;  [98]                        Read CFI (Common Flash Interface) data
+;;;                               (a generalization of the same
+;;;                               concept as autoselect; the system
+;;;                               can find out everything it needs to
+;;;                               know -- size of the chip, sizes of
+;;;                               sectors, supported command set --
+;;;                               and a whole lot more besides.
+;;;                               Again, the TI's don't need this.)
+
+;;; If you want to write your own code for accessing Flash, you should
+;;; of course read the official documentation, particularly the
+;;; section on the status bits.
+
+;;; AMD says that the chip will usually take about 7 microseconds to
+;;; program one byte.  It will vary.
+
+;;; It will take about one *second* to erase a sector (plus the time
+;;; it takes to automatically program every bit in the sector.)  It
+;;; might be nice to try to get some useful work done in that time.
+
+;
+; some code has been taken from PongOS so GPL apply to it.
+;
+; the list of methods that are thus under GPL as derived works are :
+; 	* vect_flashwrite_code
+; 	* vect_flashwrite_code_se
+;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;                                                           ;;
+;;  PongOS -- what it sounds like                            ;;
+;;                                                           ;;
+;;  Version 0.1                                              ;;
+;;                                                           ;;
+;;  Benjamin Moody                                           ;;
+;;                                                           ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;                                                           ;;
+;;  This program is free software; you can redistribute      ;;
+;;  and/or modify it under the terms of the GNU General      ;;
+;;  Public License as published by the Free Software         ;;
+;;  Foundation; either version 2 of the License, or (at      ;;
+;;  your option) any later version.                          ;;
+;;                                                           ;;
+;;  This program is distributed in the hope that it will be  ;;
+;;  useful, but WITHOUT ANY WARRANTY; without even the       ;;
+;;  implied warranty of MERCHANTABILITY or FITNESS FOR A     ;;
+;;  PARTICULAR PURPOSE. See the GNU General Public License   ;;
+;;  for more details.                                        ;;
+;;                                                           ;;
+;;  You should have received a copy of the GNU General       ;;
+;;  Public License along with this program; if not, write    ;;
+;;  to the Free Software Foundation, Inc., 59 Temple Place   ;;
+;;  - Suite 330, Boston, MA 02111 USA.                       ;;
+;;                                                           ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;
+; note : this code MUST be executed from RAM so it has to be
+; "Position Independent" which means no absolute jumps and no
+; calls can be used...
+;
+vect_flashwrite_code.start:
+
+vect_flashwrite_code.done:
+	; reset flash chip (address doesn't matter...)
+	ld	a, $F0
+	ld	($0000), a
+	
+	; success
+	or	a
+	ret
+	
+vect_flashwrite_code.RAM:
+	ld	de, $8000 + vect_flashwrite_code.size
+	cmp_hlde
+	jr	nc, vect_flashwrite_code.noswap
+	ld	de, os.scrap - $8000
+	add	hl, de
+	jr	vect_flashwrite_code.noswap
+	
+vect_flashwrite_code:
+	; bc -> size of data to be copied
+	; os.flashwrite.* -> source and destination (two 3 bytes addresses : logical 16 bit address + 8 bit page
+	
+vect_flashwrite_code.loop:
+	; check for end of write operation
+	;ld	hl, (os.flashwrite.size)
+	ld	a, b
+	or	c
+	jr	z, vect_flashwrite_code.done
+	
+	; get source
+	ld	hl, (os.flashwrite.source)
+	ld	a, h
+	; address RAM (range $8000-$FFFF actually but that's all we care about) ?
+	rlca
+	jr	c, vect_flashwrite_code.RAM
+	; address in OS code (range $0000-$3FFF actually but again that's all we care about) ?
+	rlca
+	jr	nc, vect_flashwrite_code.noswap
+	; swap page if needed
+	ld	a, (os.flashwrite.source + 2)
+	out	(map_bankA_port), a
+vect_flashwrite_code.noswap:
+	ld	d, (hl)
+	
+	di
+	
+	; reset flash chip (address doesn't matter...)
+	ld	a, $F0
+	ld	($0000), a
+	
+	; Electron dance (thanks to FloppusMaximus for PongOS code)
+	
+	; <AA>
+	ld	a, 2
+	out	(6), a
+	ld	a, $AA
+	ld	($6AAA), a
+	
+	; <55>
+	ld	a, 1
+	out	(6), a
+	ld	a, $55
+	ld	($5555), a
+	
+	; [AO]
+	ld	a, 2
+	out	(6), a
+	ld	a, $A0
+	ld	($6AAA), a
+	
+	; (xx) : write actual bytes
+	ld	a, (os.flashwrite.dest + 2)
+	out (map_bankA_port), a
+	; make sure no stupid (stupid!!!) ignorant caller tries to program a 1 over a 0 (yeah,
+	; flash ROM kinda sucks...) : if we didn't do that best case would be proper error
+	; handling and average case would be system crash...
+	ld	hl, (os.flashwrite.dest)
+	;ld	a, (hl)
+	;cpl
+	;and	e
+	;jr	nz, vect_flashwrite_code.error
+	ld	(hl), 0
+	
+	; update source and dest addresses as needed (write will take some time
+	; so better do it now instead of wasting time waiting and doing it afterwards...)
+	; note : we assume that ranges do not span over multiple pages, "packet spliting"
+	; is left to the caller...
+	inc	hl
+	ld	(os.flashwrite.dest), hl
+	ld	hl, (os.flashwrite.source)
+	inc	hl
+	ld	(os.flashwrite.source), hl
+	dec	bc
+	ld	(os.flashwrite.size), bc
+	
+	ld	a, d
+	and	$80
+	ld	d, a
+	
+	; wait for write to be finished before going on
+	; the write operation is complete once the MSB
+	; of the written byte is correct
+vect_flashwrite_code.wait:
+	ld	a, (hl)
+	xor	d
+	rlca
+	jr	nc, vect_flashwrite_code.done
+	; if there was an error bit 5 (now 6 after rotation) is set
+	bit	6, a
+	jr	z, vect_flashwrite_code.wait
+	; AMD says to re-check in case you chose to read the status at just the wrong time.
+	ld	a, (hl)
+	xor	d
+	rlca
+	jr	nc, vect_flashwrite_code.wait
+	
+vect_flashwrite_code.error:
+	; reset flash chip (address doesn't matter...)
+	ld	a, $F0
+	ld	($0000), a
+	
+	; failure
+	scf
+	ret
+
+vect_flashwrite_code.end:
+
+vect_flashwrite_code.size = vect_flashwrite_code.end - vect_flashwrite_code.start
+vect_flashwrite_code.entry = vect_flashwrite_code - vect_flashwrite_code.start
+
+.echo "Flashwrite code :"
+.echo "\n * Entry offset : "
+.echo vect_flashwrite_code.entry
+.echo "\n * Size : "
+.echo vect_flashwrite_code.size
+.echo "\n"
+
+#if vect_flashwrite_code.size > 256
+!!!
+.echo "Cmon shrink that flashwrite code..."
+#endif
+
+;
+; flashwrite code "tuned" for SE calculators (flash chips with fast mode)
+;
+vect_flashwrite_code_se.start
+
+vect_flashwrite_code_se.done:
+	; reset flash chip (address doesn't matter...)
+	ld	a, $F0
+	ld	($0000), a
+	
+	; success
+	or	a
+	ret
+	
+vect_flashwrite_code_se.RAM:
+	ld	de, $8000 + vect_flashwrite_code.size
+	cmp_hlde
+	jr	nc, vect_flashwrite_code.noswap
+	ld	de, os.scrap - $8000
+	add	hl, de
+	jr	vect_flashwrite_code.noswap
+	
+vect_flashwrite_code_se:
+	; bc -> size of data to be copied
+	; os.flashwrite.* -> source and destination (two 3 bytes addresses : logical 16 bit address + 8 bit page 
+	
+	; reset flash chip (address doesn't matter...)
+	ld	a, $F0
+	ld	($0000), a
+	
+	; Electron dance (thanks to FloppusMaximus for PongOS code)
+	
+	; enter fast mode
+	
+	; <AA>
+	ld	a, 2
+	out	(6), a
+	ld	a, $AA
+	ld	($6AAA), a
+	
+	; <55>
+	ld	a, 1
+	out	(6), a
+	ld	a, $55
+	ld	($5555), a
+	
+	; [2O]
+	ld	a, 2
+	out	(6), a
+	ld	a, $20
+	ld	($6AAA), a
+	
+vect_flashwrite_code_se.loop:
+	; check for end of write operation
+	;ld	hl, (os.flashwrite.size)
+	ld	a, b
+	or	c
+	jr	z, vect_flashwrite_code_se.done
+	
+	; get source
+	ld	hl, (os.flashwrite.source)
+	ld	a, h
+	; address RAM (range $8000-$FFFF actually but that's all we care about) ?
+	rlca
+	jr	c, vect_flashwrite_code_se.RAM
+	; address in OS code (range $0000-$3FFF actually but again that's all we care about) ?
+	rlca
+	jr	nc, vect_flashwrite_code_se.noswap
+	; swap page if needed
+	ld	a, (os.flashwrite.source + 2)
+	out	(map_bankA_port), a
+vect_flashwrite_code_se.noswap:
+	ld	d, (hl)
+	
+	; faste mode "pre-write"
+	ld	a, $A0
+	ld	($0000), a
+	
+	; (xx) : write actual bytes
+	ld	a, (os.flashwrite.dest + 2)
+	out (map_bankA_port), a
+	ld	hl, (os.flashwrite.dest)
+	ld	(hl), d
+	
+	; update source and dest addresses as needed (write will take some time
+	; so better do it now instead of wasting time waiting and doing it afterwards...)
+	; note : we assume that ranges do not span over multiple pages, "packet spliting"
+	; is left to the caller...
+	inc	hl
+	ld	(os.flashwrite.dest), hl
+	ld	hl, (os.flashwrite.source)
+	inc	hl
+	ld	(os.flashwrite.source), hl
+	dec	bc
+	ld	(os.flashwrite.size), bc
+	
+	ld	a, d
+	and	$80
+	ld	d, a
+	
+	; wait for write to be finished before going on
+	; the write operation is complete once the MSB
+	; of the written byte is correct
+vect_flashwrite_code_se.wait:
+	ld	a, (hl)
+	xor	d
+	rlca
+	jr	nc, vect_flashwrite_code_se.loop
+	; if there was an error bit 5 (now 6 after rotation) is set
+	bit	6, a
+	jr	z, vect_flashwrite_code_se.wait
+	; AMD says to re-check in case you chose to read the status at just the wrong time.
+	ld	a, (hl)
+	xor	d
+	rlca
+	jr	nc, vect_flashwrite_code_se.wait
+	
+vect_flashwrite_code_se.error:
+	; exit fast mode
+	ld	a, $A0
+	ld	($0000), a
+	ld	a, $F0
+	ld	($0000), a
+	
+	; reset flash chip (may be unnecesary after fast mode exit)
+	ld	a, $F0
+	ld	($0000), a
+	
+	; failure
+	scf
+	ret
+
+vect_flashwrite_code_se.end:
+
+vect_flashwrite_code_se.size = vect_flashwrite_code_se.end - vect_flashwrite_code_se.start
+vect_flashwrite_code_se.entry = vect_flashwrite_code_se - vect_flashwrite_code_se.start
+
+.echo "Flashwrite code SE :"
+.echo "\n * Entry offset : "
+.echo vect_flashwrite_code_se.entry
+.echo "\n * Size : "
+.echo vect_flashwrite_code_se.size
+.echo "\n"
+
+
+#if vect_flashwrite_code_se.size > 256
+!!!
+.echo "Cmon shrink that flashwrite code..."
+#endif
+
+; brief : copies memory from Flash/RAM to Flash 
+; input : os.flashwrite.*
+; output : none
+; destroys : a, hl, de, bc, memory at os.scrap
+vect_flashwrite:
+	in	a, (map_bankB_port)
+	push	af
+	
+	; if a program is running we need to backup part of its code
+	or	a
+	ld	hl, os.flags
+	bit prgm_running, (hl)
+	call	nz, vect_flashwrite.backup
+	
+	; debug
+	ld	hl, (os.flashwrite.size)
+	ld	de, os.scrap
+	call	zp.htoa_word
+	xor	a
+	ld	(de), a
+	ld	hl, os.scrap
+	call	zp.cputs
+	call	zp.cdisp
+	
+	; copy code to RAM (on an page without exec protection!!!)
+	; TODO : select code based on calc model
+	call	zp.hw_version
+	or	a
+	jr	z, vect_flashwrite_be
+	; all SE equally treated
+	; 3 words per table "entry"
+	ld	a, 1 * 6
+vect_flashwrite_be:
+	ld	h, 0
+	ld	l, a
+	ld	de, vect_flashwrite_code.table
+	add	hl, de
+	
+	ld	c, (hl)
+	inc	hl
+	ld	b, (hl)
+	inc	hl
+	call	zp.deref_hl_alt
+	deref_hl
+	push	hl
+	ex	de, hl
+	ld	de, $8000
+	ldir
+	
+	; unlock flash
+	;ld	hl, vect_flash_unlock
+	;call	restricted_syscall
+	
+	; assume being on page 1C
+	call	vect_flash_unlock
+	
+	pop	hl
+	
+	; preserve interrupt status
+	ld	a, i
+	push	af
+	
+	; make sure the command sending is not interrupted
+	; -> remember : Flash must not be read during that time
+	; which means no OS code must ever be called (including
+	; but not limited to the system ISR)
+	di
+	
+	ld	bc, (os.flashwrite.size)
+	ld	de, $8000
+	add	hl, de
+	
+	; call actual copy code
+	call zp.call_hl
+	
+	pop	af
+	out	(map_bankB_port), a
+	ret
+	
+	; reorder stack
+	pop	hl
+	pop	de
+	push	af
+	push	de
+	push	hl
+	
+	; restore interrupt status
+	pop	af
+	jp	po, $+4
+	ei
+	
+	; relock flash
+	;ld	hl, vect_flash_lock
+	;call	restricted_syscall
+	
+	; assume being on page 1C
+	call	vect_flash_lock
+	
+	; if a program is running we need to restore the code we backed up
+	ld	hl, os.flags
+	bit prgm_running, (hl)
+	scf
+	call	nz, vect_flashwrite.backup
+	
+	pop	af
+	out	(map_bankB_port), a
+	
+	pop	af
+	
+	call	c, zp.throw_memory
+	
+	call	zp.getch
+	
+	ret
+
+; CF set for restore, reset for backup
+vect_flashwrite.backup:
+	ld	hl, $8000
+	ld	de, os.scrap
+	ld	bc, vect_flashwrite_code.size
+	
+	jr	nc, $+3
+	ex	de, hl
+	
+	ldir
+	ret
+
+vect_flashwrite_code.table:
+	; 83+
+	.dw	vect_flashwrite_code.size
+	.dw	vect_flashwrite_code.start
+	.dw	vect_flashwrite_code.entry
+	; SE
+	.dw	vect_flashwrite_code_se.size
+	.dw	vect_flashwrite_code_se.start
+	.dw	vect_flashwrite_code_se.entry
+
+; erase an entire flash sector (smallest possible thing to erase and erase required
+; before anything may be written to areas already written to) (yeah, flash REALLY sucks...)
+vect_flasherase:
+	
+	
+	ret

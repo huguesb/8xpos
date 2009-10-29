@@ -1,0 +1,894 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+; This file reuses code from CSX (same licensing terms, see above) :
+;Copyright (c) 2004, Sean McLaughlin.
+.list
+
+.nolist
+#include "xos.inc"
+.list
+
+#define _TIOS_COMPAT_
+
+; hooks : 56 T-states overhead, 6 bytes
+#define add_hook(label) push	hl \ ld	hl, (label) \ ex	(sp), hl \ ret
+
+#define VERSION "OSX 0.01"
+#define MODEL   "TI-8x+ xE"
+
+PAGE = $00
+
+.org	$0000
+	jp	init
+
+zp.deref_hl_alt:	.export zp.deref_hl_alt
+	ld	e, (hl)
+	inc	hl
+	ld	d, (hl)
+	inc	hl
+	ret
+
+; RST 08 - Load HL indirect
+#if $ > $0008
+!!!
+.echo	"OH NOES!!!111\n\n"
+#endif
+.org	$0008
+	jp	compat.rst08
+LCD_BUSY_QUICK: ; 52 T-states (+17 for call -> 69)
+	push	af
+	push	hl
+	pop	hl
+	pop	af
+	ret
+
+; rst 10h - Compare HL and DE nd (same flag as 8bit cp)
+#if $ > $0010
+!!!
+.echo	"OH NOES!!!111\n\n"
+#endif
+.org	$0010
+	add_hook(os.hook.rst10)
+
+#if $ > $0016
+!!!
+.echo	"OH NOES!!!111\n\n"
+#endif
+.org	$0016
+zp.call_ix:	.export zp.call_ix
+	jp	(ix)
+
+; rst 18h - Read keypad port
+#if $ > $0018
+!!!
+.echo	"OH NOES!!!111\n\n"
+#endif
+.org	$0018
+	add_hook(os.hook.rst18)
+
+#if $ > $001F
+!!!
+.echo	"OH NOES!!!111\n\n"
+#endif
+.org	$001F
+zp.call_hl:	.export zp.call_hl
+	jp	(hl)
+
+; rst 20h - Add accumulator to HL
+#if $ > $0020
+!!!
+.echo	"OH NOES!!!111\n\n"
+#endif
+.org	$0020
+	add_hook(os.hook.rst20)
+
+#if $ > $0026
+!!!
+.echo	"OH NOES!!!111\n\n"
+#endif
+.org	$0026
+zp.call_iy:	.export zp.call_iy
+	jp	(iy)
+
+; rst 28h - Off-page call (dead weight) (TI-OS binary compat???)
+#if $ > $0028
+!!!
+.echo	"OH NOES!!!111\n\n"
+#endif
+.org	$0028
+	jp	compat.bcall
+
+; Non-destructive compare of HL and BC
+zp.cmp_hlbc:	.export zp.cmp_hlbc
+	cmp_hlbc
+	ret
+
+; rst 30h - Invoke user-defined SWI
+#if $ > $0030
+!!!
+.echo	"OH NOES!!!111\n\n"
+#endif
+.org	$0030
+	add_hook(os.hook.rst30)
+
+; rst 38h - ISR
+#if $ > $0038
+!!!
+.echo	"OH NOES!!!111\n\n"
+#endif
+.org	$0038
+	ex	af, af'
+	exx
+	
+	; 84+ : handle USB events if any
+	in	a, (hw_port)
+	bit 5, a
+	call	z, isr.usb_check
+	
+	; crystal timers
+	call	isr.timers
+	
+	; go on with normal ISR
+	ld	hl, os.flags
+	
+	in	a, (irq_stat_port)
+	and	$08
+
+	jp	isr.continue
+
+#if $ > $0050
+!!!
+.echo	"OH NOES!!!111\n\n"
+#endif
+.org	$0050
+	jp	compat.bjump
+
+; Boot code comes here
+#if $ > $0053
+!!!
+.echo	"OH NOES!!!111\n\n"
+#endif
+.org	$0053
+	jp	init
+
+; Validated OS
+.dw	$A55A
+
+; Compare HL and DE (destroys A) : 24/31 T-states (best case better than _nd by 6 T-states)
+zp.cmp_hlde_d:	.export zp.cmp_hlde_d
+	ld	a, h	; 4
+	cp	d		; 4
+	ret	nz		; 10/5
+	ld	a, l	; 4
+	cp	e		; 4
+	ret			; 10
+
+; Compare HL and BC (destroys A)
+zp.cmp_hlbc_d:	.export zp.cmp_hlbc_d
+	ld	a, h
+	cp	b
+	ret	nz
+	ld	a, l
+	cp	c
+	ret
+
+; Version number string
+#if $ > $0064
+!!!
+.echo	"OH NOES!!!111\n\n"
+#endif
+.org	$0064
+
+os.version:	.export os.version
+.db	VERSION, 0
+os.calcmodel:
+.db	MODEL, 0
+
+; probably not necessary but interesting for binary compat
+#if $ > $0080
+!!!
+.echo	"OH NOES!!!111\n\n"
+#endif
+.org	$0080
+
+; beware not to change these (size, order, ...). exported addresses
+; must remain the same for binary compat (backward and forward)
+
+; brief : hl = max(hl, de)
+zp.max_hlde:	.export zp.max_hlde
+	or	a
+	sbc	hl, de
+	jr	c, $+4
+	add	hl, de
+	ret
+	ld	h, d
+	ld	l, e
+	ret
+
+; brief : hl = max(hl, bc)
+zp.max_hlbc:	.export zp.max_hlbc
+	or	a
+	sbc	hl, bc
+	jr	c, $+4
+	add	hl, bc
+	ret
+	ld	h, b
+	ld	l, c
+	ret
+
+; brief : hl = min(hl, de)
+zp.min_hlde:	.export zp.min_hlde
+	or	a
+	sbc	hl, de
+	jr	nc, $+4
+	add	hl, de
+	ret
+	ld	h, d
+	ld	l, e
+	ret
+
+; brief : hl = min(hl, bc)
+zp.min_hlbc:	.export zp.min_hlbc
+	or	a
+	sbc	hl, bc
+	jr	nc, $+4
+	add	hl, bc
+	ret
+	ld	h, b
+	ld	l, c
+	ret
+
+zp.deref_hl:	.export zp.deref_hl
+	push	af
+	deref_hl
+	pop	af
+	ret
+
+zp.cmp_hlde:	.export zp.cmp_hlde
+	cmp_hlde
+	ret
+
+zp.rowread:	.export zp.rowread
+	rowread
+	ret
+
+zp.offset_hl:	.export	zp.offset_hl
+	offset_hl
+	ret
+
+#include "isr.z80"
+
+#include "page1C.exp"
+
+#include "init.z80"
+
+#include "console.z80"
+
+.echo "OS base code : "
+.echo $
+.echo " bytes\n"
+
+#if $ > $0400
+!!!
+.echo "Base OS code must not exceed 1024 bytes !!!\n\n"
+#endif
+.org $0400
+
+; im2 helper address byte
+im2ab = $05
+
+; some macros to pack interrupt table
+#define im2tbl_8 im2ab, im2ab, im2ab, im2ab, im2ab, im2ab, im2ab, im2ab
+
+; im2 helper table
+.db im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8
+.db im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8
+.db im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8
+.db im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8, im2tbl_8
+; just in case...
+.db im2ab
+
+; room for four bytes
+
+.org	$0505
+	; jump to custom ISR
+	push	hl
+	ld	hl, (os.im2.isr)
+	ex	(sp), hl
+	ret
+
+zp.syscalls:
+
+zp.hw_version:			.export	zp.hw_version
+	jp	vect_hw_version
+zp.hw_str:				.export	zp.hw_str
+	jp	vect_hw_str
+zp.bootcode_version:	.export	zp.bootcode_version
+	jp	vect_bootcode_version
+zp.bootcode_str:		.export	zp.bootcode_str
+	jp	vect_bootcode_str
+zp.os_version:			.export	zp.os_version
+	jp	vect_os_version
+zp.os_str:				.export	zp.os_str
+	jp	vect_os_str
+
+zp.battery_level:		.export	zp.battery_level
+	jp	vect_battery_level
+
+zp.getch:				.export	zp.getch
+	jp	vect_getch
+zp.getch_nohalt:		.export	zp.getch_nohalt
+	jp	vect_getch_nohalt
+zp.getkey:				.export zp.getkey
+	jp	vect_getkey
+
+
+zp.putch_con:			.export	zp.putch_con
+	jp	vect_putch_con
+zp.puts_con:			.export	zp.puts_con
+	jp	vect_puts_con
+zp.putsn_con:			.export	zp.putsn_con
+	jp	vect_putsn_con
+zp.putch_6x8:			.export	zp.putch_6x8
+	jp	vect_putch_6x8
+zp.puts_6x8:			.export	zp.puts_6x8
+	jp	vect_puts_6x8
+
+zp.vbufcopy:			.export	zp.vbufcopy
+zp.vbufdisp:			.export	zp.vbufdisp
+	jp	vect_vbufdisp
+zp.displine:			.export	zp.displine
+	jp	vect_displine
+zp.invline:				.export	zp.invline
+	jp	vect_invline
+
+; zp.putch_var:			.export	zp.putch_var
+; 	jp	vect_putch_var
+; zp.puts_var:			.export	zp.puts_var
+; 	jp	vect_puts_var
+
+zp.atoh:				.export	zp.atoh
+	jp	vect_atoh
+zp.atod:				.export	zp.atod
+	jp	vect_atod
+zp.atod_version:		.export	zp.atod_version
+	jp	vect_atod_version
+
+zp.htoa_word:			.export	zp.htoa_word
+	jp	vect_htoa_word
+zp.htoa_dword:			.export	zp.htoa_dword
+	jp	vect_htoa_dword
+zp.htoa_byte:			.export	zp.htoa_byte
+	jp	vect_htoa_byte
+zp.htoa_nibble:			.export	zp.htoa_nibble
+	jp	vect_htoa_nibble
+zp.dtoa_byte:			.export	zp.dtoa_byte
+	jp	vect_dtoa_byte
+zp.dtoa_word:			.export	zp.dtoa_word
+	jp	vect_dtoa_word
+zp.btoa_byte:			.export	zp.btoa_byte
+	jp	vect_btoa_word
+zp.btoa_word:			.export	zp.btoa_word
+	jp	vect_btoa_word
+zp.btoa_dword:			.export	zp.btoa_dword
+	jp	vect_btoa_dword
+
+zp.strcmp:				.export	zp.strcmp
+	jp	vect_strcmp
+zp.strncmp:				.export	zp.strncmp
+	jp	vect_strncmp
+zp.strcpy:				.export	zp.strcpy
+	jp	vect_strcpy
+zp.strncpy:				.export	zp.strncpy
+	jp	vect_strncpy
+zp.strlen:				.export	zp.strlen
+	jp	vect_strlen
+zp.strupr:				.export	zp.strupr
+	jp	vect_strupr
+zp.strend:				.export	zp.strend
+	jp	vect_strend
+zp.strnext:				.export	zp.strnext
+	jp	vect_strnext
+zp.strcat:				.export	zp.strcat
+	jp	vect_strcat
+
+zp.findstr:				.export	zp.findstr
+	jp	vect_findstr
+zp.tokenize:			.export	zp.tokenize
+	jp	vect_tokenize
+
+zp.cclear:				.export	zp.cclear
+	jp	vect_cclear
+zp.cdisp:				.export	zp.cdisp
+	jp	vect_cdisp
+zp.cgets:				.export	zp.cgets
+	jp	vect_cgets
+zp.clrline:				.export	zp.clrline
+	jp	vect_clrline
+zp.vbufclr:				.export	zp.vbufclr
+zp.clrscr:				.export	zp.clrscr
+	jp	vect_clrscr
+zp.cprint:				.export	zp.cprint
+	jp	vect_cprint
+zp.cputch:				.export	zp.cputch
+	jp	vect_cputch
+zp.cputs:				.export	zp.cputs
+	jp	vect_cputs
+zp.credraw:				.export	zp.credraw
+	jp	vect_credraw
+zp.cscroll:				.export	zp.cscroll
+	jp	vect_cscroll
+zp.csetpos:				.export	zp.csetpos
+	jp	vect_csetpos
+
+zp.mult_h_e:			.export	zp.mult_h_e
+	jp	vect_mult_h_e
+zp.mult_a_de:			.export	zp.mult_a_de
+	jp	vect_mult_a_de
+zp.mult_de_bc:			.export	zp.mult_de_bc
+	jp	vect_mult_de_bc
+
+zp.div_d_e:				.export	zp.div_d_e
+	jp	vect_div_d_e
+zp.div_hl_c:			.export	zp.div_hl_c
+	jp	vect_div_hl_c
+zp.div_ac_de:			.export	zp.div_ac_de
+	jp	vect_div_ac_de
+zp.div_ehl_d:			.export	zp.div_ehl_d
+	jp	vect_div_ehl_d
+zp.div_abc_de:			.export	zp.div_abc_de
+	jp	vect_div_abc_de
+zp.div_dehl_c:			.export	zp.div_dehl_c
+	jp	vect_div_dehl_c
+
+zp.sqrt_la:				.export	zp.sqrt_la
+	jp	vect_sqrt_la
+
+zp.meminit:				.export	zp.meminit
+	jp	vect_meminit
+zp.meminfo:				.export	zp.meminfo
+	jp	vect_meminfo
+zp.malloc:				.export	zp.malloc
+	jp	vect_malloc
+zp.malloc_placed:		.export	zp.malloc_placed
+	jp	vect_malloc_placed
+zp.free:				.export	zp.free
+	jp	vect_free
+
+zp.meminit_iy:			.export	zp.meminit_iy
+	jp	vect_meminit_iy
+zp.malloc_iy:			.export	zp.malloc_iy
+	jp	vect_malloc_iy
+zp.malloc_placed_iy:	.export	zp.malloc_placed_iy
+	jp	vect_malloc_placed_iy
+zp.free_iy:				.export	zp.free_iy
+	jp	vect_free_iy
+
+zp.memswap:				.export	zp.memswap
+	jp	vect_memswap
+
+zp.file_initfs:			.export	zp.file_initfs
+	jp	vect_file_initfs
+zp.file_meminfo:		.export	zp.file_meminfo
+	jp	vect_file_meminfo
+zp.file_list:			.export	zp.file_list
+	jp	vect_file_list
+zp.file_find:			.export	zp.file_find
+	jp	vect_file_find
+zp.file_create:			.export	zp.file_create
+	jp	vect_file_create
+zp.file_delete:			.export	zp.file_delete
+	jp	vect_file_delete
+zp.file_nextchunk:		.export	zp.file_nextchunk
+	jp	vect_file_nextchunk
+zp.file_meta_find:		.export	zp.file_meta_find
+	jp	vect_file_meta_find
+zp.file_node_info:		.export	zp.file_node_info
+	jp	vect_file_node_info
+
+zp.throw:				.export	zp.throw
+	jp	vect_throw
+zp.throw_create:		.export	zp.throw_create
+	jp	vect_tcreate
+zp.throw_exist:			.export	zp.throw_exist
+	jp	vect_texist
+zp.throw_link:			.export	zp.throw_link
+	jp	vect_tlink
+zp.throw_locate:		.export	zp.throw_locate
+	jp	vect_tlocate
+zp.throw_memory:		.export	zp.throw_memory
+	jp	vect_tmemory
+zp.throw_checksum:		.export	zp.throw_checksum
+	jp	vect_tchecksum
+zp.throw_compat:		.export	zp.throw_compat
+	jp	vect_tcompat
+
+zp.input:				.export	zp.input
+	jp	vect_input
+zp.output:				.export	zp.output
+	jp	vect_output
+
+zp.enableLA:			.export	zp.enableLA
+	jp	vect_enableLA
+zp.disableLA:			.export	zp.disableLA
+	jp	vect_disableLA
+
+zp.can_read:			.export	zp.can_read
+	jp	vect_can_read
+zp.get_byte:			.export	zp.get_byte
+	jp	vect_get_byte
+zp.get_command:			.export	zp.get_command
+	jp	vect_get_command
+zp.get_data:			.export	zp.get_data
+	jp	vect_get_data
+zp.get_data_raw:		.export	zp.get_data_raw
+	jp	vect_get_data_raw
+zp.send_byte:			.export	zp.send_byte
+	jp	vect_send_byte
+zp.send_command_nodata:.export	zp.send_command_nodata
+	jp	vect_send_command_nodata
+zp.send_command_2bytes:	.export	zp.send_command_2bytes
+	jp	vect_send_command_2bytes
+zp.send_command:		.export	zp.send_command
+	jp	vect_send_command
+zp.send_error:		.export	zp.send_error
+	jp	vect_send_error
+
+zp.memdump:				.export	zp.memdump
+	jp	vect_memdump
+
+zp.timer_msleep:		.export	zp.timer_msleep
+	jp	vect_timer_msleep
+zp.timer_msleep_long:	.export	zp.timer_msleep_long
+	jp	vect_timer_msleep_long
+zp.timer_sleep:			.export	zp.timer_sleep
+	jp	vect_timer_sleep
+
+zp.timer_start:			.export	zp.timer_start
+	jp	vect_timer_start
+zp.timer_stop:			.export	zp.timer_stop
+	jp	vect_timer_stop
+zp.timer_restart:		.export	zp.timer_restart
+	jp	vect_timer_restart
+zp.timer_elapsed:		.export	zp.timer_elapsed
+	jp	vect_timer_elapsed
+
+zp.putsprite:			.export	zp.putsprite
+	jp	vect_putsprite
+
+zp.get_pixel:			.export	zp.get_pixel
+	jp	vect_get_pixel
+zp.set_pixel:			.export	zp.set_pixel
+	jp	vect_set_pixel
+zp.res_pixel:			.export	zp.res_pixel
+	jp	vect_res_pixel
+zp.flip_pixel:			.export	zp.flip_pixel
+	jp	vect_flip_pixel
+
+zp.draw_hline:			.export	zp.draw_hline
+	jp	vect_draw_hline
+zp.inv_hline:			.export	zp.inv_hline
+	jp	vect_inv_hline
+
+zp.version_check:		.export	zp.version_check
+	jp	vect_version_check
+zp.dylib_load:			.export	zp.dylib_load
+	jp	vect_dylib_load
+zp.dylib_unload:		.export	zp.dylib_unload
+	jp	vect_dylib_unload
+zp.dylib_load_all:		.export	zp.dylib_load_all
+	jp	vect_dylib_load_all
+zp.dylib_unload_all:	.export	zp.dylib_unload_all
+	jp	vect_dylib_unload_all
+
+zp.clrlcd:				.export	zp.clrlcd
+	jp	vect_clrlcd
+zp.draw_line:			.export	zp.draw_line
+	jp	vect_draw_line
+
+zp.compat_start:		.export	zp.compat_start
+	jp	vect_compat_start
+zp.compat_stop:			.export	zp.compat_stop
+	jp	vect_compat_stop
+
+zp.flashtoram:			.export	zp.flashtoram
+	jp	vect_flashtoram
+zp.deref_paged_byte:	.export	zp.deref_paged_byte
+	jp	vect_deref_paged_byte
+zp.deref_paged_word:	.export	zp.deref_paged_word
+	jp	vect_deref_paged_word
+
+zp.getbaseapppage:		.export	zp.getbaseapppage
+	jp	vect_getbaseapppage
+
+zp.get_field_size:		.export	zp.get_field_size
+	jp	vect_get_field_size
+zp.find_app_field:		.export	zp.find_app_field
+	jp	vect_find_app_field
+zp.app_list:			.export	zp.app_list
+	jp	vect_app_list
+zp.app_find:			.export	zp.app_find
+	jp	vect_app_find
+
+zp.bcd_inc:				.export	zp.bcd_inc
+	jp	vect_bcd_inc
+zp.bcd_dec:				.export	zp.bcd_dec
+	jp	vect_bcd_dec
+zp.bcd_add8:			.export	zp.bcd_add8
+	jp	vect_bcd_add8
+zp.bcd_adc:				.export	zp.bcd_adc
+	jp	vect_bcd_adc
+zp.bcd_sbc:				.export	zp.bcd_sbc
+	jp	vect_bcd_sbc
+zp.bcd_cpl:				.export	zp.bcd_cpl
+	jp	vect_bcd_cpl
+zp.bcd_cmp:				.export	zp.bcd_cmp
+	jp	vect_bcd_cmp
+zp.bcd_shr:				.export	zp.bcd_shr
+	jp	vect_bcd_shr
+zp.bcd_shl:				.export	zp.bcd_shl
+	jp	vect_bcd_shl
+zp.bcd_mlt_tbl:			.export	zp.bcd_mlt_tbl
+	jp	vect_bcd_mlt_tbl
+zp.bcd_mult:			.export	zp.bcd_mult
+	jp	vect_bcd_mult
+zp.bcd_div:				.export	zp.bcd_div
+	jp	vect_bcd_div
+	
+zp.fp_push:				.export	zp.fp_push
+	jp	vect_fp_push
+zp.fp_pop:				.export	zp.fp_pop
+	jp	vect_fp_pop
+zp.fp_top:				.export	zp.fp_top
+	jp	vect_fp_top
+zp.fp_drop:				.export	zp.fp_drop
+	jp	vect_fp_drop
+zp.fp_cpy:				.export	zp.fp_cpy
+	jp	vect_fp_cpy
+zp.itof:				.export	zp.itof
+	jp	vect_itof
+zp.ftoi:				.export	zp.ftoi
+	jp	vect_ftoi
+zp.atof:				.export	zp.atof
+	jp	vect_atof
+zp.ftoa:				.export	zp.ftoa
+	jp	vect_ftoa
+zp.fp_bool:				.export	zp.fp_bool
+	jp	vect_fp_bool
+zp.fp_const:			.export	zp.fp_const
+	jp	vect_fp_const
+zp.fp_int:				.export	zp.fp_int
+	jp	vect_fp_int
+zp.fp_inc:				.export	zp.fp_inc
+	jp	vect_fp_inc
+zp.fp_dec:				.export	zp.fp_dec
+	jp	vect_fp_dec
+zp.fp_add:				.export	zp.fp_add
+	jp	vect_fp_add
+zp.fp_sub:				.export	zp.fp_sub
+	jp	vect_fp_sub
+zp.fp_mult:				.export	zp.fp_mult
+	jp	vect_fp_mult
+zp.fp_div:				.export	zp.fp_div
+	jp	vect_fp_div
+zp.fp_sign:				.export	zp.fp_sign
+	jp	vect_fp_sign
+zp.fp_abs:				.export	zp.fp_abs
+	jp	vect_fp_abs
+zp.fp_neg:				.export	zp.fp_neg
+	jp	vect_fp_neg
+zp.fp_cmp:				.export	zp.fp_cmp
+	jp	vect_fp_cmp
+zp.fp_shr:				.export	zp.fp_shr
+	jp	vect_fp_shr
+zp.fp_shl:				.export	zp.fp_shl
+	jp	vect_fp_shl
+zp.fp_pow:				.export	zp.fp_pow
+	jp	vect_fp_pow
+zp.fp_idiv:				.export	zp.fp_idiv
+	jp	vect_fp_idiv
+zp.fp_mod:				.export	zp.fp_mod
+	jp	vect_fp_mod
+
+zp.screenshot:			.export	zp.screenshot
+	jp	vect_screenshot
+
+;zp.expr_eval:			.export	zp.expr_eval
+;	jp	vect_expr_eval
+
+; only here for internal use...
+; call table past that point is private and no assumption
+; should be made on its content in userspace...
+zp.end:					.export	zp.end
+	jp	compat.mkvat
+
+#define	xos_bcall(n) rst 28h \ .dw $5600 + (3*n) \ ret
+; required for call redirection together with binary compat
+
+.echo	"Syscall table : "
+.echo	$-zp.syscalls
+.echo	" bytes used\t ["
+.echo	($-zp.syscalls)/3
+.echo	" calls]\n"
+
+zp.dump_hl:
+	push	af
+	push	de
+	push	hl
+	push	bc
+	
+	ld	de, os.scrap + 16
+	call	zp.htoa_word
+	ld	a, '@'
+	ld	(de), a
+	inc	de
+	ld	hl, 8
+	add	hl, sp
+	deref_hl
+	dec	hl
+	dec	hl
+	dec	hl
+	call	zp.htoa_word
+	xor	a
+	ld	(de), a
+	ld	hl, os.scrap + 16
+	call	zp.cputs
+	call	zp.cdisp
+	call	zp.getch
+	pop	bc
+	pop	hl
+	pop	de
+	pop	af
+	ret
+	
+zp.dump_bc:
+	push	hl
+	ld	h, b
+	ld	l, c
+	call	zp.dump_hl
+	pop	hl
+	ret
+
+zp.dump_de:
+	ex	de, hl
+	call	zp.dump_hl
+	ex	de, hl
+	ret
+
+zp.dump_ix:
+	push	ix
+	ex	(sp), hl
+	call	zp.dump_hl
+	ex	(sp), hl
+	pop	ix
+	ret
+
+zp.dump_iy:
+	push	iy
+	ex	(sp), hl
+	call	zp.dump_hl
+	ex	(sp), hl
+	pop	iy
+	ret
+
+os.libs00:
+#include "lib/bcall.z80"
+
+#include "lib/keyboard.z80"
+#include "lib/display.z80"
+#include "lib/misc.z80"
+#include "lib/string.z80"
+#include "lib/parse.z80"
+#include "lib/stdio.z80"
+#include "lib/exception.z80"
+#include "lib/memory.z80"
+#include "lib/math.z80"
+#include "lib/link.z80"
+#include "lib/file.z80"
+#include "lib/timers.z80"
+#include "lib/sprites.z80"
+#include "lib/primitives.z80"
+#include "lib/dylib.z80"
+#include "lib/compat.z80"
+#include "lib/bcd.z80"
+#include "lib/fpmath.z80"
+#include "lib/apps.z80"
+
+compat.rst08:
+	add_hook(os.hook.rst08)
+
+;#include "expr.z80"
+
+.echo	"Libs : "
+.echo	$-os.libs00
+.echo	" bytes used\n"
+
+os.data00:
+
+str_esyntax1	.text	"Unknown: \"\000"
+str_esyntax2	.text	"\".\000"
+
+; command table :
+;	* list of mnemonics for CLI lookup
+;	* list of addresses for execution
+command_mnemonics:
+	.db "reboot", 0
+	.db "host", 0
+	.db "help", 0
+	.db "cls", 0
+;	.db "info", 0
+	.db "list", 0
+	.db "del", 0
+	.db "mem", 0
+	.db "run", 0
+	.db "hex", 0
+	.db "chronos", 0
+	.db "touch", 0
+	.db "compat", 0
+	.db 0
+
+command_pointers:
+	.dw cmd_REBOOT
+	.dw zp.host
+	.dw cmd_HELP
+	.dw cmd_CLS
+;	.dw cmd_INFO
+	.dw cmd_LIST
+	.dw cmd_DEL
+	.dw cmd_MEM
+	.dw cmd_RUN
+	.dw app.hexedit
+	.dw cmd_CHRONOS
+	.dw cmd_TOUCH
+	.dw cmd_COMPAT
+
+#include "data/keys.inc"
+#include "data/font_con.inc"
+
+.echo	"Data : "
+.echo	$-os.data00
+.echo	" bytes used\n"
+
+os.commands00:
+#include "commands/run.z80"
+
+.echo	"Commands : "
+.echo	$-os.commands00
+.echo	" bytes used\n"
+
+#define _HEXEDIT_EMBED_
+#include "apps/hexedit.z80"
+
+#if $ > $4000
+!!!
+.echo "Page 00 is too large...\n\n"
+#endif
+
+.echo	"\nPage 00: "
+.echo	$-$0000
+.echo	" bytes used\t"
+.echo	(($-$0000)*100)/$4000
+.echo	"% filled\n"
+
+.end

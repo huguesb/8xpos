@@ -1,0 +1,104 @@
+.nolist
+;Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+cmd_REBOOT:
+	; turn off screen
+	ld	a, $02
+	out	(lcd_cmd_port), a
+	rst	00h
+
+
+cmd_CLS:
+	call	zp.cclear
+	call	zp.credraw
+	jp	zp.vbufdisp
+
+
+cmd_HELP:
+	ld	hl, help.data
+	call	vect_show_tabbed_texts
+	ret
+
+cmd_CHRONOS:
+	ld	hl, cmd_CHRONOS.str
+	call	zp.cputs
+	call	zp.cdisp
+	
+	call	zp.timer_start
+	jr	c, cmd_CHRONOS.error
+	
+	push	af
+	
+	push	hl
+	ld	de, os.scrap
+	call	zp.htoa_byte
+	xor	a
+	ld	(de), a
+	ld	hl, os.scrap
+	call	zp.cprint
+	call	zp.cdisp
+	pop	hl
+	
+	call	zp.getkey
+	cp	sk_mode
+	jr	nz, $-5
+	
+	pop	af
+	
+	call	zp.timer_stop
+	
+	push	af
+	ld	de, os.scrap
+	call	zp.strcpy
+	ld	hl, -12
+	add	hl, de
+	ex	de, hl
+	pop	af
+	
+	call	zp.timer_elapsed
+	
+	ld	a, h
+	or	l
+	or	b
+	or	c
+	jr	z, cmd_CHRONOS.error
+	
+	call	zp.htoa_dword
+	
+	ld	hl, os.scrap
+cmd_CHRONOS.exit:
+	call	zp.cputs
+	call	zp.cdisp
+	ret
+	
+cmd_CHRONOS.error:
+	ld	hl, cmd_CHRONOS.errstr
+	jr	cmd_CHRONOS.exit
+
+cmd_CHRONOS.str:
+	.db "Measuring time...\n"
+	.db "Press [MODE] to stop.", 0
+	.db "Elapsed :          ms", 0
+cmd_CHRONOS.errstr:
+	.db "All timers slots taken.", 0
