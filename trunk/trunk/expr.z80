@@ -35,6 +35,10 @@ ERR_MISSING_RPAREN = 27 ; Missing )
 ;
 
 vect_expr_eval:
+	; fp stack save
+	ld	hl, (os.fpstack)
+	push	hl
+	
 	; stack save (with support for recursive save using a single memory location)
 	ld	hl, (os.savedsp)
 	push	hl
@@ -46,30 +50,98 @@ vect_expr_eval:
 	
 	call	Eval.Top
 	
+	xor	a
+	
+vect_expr_eval.end:
 	; stack restore
 	ld	sp, (os.savedsp)
 	pop	de
 	ld	(os.savedsp), de
-	or	a
+	
+	; fp stack restore
+	pop	de
+	
+	push	af
+	push	hl
+	
+	ld	hl, (os.fpstack)
+	cmp_hlde
+	call	nz, fpstack.restore
+	
+	pop	hl
+	pop	af
+	
+	rla
 	ret
 
+fpstack.restore:
+	; hl -> current value
+	; de -> old value
+	
+	; algo : drop entry until top stack == de or stack is empty...
+	
+	; not as much a restore as a cleanup...
+	
+fpstack.restore.loop:
+	ld	a, h
+	or	l
+	ret	z
+	call	zp.fp_drop
+	ld	hl, (os.fpstack)
+	cmp_hlde
+	jr	nz, fpstack.restore.loop
+	
+	ret
 
 ; ========================================================================== ;
 ; Report an error                                                            ;
 ; ========================================================================== ;
 Error:
 	; emergency stack restore
-	ld sp,(os.savedsp)
-	pop	de
-	ld	(os.savedsp), de
-	scf
-	ret
+	
+	ld	a, $80
+	jp	vect_expr_eval.end
 
 
 ; ========================================================================== ;
 ; Level: Top level                                                           ;
 ; ========================================================================== ;
 Eval.Top
+
+Eval.Ternary
+	call	Eval.LogOr
+Eval.Ternary.Loop
+	
+	call ReadCharacter
+	ret z
+	
+	cp '?'
+	ret nz
+	
+	call	zp.fp_bool
+	push	af
+	
+	; TODO : lazy evaluation...
+	
+	inc	ix
+	call	Eval.Top
+	
+	call	zp.fp_push
+	
+	call	ReadCharacter
+	
+	cp	':'
+	jp	nz, Error
+	
+	inc	ix
+	call	Eval.Top
+	
+	call	zp.fp_pop
+	
+	pop	af
+	ret	z
+	ex	de, hl
+	ret
 
 ; ========================================================================== ;
 ; Level: LogOr                                                           ;
@@ -92,6 +164,8 @@ Eval.LogOr.Or
 	
 	call	zp.fp_bool
 	push	af
+	
+	; TODO : lazy evaluation...
 	
 	call Eval.LogXor
 	
@@ -129,6 +203,8 @@ Eval.LogXor.Xor
 	call	zp.fp_bool
 	push	af
 	
+	; TODO : lazy evaluation...
+	
 	call Eval.LogAnd
 	
 	call	zp.fp_bool
@@ -164,6 +240,8 @@ Eval.LogAnd.And
 	
 	call	zp.fp_bool
 	push	af
+	
+	; TODO : lazy evaluation...
 	
 	call Eval.Equ
 	
@@ -274,13 +352,16 @@ Eval.Rel.LessThan
 	call Eval.Shift
 	
 	call	zp.fp_pop
+	ex	de, hl
+	
 	call	zp.fp_cmp
 	ld	a, 0
 	jr	nc, $+3
 	inc	a
 	call	zp.fp_const
 	
-	jr Eval.Rel.Loop
+	;jr Eval.Rel.Loop
+	ret
 
 ; -------------------------------------------------------------------------- ;
 ; Operator: Minimum (<?)                                                     ;
@@ -295,7 +376,8 @@ Eval.Rel.Minimum
 	call	zp.fp_pop
 	call	fn.min.sub
 	
-	jp Eval.Rel.Loop
+	;jp Eval.Rel.Loop
+	ret
 
 
 ; -------------------------------------------------------------------------- ;
@@ -308,15 +390,16 @@ Eval.Rel.LessThanEqual
 	
 	call Eval.Shift
 	
-	ex	de, hl
 	call	zp.fp_pop
+	
 	call	zp.fp_cmp
 	ld	a, 0
 	jr	c, $+3
 	inc	a
 	call	zp.fp_const
 	
-	jr Eval.Rel.Loop
+	;jr Eval.Rel.Loop
+	ret
 
 ; -------------------------------------------------------------------------- ;
 ; Operator: Greater than (>)                                                 ;
@@ -333,15 +416,16 @@ Eval.Rel.GreaterThan
 	
 	call Eval.Shift
 	
-	ex	de, hl
 	call	zp.fp_pop
+	
 	call	zp.fp_cmp
 	ld	a, 0
 	jr	nc, $+3
 	inc	a
 	call	zp.fp_const
 	
-	jp Eval.Rel.Loop
+	;jp Eval.Rel.Loop
+	ret
 
 ; -------------------------------------------------------------------------- ;
 ; Operator: Greater than or equal to (>=)                                    ;
@@ -354,13 +438,16 @@ Eval.Rel.GreaterThanEqual
 	call Eval.Shift
 	
 	call	zp.fp_pop
+	ex	de, hl
+	
 	call	zp.fp_cmp
 	ld	a, 0
 	jr	c, $+3
 	inc	a
 	call	zp.fp_const
 	
-	jp Eval.Rel.Loop
+	;jp Eval.Rel.Loop
+	ret
 
 ; -------------------------------------------------------------------------- ;
 ; Operator: Maximum (>?)                                                     ;
@@ -375,7 +462,8 @@ Eval.Rel.Maximum
 	call	zp.fp_pop
 	call	fn.max.sub
 	
-	jp Eval.Rel.Loop
+	;jp Eval.Rel.Loop
+	ret
 
 ; ========================================================================== ;
 ; Level: Shift (<< >> >>>)                                                   ;
