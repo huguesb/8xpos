@@ -203,7 +203,7 @@ _fpdiv:			; equ $4099
        .dw $0000
        .db $00
 ;_int			equ $40A5
-       .dw $0000
+       .dw compat.ftrunc
        .db $00
 ;_Round			equ $40A8
        .dw $0000
@@ -310,8 +310,8 @@ _fpdiv:			; equ $4099
 ;_AbsO1O2Cp		equ $410E
        .dw $0000
        .db $00
-;_cpop1op2		equ $4111
-       .dw $0000
+_cpop1op2		; equ $4111
+       .dw compat.cpop1op2
        .db $00
 _OP3ToOP4: 		; equ $4114
        .dw compat.op3toop4
@@ -472,35 +472,35 @@ _Mov7B			; equ $4168
 ;_Zero16D		equ $41B0
        .dw $0000
        .db $00
-;_OP5Set0		equ $41B3
-       .dw $0000
+_OP5Set0		; equ $41B3
+       .dw compat.op5set0
        .db $00
-;_OP4Set0		equ $41B6
-       .dw $0000
+_OP4Set0		; equ $41B6
+       .dw compat.op4set0
        .db $00
-;_OP3Set0		equ $41B9
-       .dw $0000
+_OP3Set0		; equ $41B9
+       .dw compat.op3set0
        .db $00
-;_OP2Set0		equ $41BC
-       .dw $0000
+_OP2Set0		; equ $41BC
+       .dw compat.op2set0
        .db $00
-;_OP1Set0		equ $41BF
-       .dw $0000
+_OP1Set0		; equ $41BF
+       .dw compat.op1set0
        .db $00
-;_OPSet0			equ $41C2 ;hl = location to write floating point 0
-       .dw $0000
+_OPSet0			; equ $41C2 ;hl = location to write floating point 0
+       .dw compat.opset0
        .db $00
-;_ZeroOP1		equ $41C5
-       .dw $0000
+_ZeroOP1		; equ $41C5
+       .dw compat.zeroop1
        .db $00
-;_ZeroOP2		equ $41C8
-       .dw $0000
+_ZeroOP2		; equ $41C8
+       .dw compat.zeroop2
        .db $00
-;_ZeroOP3		equ $41CB
-       .dw $0000
+_ZeroOP3		; equ $41CB
+       .dw compat.zeroop3
        .db $00
-;_ZeroOP			equ $41CE
-       .dw $0000
+_ZeroOP			; equ $41CE
+       .dw compat.zeroop
        .db $00
 ;_ClrLp			equ $41D1
        .dw $0000
@@ -1383,10 +1383,10 @@ _PutS:
        .dw $0000
        .db $00
 _ClrLCDFull:
-       .dw zp.clrlcd
+       .dw compat.clrlcdfull
        .db $00
 _ClrLCD:			; equ $4543
-       .dw zp.clrlcd
+       .dw compat.clrlcdfull
        .db $00
 _ClrScrnFull:		; equ $4546
        .dw compat.clrscrnfull
@@ -2193,7 +2193,7 @@ _DarkPnt:		; equ $47F2
        .dw $0000
        .db $00
 _GrBufCpy:		; equ $486A
-       .dw zp.vbufdisp
+       .dw compat.grbufcpy
        .db $00
 ;_DRAWSPLITLINE		equ $486D
        .dw $0000
@@ -2837,8 +2837,8 @@ _CheckSplitFlag		; equ $49F0
 ;_STLSTVECEL		equ $4AEC
        .dw $0000
        .db $00
-;_ConvOP1		equ $4AEF
-       .dw $0000
+_ConvOP1		; equ $4AEF
+       .dw compat.convop1
        .db $00
 ;_Find_Parse_Formula	equ $4AF2
        .dw $0000
@@ -2975,14 +2975,14 @@ _CheckSplitFlag		; equ $49F0
 ;_CURFETCH		equ $4B76
        .dw $0000
        .db $00
-;_Random			equ $4B79
-       .dw $0000
+_Random			; equ $4B79
+       .dw compat.rand
        .db $00
 ;_StoRand		equ $4B7C
        .dw $0000
        .db $00
-;_RandInit		equ $4B7F
-       .dw $0000
+_RandInit		; equ $4B7F
+       .dw compat.randinit
        .db $00
 ;_resetStacks		equ $4B82 ;(onsp)->(errsp), (fpbase)->(fps), (opbase)->(ops)
        .dw $0000
@@ -3101,8 +3101,8 @@ _GrBufClr:		; equ $4BD0
 ;_PutAns			equ $4BF4
        .dw $0000
        .db $00
-;_DispOP1A		equ $4BF7
-       .dw $0000
+_DispOP1A		; equ $4BF7
+       .dw compat.dispop1a
        .db $00
 ;_MATHTANLN		equ $4BFA
        .dw $0000
@@ -3521,8 +3521,8 @@ _DrawRectBorderClear	; equ $4D8C
 ;_IBoundsFull		equ $4D98
        .dw $0000
        .db $00
-;_DisplayImage		equ $4D9B
-       .dw $0000
+_DisplayImage		; equ $4D9B
+       .dw compat.displayimage
        .db $00
 ;:$4D9E ;does something dumb with ports $10/$11
        .dw $0000
@@ -4956,6 +4956,15 @@ _NZIf83Plus:		; equ $50E0
 ;	0 : mkvatnode (hl : file address, de : file size)
 #define ccall(n) call zp.end + (3*n)
 
+
+compat.grbufcpy:
+	push	hl
+	ld	hl, os.flags + osf.compat
+	res	vbuf_flush, (hl)
+	pop	hl
+	
+	jp	zp.vbufdisp
+
 compat.darkpoint:
 compat.grphcirc:
 compat.findprogsym:
@@ -4971,12 +4980,25 @@ compat.mult_h_l:
 	ld	e, l
 	jp	zp.mult_h_e
 
+compat.clrlcdfull:
+	call	zp.clrlcd
+	bit	bufferOnly, (iy + plotFlag3)
+	ret	nz
+	jp	zp.vbufclr
+
 compat.clrscrnfull:
 	call	zp.vbufclr
+	bit	bufferOnly, (iy + plotFlag3)
+	ret	nz
 	jp	zp.vbufdisp
 
 compat.darkline:
+	push	hl
 	ld	h, 1
+	call	compat.iline
+	pop	hl
+	ret
+
 compat.iline:
 	push	af
 	push	bc
@@ -4994,11 +5016,13 @@ compat.iline:
 	pop	de
 	pop	bc
 	pop	af
+	ret
 
 compat.ipoint:
 	push	af
 	push	bc
 	push	de
+	push	hl
 	push	hl
 	ld	hl, compat.ipoint.return
 	ex	(sp), hl
@@ -5013,6 +5037,7 @@ compat.ipoint:
 	jp	z, zp.set_pixel
 	dec	d
 	jp	z, zp.flip_pixel
+	ret
 
 compat.ipoint.return:
 	pop	hl
@@ -5199,29 +5224,61 @@ compat.puts:
 
 compat.vputmap:
 	ld	bc, (penCol)
-	call	zp.putch_con
+; 	; well, err...
+; 	srl	c
+; 	srl	c
+; 	call	zp.putch_con
+	call	zp.putch_var
+	
+	bit	bufferOnly, (iy + plotFlag3)
+	ret	nz
+	
+	push	hl
+	ld	hl, os.flags + osf.compat
+	set	vbuf_flush, (hl)
+	pop	hl
 	ret
 	
 compat.vputs:
 	ld	bc, (penCol)
-	; well, err...
-	srl	c
-	srl	c
-	call	zp.puts_con
-	sla	c
-	sla	c
+; 	; well, err...
+; 	srl	c
+; 	srl	c
+; 	call	zp.puts_con
+; 	sla	c
+; 	sla	c
+	call	zp.puts_var
 	ld	(penCol), bc
+	
+	bit	bufferOnly, (iy + plotFlag3)
+	ret	nz
+	
+	push	hl
+	ld	hl, os.flags + osf.compat
+	set	vbuf_flush, (hl)
+	pop	hl
 	ret
 
 compat.getcsc:
-	;; gotta slow things down a bit..
-	ld	b, 100
-	call	zp.timer_msleep
+; 	;; gotta slow things down a bit..
+; 	push	bc
+; 	ld	b, 80
+; 	call	zp.timer_msleep
+; 	pop	bc
+	
+	ld	a, (os.flags + osf.compat)
+	bit	vbuf_flush, a
+	call	nz, compat.grbufcpy
+	
 	ei
 	halt
 	jp	zp.getkey
 
 compat.getkey:
+	ld	a, (os.flags + osf.compat)
+	bit	vbuf_flush, a
+	call	nz, compat.grbufcpy
+	
 	push	hl
 	push	de
 	push	bc
@@ -5381,6 +5438,414 @@ compat.getbasever:
 	
 	ret
 
+compat.randinit:
+	ret
+
+compat.rand:
+	ld	hl, OP1
+	jp	zp.fp_rand
+
+compat.fpadd:
+	ld	hl, OP1
+	ld	de, OP2
+	jp	zp.fp_add
+
+compat.fpsub:
+	ld	hl, OP1
+	ld	de, OP2
+	jp	zp.fp_sub
+
+compat.fpmult:
+	ld	hl, OP1
+	ld	de, OP2
+	jp	zp.fp_mult
+
+compat.fpdiv:
+	ld	hl, OP1
+	ld	de, OP2
+	jp	zp.fp_div
+
+compat.fpdec:
+	ld	hl, OP1
+	jp	zp.fp_dec
+
+compat.fpinc:
+	ld	hl, OP1
+	jp	zp.fp_inc
+
+compat.ftrunc:
+	ld	hl, OP1
+	jp	zp.fp_int
+
+compat.fpmax:
+	ld	hl, OP1
+	ld	de, OP2
+	call	zp.fp_cmp
+	ret nc
+	jp	compat.op2toop1
+
+compat.fpmin:
+	ld	hl, OP2
+	ld	de, OP1
+	call	zp.fp_cmp
+	ret nc
+	jp	compat.op2toop1
+
+compat.fdiv100:
+	ld	hl, OP1+1
+	dec	(hl)
+	dec	(hl)
+	ret
+
+compat.fdiv10:
+compat.dec_exp:
+	ld	hl, OP1+1
+	dec	(hl)
+	ret
+
+compat.inc_exp:
+	ld	hl, OP1+1
+	inc	(hl)
+	ret
+
+compat.setXXop1:
+	ld	h, 0
+	ld	l, a
+	ld	de, OP1
+	jp	zp.itof
+
+compat.setXXop2:
+	ld	h, 0
+	ld	l, a
+	ld	de, OP2
+	jp	zp.itof
+
+compat.setXXXXop2:
+	ld	de, OP2
+	jp	zp.itof
+
+compat.cpop1op2:
+	ld	hl, OP1
+	ld	de, OP2
+	jp	zp.fp_cmp
+
+compat.convop1:
+	push	bc
+	push	hl
+	ld	hl, OP1
+	call	zp.ftoi
+	ex	de, hl
+	ld	a, e
+	pop	hl
+	pop	bc
+	ret
+
+compat.dispop1a:
+	ld	hl, OP1
+	ld	de, OP2
+	ld	c, a
+	call	zp.ftoa
+	ld	hl, OP2
+	jp	compat.vputs
+
+compat.flashtoram:
+	jp	zp.flashtoram
+
+compat.loadcindpaged:
+	jp	zp.deref_paged_byte
+
+compat.loaddeindpaged:
+	jp	zp.deref_paged_word
+
+compat.setuppagedptr:
+	
+	ret
+
+compat.pagedget:
+	
+	ret
+
+compat.memset:
+	ld	(hl), a
+	ld	d, h
+	ld	e, l
+	inc	de
+	dec	bc
+	ldir
+	ret
+
+compat.jerrorno:
+compat.jforcecmdnochar:
+compat.jforcecmd:
+	call	zp.compat_stop
+	jp	zp.console
+
+compat.checksplitflag:
+	; set zero without destroying any register
+	cp	a
+	ret
+
+compat.bufcpy:
+	ld	de, (os.vbuf_addr)
+	push	de
+	ld	(os.vbuf_addr), hl
+	call	zp.vbufdisp
+	pop	hl
+	ld	(os.vbuf_addr), hl
+	ret
+
+compat.bufclr:
+	ld	de, (os.vbuf_addr)
+	push	de
+	ld	(os.vbuf_addr), hl
+	call	zp.clrscr
+	pop	hl
+	ld	(os.vbuf_addr), hl
+	ret
+
+
+iLargeSprite
+	ld	h,0
+	ld	d,h
+	ld	e,l
+	add	hl,de
+	add	hl,de
+	add	hl,hl
+	add	hl,hl
+	ld	e,a
+	srl	e
+	srl	e
+	srl	e
+	add	hl,de
+	ld	de,(os.vbuf_addr)
+	add	hl,de
+	and	7
+	ld	e,a
+iLargeSpriteLoop1
+	push	bc
+	push	hl
+	ld	b,c
+iLargeSpriteLoop2
+	ld	c,(ix)
+	ld	d,0
+	inc	ix
+	ld	a,e
+	or	a
+	jr	z,iLargeSprite1
+iLargeSpriteLoop3
+	srl	c
+	rr	d
+	dec	a
+	jr	nz,iLargeSpriteLoop3
+iLargeSprite1
+	ld	a,c
+	or	(hl)
+	ld	(hl),a
+	
+	inc	hl
+	
+	ld	a,d
+	or	(hl)
+	ld	(hl),a
+	
+	djnz	iLargeSpriteLoop2
+	
+	pop	hl
+	ld	c,12
+	add	hl,bc
+	pop	bc
+	djnz	iLargeSpriteLoop1
+	
+	ret
+
+compat.displayimage:
+	ld	b, (hl)
+	inc	hl
+	ld	c, (hl)
+	inc	hl
+	
+	push	bc
+	push	hl
+	push	de
+	
+	; may have to clear rect under... doesn't that suck?
+	ex	de, hl
+	ld	a, b
+	add	a, h
+	ld	d, a
+	dec	d
+	ld	a, c
+	add	a, l
+	ld	e, a
+	dec	e
+	call	compat.clearrect
+	
+	pop	de
+	pop	hl
+	pop	bc
+	
+	
+	ld	a, c
+	and	$07
+	srl	c
+	srl	c
+	srl	c
+	
+	push	af
+	
+	push	hl
+	pop	ix
+	
+	ld	a, e
+	ld	l, d
+	
+	call	iLargeSprite
+	
+	pop	af
+	
+	bit	bufferOnly, (iy + plotFlag3)
+	ret	nz
+	
+	ld	hl, os.flags + osf.compat
+	set	vbuf_flush, (hl)
+	
+	ret
+
+; naive...
+compat.clearrect:
+	ld	c, 0
+	
+compat.rect:
+	; compute row count
+	ld	a, d
+	sub	h
+	inc	a
+	ld	b, a
+	
+	; (r, c)::(h, l)->(h, e) == (x, y)::(l, h)->(e, h)
+	ld	d, e
+	ld	e, h
+	ld	h, l
+	ld	l, e
+	
+	ld	a, c
+	
+compat.rect.loop:
+	push	af
+	push	hl
+	push	de
+	push	bc
+	call	zp.draw_line
+	pop	bc
+	pop	de
+	pop	hl
+	pop	af
+	
+	; increase row
+	inc	l
+	inc	e
+	
+	djnz	compat.rect.loop
+	
+	bit	bufferOnly, (iy + plotFlag3)
+	ret	nz
+	
+	ld	hl, os.flags + osf.compat
+	set	vbuf_flush, (hl)
+	ret
+
+compat.fillrect:
+	ld	c, 1
+	jp	compat.rect
+
+compat.invertrect:
+	ld	c, 2
+	jp	compat.rect
+
+compat.drawrectborderclear:
+	push	hl
+	push	de
+	
+	; clear rect!!!
+	inc	h
+	inc	l
+	dec	d
+	dec	e
+	call	compat.clearrect
+	
+	pop	de
+	pop	hl
+	
+	; fall through
+	
+; rect defined by (h, l), (d, e) as topLeft(row, col), bottomRight(row, col)
+compat.drawrectborder:
+	ld	a, 1
+	
+compat.drb.sub:
+	push	af
+	push	hl
+	push	de
+	; (r, c)::(h, l)->(h, e) == (x, y)::(l, h)->(e, h)
+	ld	d, e
+	ld	e, h
+	ld	h, l
+	ld	l, e
+	
+	call	zp.draw_line
+	pop	de
+	pop	hl
+	pop	af
+	
+	push	af
+	push	hl
+	push	de
+	; (r, c)::(h, l)->(d, l) == (x, y)::(l, h)->(l, d)
+	ld	e, d
+	ld	d, l
+	ld	l, h
+	ld	h, d
+	
+	call	zp.draw_line
+	pop	de
+	pop	hl
+	pop	af
+	
+	push	af
+	push	hl
+	push	de
+	; (r, c)::(h, e)->(d, e) == (x, y)::(e, h)->(e, d)
+	ld	l, h
+	ld	h, e
+	ld	e, d
+	ld	d, h
+	
+	call	zp.draw_line
+	pop	de
+	pop	hl
+	pop	af
+	
+	; (r, c)::(d, l)->(d, e) == (x, y)::(l, d)->(e, d)
+	ld	h, l
+	ld	l, d
+	ld	d, e
+	ld	e, l
+	
+	call	zp.draw_line
+	
+	bit	bufferOnly, (iy + plotFlag3)
+	ret	nz
+	
+	ld	hl, os.flags + osf.compat
+	set	vbuf_flush, (hl)
+	ret
+
+compat.eraserectborder:
+	xor	a
+	jp	compat.drb.sub
+
+
+
 compat.op1exop2:
 	ld	de, OP2
 	jr	compat.op1ex
@@ -5441,6 +5906,48 @@ compat.mov7B:
 	ld	bc, 7
 	ldir
 	ret
+
+compat.zeroop3:
+	ld	hl, OP3
+	jr	compat.zeroop
+
+compat.zeroop2:
+	ld	hl, OP2
+	jr	compat.zeroop
+
+compat.zeroop1:
+	ld	hl, OP2
+
+compat.zeroop:
+	ld	a, 11
+	ld	(hl), 0
+	inc	hl
+	dec	a
+	jr	nz, $-4
+	ret
+
+compat.op5set0:
+	ld	hl, OP5
+	jr	compat.opset0
+	
+compat.op4set0:
+	ld	hl, OP4
+	jr	compat.opset0
+	
+compat.op3set0:
+	ld	hl, OP3
+	jr	compat.opset0
+	
+compat.op2set0:
+	ld	hl, OP2
+	jr	compat.opset0
+	
+compat.op1set0:
+	ld	hl, OP1
+	
+compat.opset0:
+	xor	a
+	jp	zp.fp_const
 
 compat.op1toop2:
 	ld	de, OP2
@@ -5675,264 +6182,6 @@ compat.popreal:
 compat.popreal.end:
 	pop	af
 	ret
-
-compat.flashtoram:
-	jp	zp.flashtoram
-
-compat.loadcindpaged:
-	jp	zp.deref_paged_byte
-
-compat.loaddeindpaged:
-	jp	zp.deref_paged_word
-
-compat.setuppagedptr:
-	
-	ret
-
-compat.pagedget:
-	
-	ret
-
-compat.memset:
-	ld	(hl), a
-	ld	d, h
-	ld	e, l
-	inc	de
-	dec	bc
-	ldir
-	ret
-
-compat.jerrorno:
-compat.jforcecmdnochar:
-compat.jforcecmd:
-	call	zp.compat_stop
-	jp	zp.console
-
-compat.fpadd:
-	ld	hl, OP1
-	ld	de, OP2
-	jp	zp.fp_add
-
-compat.fpsub:
-	ld	hl, OP1
-	ld	de, OP2
-	jp	zp.fp_sub
-
-compat.fpmult:
-	ld	hl, OP1
-	ld	de, OP2
-	jp	zp.fp_mult
-
-compat.fpdiv:
-	ld	hl, OP1
-	ld	de, OP2
-	jp	zp.fp_div
-
-compat.fpdec:
-	ld	hl, OP1
-	jp	zp.fp_dec
-
-compat.fpinc:
-	ld	hl, OP1
-	jp	zp.fp_inc
-
-compat.ftrunc:
-	ld	hl, OP1
-	jp	zp.fp_int
-
-compat.fpmax:
-	ld	hl, OP1
-	ld	de, OP2
-	call	zp.fp_cmp
-	ret nc
-	jp	compat.op2toop1
-
-compat.fpmin:
-	ld	hl, OP2
-	ld	de, OP1
-	call	zp.fp_cmp
-	ret nc
-	jp	compat.op2toop1
-
-compat.fdiv100:
-	ld	hl, OP1+1
-	dec	(hl)
-	dec	(hl)
-	ret
-
-compat.fdiv10:
-compat.dec_exp:
-	ld	hl, OP1+1
-	dec	(hl)
-	ret
-
-compat.inc_exp:
-	ld	hl, OP1+1
-	inc	(hl)
-	ret
-
-compat.setXXop1:
-	ld	h, 0
-	ld	l, a
-	ld	de, OP1
-	jp	zp.itof
-
-compat.setXXop2:
-	ld	h, 0
-	ld	l, a
-	ld	de, OP2
-	jp	zp.itof
-
-compat.setXXXXop2:
-	ld	de, OP2
-	jp	zp.itof
-
-compat.checksplitflag:
-	; set zero without destroying any register
-	cp	a
-	ret
-
-compat.bufcpy:
-	ld	de, (os.vbuf_addr)
-	push	de
-	ld	(os.vbuf_addr), hl
-	call	zp.vbufdisp
-	pop	hl
-	ld	(os.vbuf_addr), hl
-	ret
-
-compat.bufclr:
-	ld	de, (os.vbuf_addr)
-	push	de
-	ld	(os.vbuf_addr), hl
-	call	zp.clrscr
-	pop	hl
-	ld	(os.vbuf_addr), hl
-	ret
-
-; naive...
-compat.clearrect:
-	ld	c, 0
-	
-compat.rect:
-	; compute row count
-	ld	a, d
-	sub	h
-	inc	a
-	ld	b, a
-	
-	; (r, c)::(h, l)->(h, e) == (x, y)::(l, h)->(e, h)
-	ld	d, e
-	ld	e, h
-	ld	h, l
-	ld	l, e
-	
-	ld	a, c
-	
-compat.rect.loop:
-	push	af
-	push	hl
-	push	de
-	push	bc
-	call	zp.draw_line
-	pop	bc
-	pop	de
-	pop	hl
-	pop	af
-	
-	; increase row
-	inc	l
-	inc	e
-	
-	djnz	compat.rect.loop
-	
-	ret
-
-compat.fillrect:
-	ld	c, 1
-	jp	compat.rect
-
-compat.invertrect:
-	ld	c, 2
-	jp	compat.rect
-
-compat.drawrectborderclear:
-	push	hl
-	push	de
-	
-	; clear rect!!!
-	inc	h
-	inc	l
-	dec	d
-	dec	e
-	call	compat.clearrect
-	
-	pop	de
-	pop	hl
-	
-	; fall through
-	
-; rect defined by (h, l), (d, e) as topLeft(row, col), bottomRight(row, col)
-compat.drawrectborder:
-	ld	a, 1
-	
-compat.drb.sub:
-	push	af
-	push	hl
-	push	de
-	; (r, c)::(h, l)->(h, e) == (x, y)::(l, h)->(e, h)
-	ld	d, e
-	ld	e, h
-	ld	h, l
-	ld	l, e
-	
-	call	zp.draw_line
-	pop	de
-	pop	hl
-	pop	af
-	
-	push	af
-	push	hl
-	push	de
-	; (r, c)::(h, l)->(d, l) == (x, y)::(l, h)->(l, d)
-	ld	e, d
-	ld	d, l
-	ld	l, h
-	ld	h, d
-	
-	call	zp.draw_line
-	pop	de
-	pop	hl
-	pop	af
-	
-	push	af
-	push	hl
-	push	de
-	; (r, c)::(h, e)->(d, e) == (x, y)::(e, h)->(e, d)
-	ld	l, h
-	ld	h, e
-	ld	e, d
-	ld	d, h
-	
-	call	zp.draw_line
-	pop	de
-	pop	hl
-	pop	af
-	
-	; (r, c)::(d, l)->(d, e) == (x, y)::(l, d)->(e, d)
-	ld	h, l
-	ld	l, d
-	ld	d, e
-	ld	e, l
-	
-	call	zp.draw_line
-	
-	ret
-
-compat.eraserectborder:
-	xor	a
-	jp	compat.drb.sub
-
 
 
 #if $ > $8000

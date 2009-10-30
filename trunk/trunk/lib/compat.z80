@@ -90,6 +90,12 @@ vect_compat_start:
 	; flags...
 	ld	iy, flags
 	
+	ld	hl, flags
+	ld	de, flags + 1
+	ld	(hl), 0
+	ld	bc, 60
+	ldir
+	
 	pop	af
 	out	(map_bankA_port), a
 	

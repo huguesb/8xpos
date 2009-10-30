@@ -93,7 +93,9 @@ os.flashwrite.size		= os.fmeminfo + 4
 os.flashwrite.source	= os.flashwrite.size + 2
 os.flashwrite.dest		= os.flashwrite.source + 3
 
-#if os.flashwrite.dest + 3 >= $CC00
+os.rand_seed		= os.flashwrite.dest + 3
+
+#if os.rand_seed + 2 >= $CC00
 !!!
 .echo "RAM layout is screwed.\n"
 #endif
@@ -137,7 +139,10 @@ proto_dump_on		= 2
 silent_abort		= 3
 silent_assist		= 7
 
-; os.flags : group 4 -> 
+; os.flags : group 4 -> compat layer
+osf.compat		= 4
+vbuf_flush			= 0
+
 ; os.flags : group 5 -> 
 ; os.flags : group 6 ->
 ; os.flags : group 7 ->

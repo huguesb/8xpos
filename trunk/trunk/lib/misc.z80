@@ -212,6 +212,32 @@ im2.setup:
 	ei
 	ret
 
+; brief : 16byte random number generator
+; input : none
+; output : hl -> (pseudo) random number
+; destroys : none
+vect_rand_word:
+	push	af
+	push	de
+	ld	de, (os.rand_seed)		; Seed is usually 0
+	ld	a, d
+	ld	h, e
+	ld	l, 253
+	or	a
+	sbc	hl, de
+	sbc	a, 0
+	sbc	hl, de
+	ld	d, 0
+	sbc	a, d
+	ld	e, a
+	sbc	hl, de
+	jr	nc, $+3
+	inc	hl
+	ld	(os.rand_seed), hl
+	pop	de
+	pop	af
+	ret
+
 ; brief : paged memcopy
 ; input : a -> abs page, hl -> src offset ($4000-$7FFF), de -> ram dest ($8000-$FFFF), bc -> size
 ; output :
