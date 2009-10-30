@@ -588,11 +588,6 @@ zp.res_pixel:			.export	zp.res_pixel
 zp.flip_pixel:			.export	zp.flip_pixel
 	jp	vect_flip_pixel
 
-zp.draw_hline:			.export	zp.draw_hline
-	jp	vect_draw_hline
-zp.inv_hline:			.export	zp.inv_hline
-	jp	vect_inv_hline
-
 zp.version_check:		.export	zp.version_check
 	jp	vect_version_check
 zp.dylib_load:			.export	zp.dylib_load

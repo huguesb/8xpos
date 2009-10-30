@@ -82,6 +82,320 @@ code_start:
 
 ; sources
 
+; brief : draws an horizontal line
+; input : a -> vbuf row, b -> start col, c -> end col
+; destroys : a, bc, de, hl
+vect_draw_hline:
+	ld	d, 0
+	ld	e, a
+	ld	h, d
+	ld	l, e
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	add	hl, hl
+	ld	de, (os.vbuf_addr)
+	add	hl, de
+	
+	ld	a, c
+	inc	a
+	sub	b
+	ld	d, a
+	ld	a, b
+	and	$07
+	srl	b
+	srl	b
+	srl	b
+	ld	e, b
+	ld	b, a
+	
+	ld	a, d
+	cp	8
+	jr	nc, vect_draw_hline.long
+	
+	ld	a, c
+	srl	a
+	srl	a
+	srl	a
+	cp	e
+	jr	nz, vect_draw_hline.long
+	
+	ld	a, c
+	inc	a
+	and	$07
+	ld	c, a
+	sub	b
+	ld	d, a
+	
+	jr	vect_draw_hline.short
+vect_draw_hline.long:
+	ld	a, b
+	or	a
+	jr	z, $+4
+	sub	8
+	add	a, d
+	
+	ld	d, a
+	and	$07
+	ld	c, a
+	; b -> number of leading white pix
+	; c -> number of trailing black pix
+	; d -> total number of black pix minus leading black pix
+	; e -> buffer offset of first pix
+	
+	ld	a, e
+	offset_hl
+	
+	ld	a, d
+	or	a
+	
+	jr	nz, vect_draw_hline.accross
+	
+	ld	a, d
+	cp	c
+	jr	c, vect_draw_hline.short
+	jr	z, vect_draw_hline.short
+vect_draw_hline.accross:
+	call	vect_draw_hline.left
+	
+	srl	d
+	srl	d
+	srl	d
+	jr	z, vect_draw_hline.nobody
+	ld	b, d
+	
+vect_draw_hline.body:
+	ld	(hl), $FF
+	inc	hl
+	djnz	vect_draw_hline.body
+	
+vect_draw_hline.nobody:
+	call	vect_draw_hline.right
+	
+	ret
+
+vect_draw_hline.short:
+	ld	a, b
+	or	a
+	jr	z, vect_draw_hline.right
+	
+	ld	d, $FF
+	
+	srl	d
+	djnz	$-2
+	
+	ld	a, c
+	or	a
+	ld	a, $FF
+	jr	z, vect_draw_hline.shortend
+	
+	ld	b, c
+	xor	a
+	
+	scf
+	rra
+	djnz	$-2
+	
+vect_draw_hline.shortend:
+	and	d
+	or	(hl)
+	ld	(hl), a
+	
+	ret
+
+vect_draw_hline.left:
+	ld	a, b
+	or	a
+	ret	z
+	
+	ld	b, a
+	ld	a, $FF
+	
+	srl	a
+	djnz	$-2
+	
+	or	(hl)
+	ld	(hl), a
+	inc	hl
+	
+	ret
+
+vect_draw_hline.right:
+	ld	a, c
+	or	a
+	ret	z
+	
+	ld	b, a
+	xor	a
+	
+	scf
+	rra
+	djnz	$-2
+	
+	or	(hl)
+	ld	(hl), a
+	inc	hl
+	
+	ret
+
+; brief : inverts an horizontal line
+; input : a -> vbuf row, b -> start col, c -> end col
+; destroys : a, bc, de, hl
+vect_inv_hline:
+	ld	d, 0
+	ld	e, a
+	ld	h, d
+	ld	l, e
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	add	hl, hl
+	ld	de, (os.vbuf_addr)
+	add	hl, de
+	
+	ld	a, c
+	inc	a
+	sub	b
+	ld	d, a
+	ld	a, b
+	and	$07
+	srl	b
+	srl	b
+	srl	b
+	ld	e, b
+	ld	b, a
+	
+	ld	a, d
+	cp	8
+	jr	nc, vect_inv_hline.long
+	
+	ld	a, c
+	srl	a
+	srl	a
+	srl	a
+	cp	e
+	jr	nz, vect_inv_hline.long
+	
+	ld	a, c
+	inc	a
+	and	$07
+	ld	c, a
+	sub	b
+	ld	d, a
+	
+	jr	vect_inv_hline.short
+vect_inv_hline.long:
+	ld	a, b
+	or	a
+	jr	z, $+4
+	sub	8
+	add	a, d
+	
+	ld	d, a
+	and	$07
+	ld	c, a
+	; b -> number of leading white pix
+	; c -> number of trailing black pix
+	; d -> total number of black pix minus leading black pix
+	; e -> buffer offset of first pix
+	
+	ld	a, e
+	offset_hl
+	
+	ld	a, d
+	or	a
+	
+	jr	nz, vect_inv_hline.accross
+	
+	ld	a, d
+	cp	c
+	jr	c, vect_inv_hline.short
+	jr	z, vect_inv_hline.short
+vect_inv_hline.accross:
+	call	vect_inv_hline.left
+	
+	srl	d
+	srl	d
+	srl	d
+	jr	z, vect_inv_hline.nobody
+	ld	b, d
+	
+vect_inv_hline.body:
+	ld	a, (hl)
+	cpl
+	ld	(hl), a
+	inc	hl
+	djnz	vect_inv_hline.body
+	
+vect_inv_hline.nobody:
+	call	vect_inv_hline.right
+	
+	ret
+
+vect_inv_hline.short:
+	ld	a, b
+	or	a
+	jr	z, vect_inv_hline.right
+	
+	ld	d, $FF
+	
+	srl	d
+	djnz	$-2
+	
+	ld	a, c
+	or	a
+	ld	a, $FF
+	jr	z, vect_inv_hline.shortend
+	
+	ld	b, c
+	xor	a
+	
+	scf
+	rra
+	djnz	$-2
+	
+vect_inv_hline.shortend:
+	and	d
+	xor	(hl)
+	ld	(hl), a
+	
+	ret
+
+vect_inv_hline.left:
+	ld	a, b
+	or	a
+	ret	z
+	
+	ld	b, a
+	ld	a, $FF
+	
+	srl	a
+	djnz	$-2
+	
+	xor	(hl)
+	ld	(hl), a
+	inc	hl
+	
+	ret
+
+vect_inv_hline.right:
+	ld	a, c
+	or	a
+	ret	z
+	
+	ld	b, a
+	xor	a
+	
+	scf
+	rra
+	djnz	$-2
+	
+	xor	(hl)
+	ld	(hl), a
+	inc	hl
+	
+	ret
+
 ; goal : have a decent and consistent GUI
 ; widget arch : "tab widget" with either big texts or layouts containing
 ; a collection of controls (checkbox, input, ...)
@@ -100,7 +414,7 @@ vect_gui_tabs:
 	ld	bc, $0000
 	call	zp.puts_con
 	xor	a
-	call	zp.invline
+	call	vect_inv_hline
 	ld	d, a
 	ld	e, a
 	ld	b, a
@@ -185,7 +499,7 @@ _reloc_1_	= $+1
 	push	de
 	ld	a, $0D
 	ld	bc, $005F
-	call	zp.draw_hline
+	call	vect_draw_hline
 	pop	de
 	
 	call	zp.vbufdisp
@@ -399,7 +713,7 @@ vect_gui_draw_layout_line.loop:
 	push	bc
 	ld	b, (iy + 2)
 	ld	c, (iy + 3)
-	call	zp.inv_hline
+	call	vect_inv_hline
 	pop	bc
 	pop	af
 	inc	a

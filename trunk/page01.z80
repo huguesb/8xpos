@@ -5006,6 +5006,29 @@ compat.iline:
 	push	hl
 	push	ix
 	; draw line from (b, c) to (d, e) according to h {0:light, 1:dark, 2:invert}
+	
+	; <weird and hackish adjustment to attempt to match TIOS behavior...>
+	
+	ld	a, c
+	cp	e
+	jr	nz, compat.iline.noadjust
+	inc	c
+	inc	e
+	
+	ld	a, c
+	cp	64
+	jr	c, $+4
+	sub	64
+	ld	c, a
+	
+	ld	a, e
+	cp	64
+	jr	c, $+4
+	sub	64
+	ld	e, a
+	; </weird and hackish adjustment to attempt to match TIOS behavior...>
+	
+compat.iline.noadjust:
 	ld	a, h
 	ld	h, b
 	ld	l, c
@@ -5265,6 +5288,12 @@ compat.getcsc:
 ; 	ld	b, 80
 ; 	call	zp.timer_msleep
 ; 	pop	bc
+	
+	ei
+	halt
+	halt
+	halt
+	halt
 	
 	ld	a, (os.flags + osf.compat)
 	bit	vbuf_flush, a

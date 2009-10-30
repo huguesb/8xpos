@@ -1263,7 +1263,8 @@ _Finish2:
 #include "commands/fs.z80"
 
 #include "data/font_6x8.inc"
-#include "data/font_var.inc"
+;#include "data/font_var.inc"
+#include "data/83p_varl.inc"
 
 .export	vect_forget_commands
 .export	vect_memorize_command
