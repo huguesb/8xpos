@@ -319,3 +319,252 @@ sedMonSp             =  9D88h
 bpSave               =  9D8Ah
 userMem              =  9D95h
 symTable             =  0FE66h
+
+;
+;======================================================================
+;           System and State Flags
+;======================================================================
+;
+
+trigFlags	=  0		;Trigonometry mode settings
+trigDeg 	=    2	; 1=degrees, 0=radians
+
+kbdFlags	=  0		;Keyboard scan
+kbdSCR		=    3	; 1=scan code ready
+kbdKeyPress	=    4	; 1=key has been pressed
+
+doneFlags	=  0		;display "Done"
+donePrgm	=    5	; 1=display "Done" after prgm
+
+ioDelFlag	=  0
+inDelete	=    0	;1 = DELETE SCREEN 
+
+;----------------------------------------------------------------------
+editFlags	=  1
+editOpen	=    2	; 1=edit buffer is open
+
+monFlags	=  1		;monitor flags
+monAbandon	=    4	; 1=don't start any long process
+				; in put away (#715)
+;----------------------------------------------------------------------
+plotFlags	=  2		;plot generation flags
+plotTrace	=  0
+plotLoc 	=    1	; 0=bkup & display, 1=display only
+plotDisp	=    2	; 1=plot is in display, 0=text in display
+
+
+grfModeFlags	=  2		;graph mode settings
+grfFuncM	=    4	; 1=function graph
+grfPolarM	=    5	; 1=polar graph
+grfParamM	=    6	; 1=parametric graph
+grfRecurM       =    7        ; 1=RECURSION graph
+
+graphFlags	=  3
+graphDraw	=    0	; 0=graph is valid, 1=redraw graph
+
+grfDBFlags	=  4
+grfDot		=    0	; 0=line, 1=dot
+grfSimul	=    1	; 0=sequential, 1=simultaneous
+grfGrid 	=    2	; 0=no grid, 1=grid
+grfPolar	=    3	; 0=rectangular, 1=polar coordinates
+grfNoCoord	=    4	; 0=display coordinates, 1=off
+grfNoAxis	=    5	; 0=axis, 1=no axis
+grfLabel	=    6	; 0=off, 1=axis label
+
+textFlags	=  5		;Text output flags
+textEraseBelow	=    1	; 1=erase line below small char
+textScrolled	=    2	; 1=screen scrolled
+textInverse	=    3	; 1=display inverse bit-map
+textInsMode	=    4	; 0=overstrike, 1=insert mode
+
+ParsFlag2	=  7		;PARSER flags
+numOP1		=    0	; 1=RESULT IN OP1, 0=NO RESULT
+
+newDispF        =  8		;Derivative mode flags
+preClrForMode   =    0	; 1=HELP BLINK ON MODE SCREEN
+
+apdFlags	=  8		;Automatic power-down
+apdAble 	=    2	; 1=APD enabled
+apdRunning	=    3	; 1=APD clock running
+
+
+web_err_mask    =  60h
+
+onFlags 	=  9		;on key flags
+onRunning	=  3		; 1 = calculator is running
+onInterrupt	=    4	; 1=on key interrupt request
+
+statFlags	=  9		;statistics flags
+statsValid	=    6	; 1=stats are valid
+statANSDISP	=  7		; 1=display stat results
+
+
+fmtFlags	=  10		;numeric format flags
+fmtExponent	=    0	; 1=show exponent, 0=no exponent
+fmtEng		=    1	; 1=engineering notion, 0=scientific
+fmtHex		=    2	; 1=hexadecimal
+fmtOct		=    3	; 1=octal
+fmtBin		=    4	; 1=binary
+;
+numMode         =  10
+fmtReal         =    5
+fmtRect         =    6
+fmtPolar        =    7
+
+realMode        =    5
+rectMode        =    6
+polarMode       =    7
+;					;   if Hex and Oct both = 1
+;					;   then Bin=0 means >Frac
+;					;	 Bin=1 means >DMS
+fmtBaseMask     =  00011100B		; mask to base flags
+fmtBaseShift    =  2			; offset to base flags
+;
+;       CHECK IF THESE ARE USED BY NUMFORM,
+;
+;               =  6
+;               =  7
+
+fmtOverride	=  11		;copy of fmtFlags with conversion override
+
+fmtEditFlags	=  12		;numeric editing flags
+fmtEdit 	=    0	; 1=format number for editing
+
+curFlags	=  12		;Cursor
+curAble 	=    2	; 1=cursor flash is enabled
+curOn		=    3	; 1=cursor is showing
+curLock 	=    4	; 1=cursor is locked off
+
+appFlags	=  13		;application flags
+appWantIntrpt	=    0		; 1=want ON key interrupts
+appTextSave	=    1		; 1=save characters in textShadow
+appAutoScroll	=    2		; 1=auto-scroll text on last line
+appMenus	=    3		; 1=process keys that bring up menus
+					; 0=check Lock menu flag
+appLockMenus	=    4		; 1=ignore menu keys
+					; 0=switch to home screen and bring up menu
+appCurGraphic	=    5		; 1=graphic cursor
+appCurWord	=    6		; 1=text cursor covers entire word
+appExit 	=    7		; 1=application handles [EXIT] key itself
+
+appWantIntrptF	=	1<<appWantIntrpt
+appTextSaveF	=	1<<appTextSave
+appAutoScrollF	=	1<<appAutoScroll
+appMenusF	=	1<<appMenus
+appLockMenusF	=	1<<appLockMenus
+appCurGraphicF	=	1<<appCurGraphic
+appCurWordF	=	1<<appCurWord
+appExitF	=	1<<appExit
+
+
+seqFlags        =  15              ; Sequential Graph flags
+webMode         =    0             ; 0 = NORMAL SEQ MODE, 1 = WEB MODE
+webVert         =    1             ;
+sequv           =    2             ; U vs V
+seqvw           =    3             ; V vs W
+sequw           =    4             ; U vs W
+
+
+promptFlags	=  17		;prompt line flags
+promptEdit	=    0	; 1=editing in prompt buffer
+
+indicFlags	=  18		;Indicator flags
+indicRun	=    0	; 1=run indicator ON
+indicInUse	=    1	; indicator save area in use=1, free=0
+indicOnly	=    2	; interrupt handler only checks run indicator
+
+shiftFlags	=  18		;[2nd] and [ALPHA] flags
+shift2nd	=    3	; 1=[2nd] has been pressed
+shiftAlpha	=    4	; 1=[ALPHA] has been pressed
+shiftLwrAlph	=    5	; 1=lower case, 0=upper case
+shiftALock	=    6	; 1=alpha lock has been pressed
+shiftKeepAlph	=    7	; 1=cannot cancel alpha shift
+
+
+tblFlags        =  19		;table flags.
+autoFill        =    4	; 1=prompt, 0=fillAuto
+autoCalc        =    5	; 1=prompt, 0=CalcAuto
+reTable         =    6	; 0=table is ok, 1=must recompute table.
+
+sGrFlags	=  20
+grfSplit        =    0	; 1=Split Graph, 0=Normal
+vertSplit       =    1	; 1=Vertical (left-right) Split
+grfSChanged     =    2	; 1=Graph just changed Split <-> normal
+grfSplitOverride =   3	; 1 = ignore graph split flag if set
+write_on_graph  =    4	; 1 = TEXT OR = WRITING TO GRAPH SCREEN
+g_style_active  =    5	; 1 = GRAPH STYLES ARE ENABLED, USE THEM
+cmp_mod_box     =    6	; 1 = DOING MOD BOX PLOT COMPUTATION
+textWrite       =    7	; 1 = Small font writes to buffer
+							; 0 = Small font writes to display
+;
+
+newIndicFlags   =  21
+extraIndic      =    0
+saIndic         =    1
+
+newFlags2	    =  22
+noRestores	    =  5
+
+smartFlags      =  23
+;
+;----------------------------------------------------------------------
+; Note: Fix these Equates if smartFlags are moved                            
+;----------------------------------------------------------------------
+;
+smarter_mask    =  3
+smarter_test    =  1
+smartGraph      =  0
+smartGraph_inv  =  1                                                 
+
+more_Flags	= 26
+
+No_Del_Stat	= 2
+;----------------------------------------------------------------------
+;           Available for ASM programming
+;----------------------------------------------------------------------
+
+asm_Flag1       =  33          ; ASM CODING
+asm_Flag2       =  34          ; ASM CODING
+asm_Flag3       =  35          ; ASM CODING
+
+;----------------------------------------------------------------------
+;
+getSendFlg	=  36
+comFailed	=  1	      ; 1 = Get/Send Communication Failed
+;
+appLwrCaseFlag  =  36
+lwrCaseActive   =  3
+;
+apiFlg3		=  42 
+;
+apiFlg4		=  43
+fullScrnDraw	=    2	; DRAW INTO LAST ROW/COL OF SCREEN
+
+groupFlags	=  38
+inGroup		=  1		;1 = IN GROUP CONTEXT
+
+
+xapFlag0        =  46      ; external app flags
+xapFlag1        =  47
+xapFlag2        =  48
+xapFlag3        =  49
+
+fontFlags	=  50
+fracDrawLFont	=    2
+fracTallLFont	=    3
+customFont	=    7  
+
+plotFlag3	=  60  
+bufferOnly	=    0
+useFastCirc	=    4
+
+DBKeyFlags      =     61              ;dbus keyboard flags
+;Modifier         =     0..3          ;Reserved for LSNibble of Modifiers
+repeatMost        =     4             ;set if repeat normal keys
+haveDBKey         =     5             ;set if have DBus key
+keyDefaultsF      =     6             ;set if don't use system default keys.
+HWLinkErrF        =     7             ;have a SE Hardware Link error.
+
+;
+varTypeMask	=  1FH             
+varGraphRef	=    6

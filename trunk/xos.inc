@@ -118,6 +118,7 @@ aps_on				= 1	; 1 = process APS timer in ISR
 debug_on			= 2 ; 1 = debug mode
 prgm_running		= 3	; 1 = program is running
 im2_isr_rst38		= 4	; 1 = im2 helper runs default system ISR after user ISR
+tios_emulation		= 7 ; 1 = TIOS emulation is turned on
 
 ; os.flags : group 1 -> filesystem
 osf.filesystem	= 1
