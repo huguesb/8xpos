@@ -110,10 +110,17 @@ vect_compat_start:
 	ld	a, $3B
 	out	(lcd_delay3_port), a
 	
+	; notify sys routines so that they may adapt somehow
+	ld	hl, os.flags + osf.general
+	set	tios_emulation, (hl)
 	
 	ret
 
 vect_compat_stop:
+	; notify sys routines so that they may adapt somehow
+	ld	hl, os.flags + osf.general
+	res	tios_emulation, (hl)
+	
 	ld	hl, os.lcd.mem
 	ld	(os.vbuf_addr), hl
 	

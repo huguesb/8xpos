@@ -587,6 +587,15 @@ vect_cgets.bs.atend:
 	
 	jp	vect_cgets.nomove
 
+check_text_inverse:
+	; check text inverse flags when TIOS emulation is on...
+	ld	a, (os.flags + osf.general)
+	bit	tios_emulation, a
+	jr	z, $+2+4
+	bit	3, (iy+5)
+	
+	ret
+
 ; brief : write a character to display buffer using console font
 ; input : a -> char to write, b -> row, c -> column
 ; output : none
@@ -633,7 +642,14 @@ vect_putch_con:
 	ld	b, 6
 
 vect_putch_con._loop:
+	call	check_text_inverse
+	
 	ld	a, (ix)
+	
+	; act upon flag...
+	jr	z, $+3
+	cpl
+	
 	bit	1, c
 	jr	nz, vect_putch_con._oddfont
 	rlca

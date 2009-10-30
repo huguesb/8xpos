@@ -62,7 +62,7 @@ _DivHLByA:		; equ $4012
        .db $00
 ;_GetCSC			equ $4018 ;key board scan codes
 _GetCSC:
-       .dw zp.getkey
+       .dw compat.getcsc
        .db $00
 ;_coorMon		equ $401B ;
        .dw $0000
@@ -121,11 +121,11 @@ _JForceCmd:		; equ $402A
 _lcd_busy:		; equ $4051 ;wait till bit 1 of port 2 is set
        .dw compat.lcd_busy
        .db $00
-;_Min			equ $4054 ;op1 = lowest number between op1 and op2
-       .dw $0000
+_Min			; equ $4054 ;op1 = lowest number between op1 and op2
+       .dw compat.fpmin
        .db $00
-;_Max			equ $4057 ;op1 = highest number between op1 and op2 
-       .dw $0000
+_Max			; equ $4057 ;op1 = highest number between op1 and op2 
+       .dw compat.fpmax
        .db $00
 ;$405A
        .dw $0000
@@ -133,8 +133,8 @@ _lcd_busy:		; equ $4051 ;wait till bit 1 of port 2 is set
 ;$405D
        .dw $0000
        .db $00
-;_Trunc			equ $4060
-       .dw $0000
+_Trunc			; equ $4060
+       .dw compat.ftrunc
        .db $00
 ;_InvSub			equ $4063
        .dw $0000
@@ -142,11 +142,11 @@ _lcd_busy:		; equ $4051 ;wait till bit 1 of port 2 is set
 ;_Times2			equ $4066
        .dw $0000
        .db $00
-;_Plus1			equ $4069 ;op1=op1+1
-       .dw $0000
+_Plus1			; equ $4069 ;op1=op1+1
+       .dw compat.fpinc
        .db $00
-;_Minus1			equ $406C
-       .dw $0000
+_Minus1			; equ $406C
+       .dw compat.fpdec
        .db $00
 _FPSub			; equ $406F
        .dw compat.fpsub
@@ -646,17 +646,17 @@ _Mov7B			; equ $4168
 ;_ClrOP1S		equ $425E
        .dw $0000
        .db $00
-;_FDIV100		equ $4261 ;op1=op1/100
-       .dw $0000
+_FDIV100		; equ $4261 ;op1=op1/100
+       .dw compat.fdiv100
        .db $00
-;_FDIV10			equ $4264 ;op1=op1/10
-       .dw $0000
+_FDIV10			; equ $4264 ;op1=op1/10
+       .dw compat.fdiv10
        .db $00
-;_DecO1Exp		equ $4267 ;decrease exponent by 1, this can go from 0 to FF
-       .dw $0000
+_DecO1Exp		; equ $4267 ;decrease exponent by 1, this can go from 0 to FF
+       .dw compat.dec_exp
        .db $00
-;_INCO1EXP		equ $426A ;op1=op1*10
-       .dw $0000
+_INCO1EXP		; equ $426A ;op1=op1*10
+       .dw compat.inc_exp
        .db $00
 ;_INCEXP			equ $426D ;hl points to the floating point's exponent to be multiplied by 10
        .dw $0000
@@ -778,8 +778,8 @@ _HTimesL:		; equ $4276
 ;_GET_X_INDIRECT		equ $42E2 ;whatever this is, it uses the imathptrX locations
        .dw $0000
        .db $00
-;_MemChk			equ $42E5
-       .dw $0000
+_MemChk:			; equ $42E5
+       .dw compat.memchk
        .db $00
 ;_CMPPRGNAMLEN1		equ $42E8 ;gets variable name length from HL
        .dw $0000
@@ -1427,11 +1427,11 @@ _VPutS			; equ $4561
 ;_vputsnT		equ $456A
        .dw $0000
        .db $00
-;_RunIndicOn		equ $456D
-       .dw $0000
+_RunIndicOn		; equ $456D
+       .dw compat.null
        .db $00
-;_RunIndicOff		equ $4570
-       .dw $0000
+_RunIndicOff		; equ $4570
+       .dw compat.null
        .db $00
 ;_saveCmdShadow		equ $4573
        .dw $0000
@@ -1500,7 +1500,7 @@ _VPutS			; equ $4561
        .dw $0000
        .db $00
 ;_DispDone		equ $45B5
-       .dw $0000
+       .dw compat.null
        .db $00
 ;_finishoutput		equ $45B8
        .dw $0000
@@ -1509,13 +1509,13 @@ _VPutS			; equ $4561
        .dw $0000
        .db $00
 ;_CursorOff:
-       .dw $0000
+       .dw compat.null
        .db $00
 ;_hideCursor:
        .dw $0000
        .db $00
 ;_CursorOn:
-       .dw $0000
+       .dw compat.null
        .db $00
 ;_showCursor:
        .dw $0000
@@ -1970,14 +1970,14 @@ _VPutS			; equ $4561
 ;_InitNumVec		equ $4789 ;inits window settings/table setup/finance solver context (dialog-like)
        .dw $0000
        .db $00
-;_SetXXOP1		equ $478C
-       .dw $0000
+_SetXXOP1		; equ $478C
+       .dw compat.setXXop1
        .db $00
-;_SetXXOP2		equ $478F
-       .dw $0000
+_SetXXOP2		; equ $478F
+       .dw compat.setXXop2
        .db $00
-;_SetXXXXOP2		equ $4792
-       .dw $0000
+_SetXXXXOP2		; equ $4792
+       .dw compat.setXXXXop2
        .db $00
 ;_UCLineS		equ $4795
        .dw $0000
@@ -2229,7 +2229,7 @@ _GrBufCpy:		; equ $486A
        .dw $0000
        .db $00
 ;_Regraph		equ $488E
-       .dw $0000
+       .dw compat.null
        .db $00
 ;_DOREFFLAGS02		equ $4891 ;something wrong here
        .dw $0000
@@ -2582,8 +2582,8 @@ _GetKey:
 ;_RetScreenErr		equ $49ED
        .dw $0000
        .db $00
-;_CheckSplitFlag		equ $49F0
-       .dw $0000
+_CheckSplitFlag		; equ $49F0
+       .dw compat.checksplitflag
        .db $00
 ;_SolveRedisp		equ $49F3
        .dw $0000
@@ -3458,14 +3458,14 @@ _EnableApd:		; equ $4C87 ;set apdable,(iy+apdflags)
 ;_GetDispRowOffset	equ $4D59 ;HL=A*12 (intended for A to be row and HL becomes offset into plotSScreen)
        .dw $0000
        .db $00
-;_ClearRect		equ $4D5C
-       .dw $0000
+_ClearRect		; equ $4D5C
+       .dw compat.clearrect
        .db $00
-;_InvertRect		equ $4D5F
-       .dw $0000
+_InvertRect		; equ $4D5F
+       .dw compat.invertrect
        .db $00
-;_FillRect		equ $4D62
-       .dw $0000
+_FillRect		; equ $4D62
+       .dw compat.fillrect
        .db $00
 ;_AppUpdateMouse		equ $4D65
        .dw $0000
@@ -3491,8 +3491,8 @@ _EnableApd:		; equ $4C87 ;set apdable,(iy+apdflags)
 ;_setcelloverride	equ $4D7A
        .dw $0000
        .db $00
-;_DrawRectBorder		equ $4D7D
-       .dw $0000
+_DrawRectBorder		; equ $4D7D
+       .dw compat.drawrectborder
        .db $00
 ;_ClearCell		equ $4D80
        .dw $0000
@@ -3500,14 +3500,14 @@ _EnableApd:		; equ $4C87 ;set apdable,(iy+apdflags)
 ;_covercell		equ $4D83
        .dw $0000
        .db $00
-;_EraseRectBorder	equ $4D86
-       .dw $0000
+_EraseRectBorder	; equ $4D86
+       .dw compat.eraserectborder
        .db $00
 ;_FillRectPattern	equ $4D89
        .dw $0000
        .db $00
-;_DrawRectBorderClear	equ $4D8C
-       .dw $0000
+_DrawRectBorderClear	; equ $4D8C
+       .dw compat.drawrectborderclear
        .db $00
 ;;$4D8F ;mouse subroutine
        .dw $0000
@@ -3948,7 +3948,7 @@ _RecAByteIO:
        .dw $0000
        .db $00
 ;_Disp			equ $4F45
-       .dw $0000
+       .dw compat.null
        .db $00
 ;_SendGetkeyPress	equ $4F48
        .dw $0000
@@ -4247,11 +4247,11 @@ _PagedGet:		; equ $5023
 ;_DisablecxRedispHook	equ $506E
        .dw $0000
        .db $00
-;_BufCpy			equ $5071
-       .dw $0000
+_BufCpy			; equ $5071
+       .dw compat.bufcpy
        .db $00
-;_BufClr			equ $5074
-       .dw $0000
+_BufClr			; equ $5074
+       .dw compat.bufclr
        .db $00
 ;_UnOPExec2		equ $5077
        .dw $0000
@@ -4277,8 +4277,8 @@ _PagedGet:		; equ $5023
 ;_GetBCOffsetIX2		equ $508C
        .dw $0000
        .db $00
-;_ForceFullScreen	equ $508F
-       .dw $0000
+_ForceFullScreen:	;	equ $508F
+       .dw compat.null
        .db $00
 ;_GetVariableData	equ $5092
        .dw $0000
@@ -4956,6 +4956,13 @@ _NZIf83Plus:		; equ $50E0
 ;	0 : mkvatnode (hl : file address, de : file size)
 #define ccall(n) call zp.end + (3*n)
 
+compat.darkpoint:
+compat.grphcirc:
+compat.findprogsym:
+
+compat.null:
+	ret
+
 compat.div_hl_a:
 	ld	c, a
 	jp	zp.div_hl_c
@@ -4988,9 +4995,6 @@ compat.iline:
 	pop	bc
 	pop	af
 
-compat.darkpoint:
-	ret
-
 compat.ipoint:
 	push	af
 	push	bc
@@ -5017,15 +5021,10 @@ compat.ipoint.return:
 	pop	af
 	ret
 
-compat.grphcirc:
-	
-	ret
-
-compat.findprogsym:
-	ret
-
 compat.chkfindsym:
 	; data in OP1
+	scf
+	ret
 	
 	ld	hl, (progPtr)
 	ld	de, (pTemp)
@@ -5095,6 +5094,12 @@ compat.cfs.invalid:
 
 compat.findsym:
 	scf
+	ret
+
+compat.memchk:
+	call	zp.file_meminfo
+	ld	h, b
+	ld	l, c
 	ret
 
 compat.insertmem:
@@ -5199,9 +5204,22 @@ compat.vputmap:
 	
 compat.vputs:
 	ld	bc, (penCol)
+	; well, err...
+	srl	c
+	srl	c
 	call	zp.puts_con
+	sla	c
+	sla	c
 	ld	(penCol), bc
 	ret
+
+compat.getcsc:
+	;; gotta slow things down a bit..
+	ld	b, 100
+	call	zp.timer_msleep
+	ei
+	halt
+	jp	zp.getkey
 
 compat.getkey:
 	push	hl
@@ -5693,26 +5711,229 @@ compat.jforcecmd:
 compat.fpadd:
 	ld	hl, OP1
 	ld	de, OP2
-	call	zp.fp_add
-	ret
+	jp	zp.fp_add
 
 compat.fpsub:
 	ld	hl, OP1
 	ld	de, OP2
-	call	zp.fp_sub
-	ret
+	jp	zp.fp_sub
 
 compat.fpmult:
 	ld	hl, OP1
 	ld	de, OP2
-	call	zp.fp_mult
-	ret
+	jp	zp.fp_mult
 
 compat.fpdiv:
 	ld	hl, OP1
 	ld	de, OP2
-	call	zp.fp_div
+	jp	zp.fp_div
+
+compat.fpdec:
+	ld	hl, OP1
+	jp	zp.fp_dec
+
+compat.fpinc:
+	ld	hl, OP1
+	jp	zp.fp_inc
+
+compat.ftrunc:
+	ld	hl, OP1
+	jp	zp.fp_int
+
+compat.fpmax:
+	ld	hl, OP1
+	ld	de, OP2
+	call	zp.fp_cmp
+	ret nc
+	jp	compat.op2toop1
+
+compat.fpmin:
+	ld	hl, OP2
+	ld	de, OP1
+	call	zp.fp_cmp
+	ret nc
+	jp	compat.op2toop1
+
+compat.fdiv100:
+	ld	hl, OP1+1
+	dec	(hl)
+	dec	(hl)
 	ret
+
+compat.fdiv10:
+compat.dec_exp:
+	ld	hl, OP1+1
+	dec	(hl)
+	ret
+
+compat.inc_exp:
+	ld	hl, OP1+1
+	inc	(hl)
+	ret
+
+compat.setXXop1:
+	ld	h, 0
+	ld	l, a
+	ld	de, OP1
+	jp	zp.itof
+
+compat.setXXop2:
+	ld	h, 0
+	ld	l, a
+	ld	de, OP2
+	jp	zp.itof
+
+compat.setXXXXop2:
+	ld	de, OP2
+	jp	zp.itof
+
+compat.checksplitflag:
+	; set zero without destroying any register
+	cp	a
+	ret
+
+compat.bufcpy:
+	ld	de, (os.vbuf_addr)
+	push	de
+	ld	(os.vbuf_addr), hl
+	call	zp.vbufdisp
+	pop	hl
+	ld	(os.vbuf_addr), hl
+	ret
+
+compat.bufclr:
+	ld	de, (os.vbuf_addr)
+	push	de
+	ld	(os.vbuf_addr), hl
+	call	zp.clrscr
+	pop	hl
+	ld	(os.vbuf_addr), hl
+	ret
+
+; naive...
+compat.clearrect:
+	ld	c, 0
+	
+compat.rect:
+	; compute row count
+	ld	a, d
+	sub	h
+	inc	a
+	ld	b, a
+	
+	; (r, c)::(h, l)->(h, e) == (x, y)::(l, h)->(e, h)
+	ld	d, e
+	ld	e, h
+	ld	h, l
+	ld	l, e
+	
+	ld	a, c
+	
+compat.rect.loop:
+	push	af
+	push	hl
+	push	de
+	push	bc
+	call	zp.draw_line
+	pop	bc
+	pop	de
+	pop	hl
+	pop	af
+	
+	; increase row
+	inc	l
+	inc	e
+	
+	djnz	compat.rect.loop
+	
+	ret
+
+compat.fillrect:
+	ld	c, 1
+	jp	compat.rect
+
+compat.invertrect:
+	ld	c, 2
+	jp	compat.rect
+
+compat.drawrectborderclear:
+	push	hl
+	push	de
+	
+	; clear rect!!!
+	inc	h
+	inc	l
+	dec	d
+	dec	e
+	call	compat.clearrect
+	
+	pop	de
+	pop	hl
+	
+	; fall through
+	
+; rect defined by (h, l), (d, e) as topLeft(row, col), bottomRight(row, col)
+compat.drawrectborder:
+	ld	a, 1
+	
+compat.drb.sub:
+	push	af
+	push	hl
+	push	de
+	; (r, c)::(h, l)->(h, e) == (x, y)::(l, h)->(e, h)
+	ld	d, e
+	ld	e, h
+	ld	h, l
+	ld	l, e
+	
+	call	zp.draw_line
+	pop	de
+	pop	hl
+	pop	af
+	
+	push	af
+	push	hl
+	push	de
+	; (r, c)::(h, l)->(d, l) == (x, y)::(l, h)->(l, d)
+	ld	e, d
+	ld	d, l
+	ld	l, h
+	ld	h, d
+	
+	call	zp.draw_line
+	pop	de
+	pop	hl
+	pop	af
+	
+	push	af
+	push	hl
+	push	de
+	; (r, c)::(h, e)->(d, e) == (x, y)::(e, h)->(e, d)
+	ld	l, h
+	ld	h, e
+	ld	e, d
+	ld	d, h
+	
+	call	zp.draw_line
+	pop	de
+	pop	hl
+	pop	af
+	
+	; (r, c)::(d, l)->(d, e) == (x, y)::(l, d)->(e, d)
+	ld	h, l
+	ld	l, d
+	ld	d, e
+	ld	e, l
+	
+	call	zp.draw_line
+	
+	ret
+
+compat.eraserectborder:
+	xor	a
+	jp	compat.drb.sub
+
+
 
 #if $ > $8000
 !!!
