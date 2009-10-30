@@ -233,6 +233,11 @@ vect_fp_sqr:
 ; brief : computes hl!
 vect_fp_fact:
 	call	zp.fp_int
+	call	zp.fp_bool
+	jr	nz, $+7
+	ld	a, 1
+	jp	zp.fp_const
+	
 	call	zp.fp_push
 	
 vect_fp_fact.loop:

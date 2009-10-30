@@ -547,7 +547,7 @@ Eval.Additive.Subtract
 ; Level: Multiplicative (* / \ %)                                            ;
 ; ========================================================================== ;
 Eval.Multiplicative
-	call Eval.Power
+	call Eval.Factorial
 Eval.Multiplicative.Loop
 	
 	call ReadCharacter
@@ -561,8 +561,6 @@ Eval.Multiplicative.Loop
 	jr z,Eval.Multiplicative.IDivide
 	cp '%'
 	jr z,Eval.Multiplicative.Modulo
-	cp '!'
-	jr z,Eval.Multiplicative.Factorial
 	ret
 
 ; -------------------------------------------------------------------------- ;
@@ -572,7 +570,7 @@ Eval.Multiplicative.Multiply
 	inc ix
 	call	zp.fp_push
 	
-	call Eval.Power
+	call Eval.Factorial
 	
 	call	zp.fp_pop
 	ex	de, hl
@@ -587,7 +585,7 @@ Eval.Multiplicative.FDivide
 	inc ix
 	call	zp.fp_push
 	
-	call Eval.Power
+	call Eval.Factorial
 	
 	call	zp.fp_pop
 	ex	de, hl
@@ -603,7 +601,7 @@ Eval.Multiplicative.IDivide
 	
 	call	zp.fp_push
 	
-	call Eval.Power
+	call Eval.Factorial
 	
 	; todo : have integer division...
 	call	zp.fp_pop
@@ -620,7 +618,7 @@ Eval.Multiplicative.Modulo
 	
 	call	zp.fp_push
 	
-	call Eval.Power
+	call Eval.Factorial
 	
 	; todo : have modulo...
 	call	zp.fp_pop
@@ -633,12 +631,21 @@ Eval.Multiplicative.Modulo
 ; -------------------------------------------------------------------------- ;
 ; Operator: Factorial (!)                                                    ;
 ; -------------------------------------------------------------------------- ;
-Eval.Multiplicative.Factorial:
+Eval.Factorial:
+	call	Eval.Power
+Eval.Factorial.Loop:
+	
+	call	ReadCharacter
+	ret	z
+	
+	cp	'!'
+	ret	nz
+	
 	inc	ix
 	
 	call	vect_fp_fact
 	
-	jp Eval.Multiplicative.Loop
+	jp Eval.Factorial.Loop
 
 ; ========================================================================== ;
 ; Level: Power (**)                                                          ;
