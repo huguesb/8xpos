@@ -23,7 +23,7 @@
 .list
 
 ; brief : write a sprite to vbuf
-; input : de -> sprite data, b -> sprite height, l -> y coord, c -> x coord, h -> flags (0 : XOR, 1 : 0R)
+; input : de -> sprite data, b -> sprite height, l -> y coord, c -> x coord, h -> flags (0 : OR, 1 : X0R)
 ; output : none
 ; destroys : a, bc, de, hl
 vect_putsprite:

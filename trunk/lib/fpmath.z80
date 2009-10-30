@@ -1260,6 +1260,37 @@ vect_fp_shr:
 	pop	bc
 	ret
 
+; brief : generates a random number in ]0, 1[
+; input : hl -> fp number
+; output : hl -> fp number
+; destroys : none
+vect_fp_rand:
+	push	hl
+	push	de
+	push	bc
+	
+	ld	(hl), $00
+	inc	hl
+	ld	(hl), $7F
+	
+vect_fp_rand.loop:
+	inc	hl
+	ex	de, hl
+	call	zp.rand_word
+	ex	de, hl
+	ld	a, e
+	xor	d
+	add	a, 0
+	daa
+	ld	(hl), a
+	djnz	vect_fp_rand.loop
+	
+	pop	bc
+	pop	de
+	pop	hl
+	
+	jp	vect_fp_normalize
+
 vect_fp_pow:
 	
 	ret

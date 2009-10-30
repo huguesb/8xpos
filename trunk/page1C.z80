@@ -957,6 +957,304 @@ help.chronos:
 	.db "hexadecimal value."
 	.db 0
 
+_shift	=	os.scrap
+_cols	=	os.scrap + 1
+_offset	=	os.scrap + 2
+
+vect_drawicon:
+	push	hl
+	push	de
+	push	bc
+
+	ld	d, (ix)
+	ld	e, 0
+	ld	(_shift), de
+	ld	e, (ix + 1)
+
+	call	_draw
+	ccf
+
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+
+_check_inverse:
+	; check text inverse flags when TIOS emulation is on...
+	push	hl
+	ld	hl, os.flags + osf.general
+	bit	tios_emulation, (hl)
+	pop	hl
+	ret	z
+	bit	3, (iy+5)
+	ret
+
+_draw:
+	ld	h, c
+	ld	a, c
+	or	a
+	jp	m, _X_LT_0
+	cp	96
+	ret	nc
+	jp	_X_In_Range
+
+_X_LT_0:
+	add	a, d
+	ret	m
+	ret	z
+	push	af
+	push	bc
+	sub	d
+	neg
+	ld	c, a
+	srl	c
+	srl	c
+	srl	c
+	ld	b, 0
+	add	ix, bc
+	pop	bc
+	and	7
+	ld	(_shift), a
+	pop	af
+	ld	d, a
+	ld	c, 0
+	cp	96
+	jr	c, _X_In_Range
+_ClipR:
+	ld	a, 95
+	sub	h
+	ld	d, a
+	jp	_VClip
+
+_X_In_Range:
+	add	a, d
+	cp	96
+	jr	nc, _ClipR
+
+_VClip:
+	ld	h, b
+	ld	a, b
+	or	a
+	jp	m, _Y_LT_0
+	cp	64
+	ret	nc
+	jp	_Y_In_Range
+_Y_LT_0:
+	add	a, e
+	ret	m
+	ret	z
+	push	af
+	push	bc
+	ld	a, b
+	neg
+	ld	bc, (_cols)
+	dec	c
+	srl	c
+	srl	c
+	srl	c
+	inc	c
+	ld	b, 0
+	add	ix, bc
+	dec	a
+	jp	nz, $-3
+	pop	bc
+	pop	af
+	ld	e, a
+	
+	ld	b, 0
+	cp	64
+	jr	c, _Y_In_Range
+_ClipB:
+	ld	a, 63
+	sub	h
+	ld	e, a
+	jp	_Display
+_Y_In_Range:
+	add	a, e
+	cp	64
+	jr	nc, _ClipB
+	
+_Display:
+	inc	ix
+	inc	ix
+
+; B = row
+; C = col
+; D = visible cols
+; E = visible rows
+; IX = &image
+
+	ld	a, c
+	ld	c, b
+	ld	b, 0
+	ld	h, b
+	ld	l, c
+	add	hl, hl
+	add	hl, bc
+	add	hl, hl
+	add	hl, hl
+	ld	c, a
+	srl	c
+	srl	c
+	srl	c
+	add	hl, bc
+	ld	bc, (os.vbuf_addr)
+	add	hl, bc
+	and	%00000111
+	ld	(_offset), a
+
+	push	de
+	push	hl
+	push	ix
+_Row_Loop:
+	ld	a, (_shift)
+	or	a
+	ld	b, a
+	ld	a, (ix)
+	ld	c, (ix + 1)
+	push	af
+	call	_check_inverse
+	jr	z, _inv_done
+	cpl
+	push	af
+	ld	a, c
+	cpl
+	ld	c, a
+	pop	af
+	ex	(sp), hl
+	ld	h, a
+	ex	(sp), hl
+_inv_done:
+	pop	af
+	jr	z, _Dont_Shift1
+_Shift1:
+	sla	c
+	rla
+	djnz	_Shift1
+_Dont_Shift1:
+	push	af
+	ld	a, d
+	cp	9
+	jr	c, _Last_Column
+
+	ld	a, (_offset)
+	or	a
+	jr	nz, _Unaligned
+
+	pop	af
+	ld	(hl), a
+	inc	hl
+	jp	_Finish1
+
+_Unaligned:
+	push	de
+	ld	b, a
+	ld	c, 0
+	ld	e, $FF
+	pop	af
+	srl	a
+	rr	c
+	srl	e
+	djnz	$-6
+
+	ld	b, a
+	ld	a, e
+	cpl
+	and	(hl)
+	or	b
+	ld	(hl), a
+	inc	hl
+	ld	a, e
+	and	(hl)
+	or	c
+	ld	(hl), a
+	pop	de
+
+_Finish1:
+	inc	ix
+	ld	a, d
+	sub	8
+	ld	d, a
+	jp	_Row_Loop
+_Last_Column:
+	ld	a, 8
+	sub	d
+	ld	b, a
+	ld	a, $FF
+	jr	z, _Dont_Shift2
+_Shift2:
+	add	a, a
+	djnz	_Shift2
+_Dont_Shift2:
+	ld	b, a
+	cpl
+	ld	c, a
+
+	pop	af
+	and	b
+	ld	b, a
+	ld	a, (_offset)
+	or	a
+	jr	nz, _Unaligned2
+	ld	a, (hl)
+	and	c
+	or	b
+	ld	(hl), a
+	jr	_Finish2
+
+_Unaligned2:
+	push	de
+	ld	de, $00FF
+_Shift3:
+	srl	b
+	rr	d
+	scf
+	rr	c
+	rr	e
+	dec	a
+	jp	nz, _Shift3
+
+	ld	a, (hl)
+	and	c
+	or	b
+	ld	(hl), a
+	inc	hl
+	ld	a, (hl)
+	and	e
+	or	d
+	ld	(hl), a
+	pop	de
+
+_Finish2:
+	pop	ix
+	pop	hl
+	pop	de
+	dec	e
+	scf
+	ret	z
+	push	de
+
+	ld	bc, 12
+	add	hl, bc
+	push	hl
+
+	ld	a, (_cols)
+	dec	a
+	rrca
+	rrca
+	rrca
+	and	%00011111
+	inc	a
+	ld	c, a
+	add	ix, bc
+	push	ix
+
+	ld	a, (_shift)
+	ld	b, a
+	jp	_Row_Loop
+
+
 #include "lib/commands.z80"
 #include "lib/flash.z80"
 
@@ -965,6 +1263,7 @@ help.chronos:
 #include "commands/fs.z80"
 
 #include "data/font_6x8.inc"
+#include "data/font_var.inc"
 
 .export	vect_forget_commands
 .export	vect_memorize_command
@@ -972,6 +1271,8 @@ help.chronos:
 
 .export	vect_flashwrite
 .export	vect_flasherase
+
+.export	vect_drawicon
 
 .export	cmd_REBOOT
 .export	cmd_HELP
@@ -984,6 +1285,7 @@ help.chronos:
 .export	zp.host
 
 .export	os.font_6x8
+.export	os.font_var
 
 #if $ > $8000
 !!!

@@ -354,6 +354,10 @@ zp.putch_6x8:			.export	zp.putch_6x8
 	jp	vect_putch_6x8
 zp.puts_6x8:			.export	zp.puts_6x8
 	jp	vect_puts_6x8
+zp.putch_var:			.export	zp.putch_var
+	jp	vect_putch_var
+zp.puts_var:			.export	zp.puts_var
+	jp	vect_puts_var
 
 zp.vbufcopy:			.export	zp.vbufcopy
 zp.vbufdisp:			.export	zp.vbufdisp
@@ -362,11 +366,6 @@ zp.displine:			.export	zp.displine
 	jp	vect_displine
 zp.invline:				.export	zp.invline
 	jp	vect_invline
-
-; zp.putch_var:			.export	zp.putch_var
-; 	jp	vect_putch_var
-; zp.puts_var:			.export	zp.puts_var
-; 	jp	vect_puts_var
 
 zp.atoh:				.export	zp.atoh
 	jp	vect_atoh
@@ -464,6 +463,9 @@ zp.div_dehl_c:			.export	zp.div_dehl_c
 
 zp.sqrt_la:				.export	zp.sqrt_la
 	jp	vect_sqrt_la
+
+zp.rand_word:			.export	zp.rand_word
+	jp	vect_rand_word
 
 zp.meminit:				.export	zp.meminit
 	jp	vect_meminit
@@ -710,6 +712,8 @@ zp.fp_idiv:				.export	zp.fp_idiv
 	jp	vect_fp_idiv
 zp.fp_mod:				.export	zp.fp_mod
 	jp	vect_fp_mod
+zp.fp_rand:				.export	zp.fp_rand
+	jp	vect_fp_rand
 
 zp.screenshot:			.export	zp.screenshot
 	jp	vect_screenshot

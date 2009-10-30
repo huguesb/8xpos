@@ -829,3 +829,84 @@ vect_putsn_6x8._loop:
 	ret	z
 	jr	vect_puts_6x8._loop
 
+; brief : write a character to display buffer using small variable width font
+; input : a -> char to write, b -> row, c -> column
+; output : CF set if coords are out of range (in this case nothing is printed)
+; destroys : a
+vect_putch_var:
+	push	ix
+	push	hl
+	push	de
+
+	ld	h, 0
+	ld	l, a
+	
+	; font map weighs 2kb : moved to page 1C...
+	in	a, (map_bankA_port)
+	push	af
+	push	bc
+	ld	a, $1C
+	ld	c, map_bankA_port
+	call	zp.setflashpage
+	pop	bc
+	
+	ld	a, l
+	
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
+	ld	de, os.font_var
+	add	hl, de
+	push	hl
+	pop	ix
+
+	ld	a, (hl)
+	push	af
+	call	vect_drawicon
+	pop	af
+	add	a, c
+	ld	c, a
+	
+	pop	af
+	out	(map_bankA_port), a
+	
+	pop	de
+	pop	hl
+	pop	ix
+	ret
+
+; brief : write a string to display buffer using small variable width font
+; input : hl -> address of zero terminated string, b -> row, c -> column
+; output : CF set if coord went out of range
+;			otherwise, a = 0, hl points to memory after the zero terminator, bc holds last row:col
+; destroys : a, hl, bc (see output)
+vect_puts_var:
+vect_puts_var._loop:
+	ld	a, (hl)
+	inc	hl
+	or	a
+	ret	z
+	call	vect_putch_var
+	ret	c
+	jr	vect_puts_var._loop
+
+; brief : write a string to display buffer using small variable width font
+; input : hl -> address of zero terminated string, b -> row, c -> column, d -> max number of chars to write
+; output : CF set if coord went out of range
+;			otherwise, a = 0, hl points to memory after the zero terminator, bc holds last row:col
+; destroys : a, hl, bc (see output)
+vect_putsn_var:
+	ld	a, d
+	or	a
+	ret	z
+vect_putsn_var._loop:
+	ld	a, (hl)
+	inc	hl
+	or	a
+	ret	z
+	call	vect_putch_var
+	ret	c
+	dec	d
+	ret	z
+	jr	vect_puts_var._loop
+
