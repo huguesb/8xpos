@@ -507,20 +507,39 @@ tilp.sendApp.chunk:
 	ld	bc, $0080
 	call	zp.flashtoram
 	
-	; send chunk
+	; display a dump just to check...
+; 	push	af
+; 	push	hl
+; 	ld	de, os.console
+; 	call	zp.htoa_byte
+; 	ld	a, ':'
+; 	ld	(de), a
+; 	inc	de
+; 	ld	hl, os.scrap-1
+; 	ld	b, 64
+; 	inc	hl
+; 	call	zp.memdump
+; 	djnz	$-4
+; 	call	zp.cdisp
+; 	pop	hl
+; 	pop	af
+	
 	push	af
+	
+	; send chunk
 	push	hl
 	ld	d, link_DATA
 	ld	bc, $0080
 	ld	hl, os.scrap
 	call	zp.send_command
 	pop	hl
-	pop	af
 	
 	; wait for ack
 	call	zp.get_command
 	cp	link_ACK
 	call	nz, zp.throw_link
+	
+	pop	af
 	
 	pop	bc
 	djnz	tilp.sendApp.chunk
