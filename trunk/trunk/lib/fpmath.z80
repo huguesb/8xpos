@@ -961,9 +961,9 @@ vect_fp_int:
 	jr	nc, $-6
 	
 	; clear "isolated" digit
-	dec	hl
+	;dec	hl
 	ld	a, (hl)
-	and	$0F
+	and	$F0
 	ld	(hl), a
 	
 vect_fp_int.clear:
