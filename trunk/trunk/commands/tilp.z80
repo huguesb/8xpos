@@ -191,6 +191,18 @@ tilp.transfer.clearance:
 	ld	d, link_ACK
 	jp	zp.send_command_nodata
 
+tilp.reject:
+	; send error message to abort transmission
+	ld	d, link_REXIT
+	call	zp.send_error
+	
+	; wait for acknowledgement
+	call	zp.get_command
+	cp	link_ACK
+	call	nz, zp.throw_link
+	
+	ret
+
 ; input : hl -> in app header, at field start, preferably at $4000, a -> app page
 ; output : b -> app page, c -> page count
 ; destroys : hl, de
@@ -355,16 +367,7 @@ tilp.REQ:
 	; free VAR HEADER
 	call	zp.free
 	
-	; send error message to abort transmission
-	ld	d, link_REXIT
-	call	zp.send_error
-	
-	; wait for acknowledgement
-	call	zp.get_command
-	cp	link_ACK
-	call	nz, zp.throw_link
-	
-	ret
+	jp	tilp.reject
 
 tilp.DIRLIST:
 	; free VAR HEADER
@@ -414,19 +417,12 @@ tilp.sendProg:
 	call	zp.file_find
 	
 tilp.transferFailure:
-	; send error
-	ld	d, link_REXIT
-	call	c, zp.send_error
-	
-	; wait for acknowledgement
-	call	zp.get_command
-	cp	link_ACK
-	call	nz, zp.throw_link
-	
 	pop	hl
 	
 	; free VAR header
-	jp	zp.free
+	call	zp.free
+	
+	jp	tilp.reject
 
 tilp.sendApp:
 	push	hl
@@ -507,23 +503,6 @@ tilp.sendApp.chunk:
 	ld	bc, $0080
 	call	zp.flashtoram
 	
-	; display a dump just to check...
-; 	push	af
-; 	push	hl
-; 	ld	de, os.console
-; 	call	zp.htoa_byte
-; 	ld	a, ':'
-; 	ld	(de), a
-; 	inc	de
-; 	ld	hl, os.scrap-1
-; 	ld	b, 64
-; 	inc	hl
-; 	call	zp.memdump
-; 	djnz	$-4
-; 	call	zp.cdisp
-; 	pop	hl
-; 	pop	af
-	
 	push	af
 	
 	; send chunk
@@ -587,7 +566,7 @@ tilp.sendProg.cb:
 	pop	bc
 	pop	hl
 	
-	; send actual data
+	; send data in one go
 	ld	d, link_DATA
 	call	zp.send_command
 	
@@ -632,9 +611,7 @@ tilp.sendProg.cb.sendloop:
 	call	zp.send_byte
 	
 	; update checksum
-	ex	de, hl
-	offset_hl
-	ex	de, hl
+	offset_de
 	
 	; check for chunk end
 	dec	bc
@@ -649,21 +626,8 @@ tilp.sendProg.cb.sendloop:
 	
 	; get chunk params
 	push	hl
-	dec	hl
-	dec	hl
-	push	de
-	call	zp.file_node_info
-	ld	b, 0
-	ld	c, (hl)
-	inc	bc
-	add	hl, bc
-	ex	de, hl
-	or	a
-	sbc	hl, bc
-	ex	de, hl
-	ld	b, d
-	ld	c, e
-	pop	de
+	
+	call	zp.file_advance
 	
 	jr	tilp.sendProg.cb.sendloop
 
@@ -672,9 +636,7 @@ tilp.sendProg.cb.end:
 	ld	a, e
 	call	zp.send_byte
 	ld	a, d
-	call	zp.send_byte
-	
-	ret
+	jp	zp.send_byte
 
 tilp.DIRLIST.callback:
 	ld	a, (hl)
@@ -823,6 +785,9 @@ tilp.RTS:
 	cp	tLockedProg
 	jr	z, tilp.RTS.ok
 	
+	cp	tApp
+	jr	z, tilp.recvApp
+	
 	cp	tOS
 	jp	z, tilp.recvOS
 	
@@ -867,9 +832,8 @@ tilp.RTS.ok:
 	
 	ret
 
-__str_recv: .db "recv...", 0
-__str_fail: .db "fail.", 0
-__str_done: .db "done.", 0
+tilp.recvApp:
+	ret
 
 tilp.RTS.callback:
 	push	iy
@@ -1024,52 +988,56 @@ tilp.RTS.cb.checksum:
 
 ; fixme : this does not seem to work, probably because of improper packet storage
 tilp.recvOS:
-	push	hl
-	; load packet content into ioData (need command bytes???)
-	ld	de, $867D
-	ldir
-	pop	hl
-	; release memory (just in case transfer is interrupted...)
-	call	zp.free
 	
-	; swap RAM page 1 into bank B
-	in	a, (hw_port)
-	and	$80
-	jr	nz, $+4
-	or	$40
-	inc	a
-	out	(map_bankB_port), a
-	
-	; some system flags might be needed...
-	ld	iy, $89F0
-	
-	; unlock flash
-	#if PAGE == $1C
-	call	vect_flash_unlock
-	#else
-	ld	hl, vect_flash_unlock
-	call	restricted_syscall_raw
-	#endif
-	
-	xor	a
-	; we're operating through link port, not USB and advertised as $73 (machine id)
-	ld	(iy + $1B), a
-	
-	; some weird setup code (courtesy of Brandon Wilson's OS2)
-	ld	($822F), a
-	ld	($83A4), a
-	dec	a
-	ld	($82AE), a
-	
-	; MarkOSInvalid : WikiTI says this is necessary for ReceiveOS to work, OS2 doesn't care...
-	;rst	28h
-	;.dw	$8093
-	
-	; MD5Init : necessary according to Brandon Wilson's OS2 sources...
-	bcall($808D)
-	
-	; ReceiveOS : we should never ever return from this
-	bcall($8072)
-	
-	ret
+; 	push	hl
+; 	; load packet content into ioData (need command bytes???)
+; 	ld	de, $867D
+; 	ldir
+; 	pop	hl
+; 	; release memory (just in case transfer is interrupted...)
+; 	call	zp.free
+; 	
+; 	; swap RAM page 1 into bank B
+; 	in	a, (hw_port)
+; 	and	$80
+; 	jr	nz, $+4
+; 	or	$40
+; 	inc	a
+; 	out	(map_bankB_port), a
+; 	
+; 	; some system flags might be needed...
+; 	ld	iy, $89F0
+; 	
+; 	; unlock flash
+; 	#if PAGE == $1C
+; 	call	vect_flash_unlock
+; 	#else
+; 	ld	hl, vect_flash_unlock
+; 	call	restricted_syscall_raw
+; 	#endif
+; 	
+; 	xor	a
+; 	; we're operating through link port, not USB and advertised as $73 (machine id)
+; 	ld	(iy + $1B), a
+; 	
+; 	; some weird setup code (courtesy of Brandon Wilson's OS2)
+; 	ld	($822F), a
+; 	ld	($83A4), a
+; 	dec	a
+; 	ld	($82AE), a
+; 	
+; 	; MarkOSInvalid : WikiTI says this is necessary for ReceiveOS to work, OS2 doesn't care...
+; 	;rst	28h
+; 	;.dw	$8093
+; 	
+; 	; MD5Init : necessary according to Brandon Wilson's OS2 sources...
+; 	bcall($808D)
+; 	
+; 	; ReceiveOS : we should never ever return from this
+; 	bcall($8072)
+; 	
+; 	ret
 
+__str_recv: .db "recv...", 0
+__str_fail: .db "fail.", 0
+__str_done: .db "done.", 0

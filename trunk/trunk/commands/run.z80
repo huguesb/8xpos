@@ -161,7 +161,7 @@ cmd_RUN.cb.chunkend:
 	; save node pointer for next iteration
 	push	hl
 	
-	call	file_advance
+	call	zp.file_advance
 	
 	jr	cmd_RUN.cb.pageend
 	
@@ -263,7 +263,7 @@ cmd_RUN.cb.tios_cpy:
 	
 	push	hl
 	
-	call	file_advance
+	call	zp.file_advance
 	
 	jr	cmd_RUN.cb.tios_cpy
 	
@@ -312,30 +312,6 @@ cmd_RUN.cb.error.done:
 	;call	zp.throw
 	
 	scf
-	ret
-
-file_advance:
-	; preserve copy destination
-	push	de
-	
-	; get node content size
-	dec	hl
-	dec	hl
-	call	zp.file_node_info
-	
-	; skip metadata
-	ld	b, 0
-	ld	c, (hl)
-	inc	bc
-	add	hl, bc
-	ex	de, hl
-	or	a
-	sbc	hl, bc
-	ex	de, hl
-	ld	b, d
-	ld	c, e
-	
-	pop	de
 	ret
 
 cmd_RUN.strings:
