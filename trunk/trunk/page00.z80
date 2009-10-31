@@ -344,8 +344,6 @@ zp.battery_level:		.export	zp.battery_level
 
 zp.getch:				.export	zp.getch
 	jp	vect_getch
-zp.getch_nohalt:		.export	zp.getch_nohalt
-	jp	vect_getch_nohalt
 zp.getkey:				.export zp.getkey
 	jp	vect_getkey
 

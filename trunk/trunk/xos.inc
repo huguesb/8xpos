@@ -24,7 +24,7 @@ os.lcd.back		= os.lcd.mem + 768
 os.console		= os.lcd.back + 768
 os.command		= os.console + 216
 os.command_buf	= os.command + 129
-os.command_mem	= os.command_buf + 3
+os.command_mem	= os.command_buf + 4
 os.scrap		= os.command_mem + 4
 
 os.flags		= os.scrap + 256
@@ -35,9 +35,12 @@ os.prev_key		= os.contrast + 1
 os.keymap.normal	= os.prev_key + 1
 os.keymap.shift	= os.keymap.normal + 2
 os.keymap.alpha	= os.keymap.shift + 2
+
 os.vbuf_addr	= os.keymap.alpha + 2
 
-os.hook.rst08	= os.vbuf_addr + 2
+os.ram_masks	= os.vbuf_addr + 2
+
+os.hook.rst08	= os.ram_masks + 2
 os.hook.rst10	= os.hook.rst08 + 2
 os.hook.rst18	= os.hook.rst10 + 2
 os.hook.rst20	= os.hook.rst18 + 2
