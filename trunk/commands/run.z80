@@ -22,7 +22,7 @@
 ;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .list
 
-cmd_RUN:
+cmd_RUN:	.export	cmd_RUN
 	; check arg count
 	or	a
 	ret	z

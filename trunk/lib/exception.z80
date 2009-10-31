@@ -23,6 +23,18 @@
 ;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .list
 
+flash_strcpy:
+	in	a, (map_bankA_port)
+	push	af
+	ld	a, $1C
+	call	zp.setflashpage
+	
+	call	zp.strcpy
+	
+	pop	af
+	out	(map_bankA_port), a
+	ret
+
 ; brief : displays a pretty register dump
 ; input : none
 ; output : none
@@ -66,8 +78,7 @@ vect_regdump:
 	
 	ld	hl, str_exception
 	ld	de, os.console
-	call	zp.strcpy
-	;call	zp.cputs
+	call	flash_strcpy
 	
 	ld	b, 9
 	ld	hl, 0
@@ -251,7 +262,7 @@ _throw:
 	deref_hl
 	
 _throw_unhandled:
-	call	zp.strcpy
+	call	flash_strcpy
 	
 	; remove ugly zero terminator from console...
 	dec	de
@@ -539,33 +550,3 @@ err_strings:
 	.dw	str_emem
 	.dw	str_echecksum
 	.dw	str_ecompat
-
-; console is 24 char wide : occupy it all
-str_exception:
-	.db	"EX  -                   "     ;1
-	.db	"AF      BC      DE      "     ;2
-	.db	"HL      IX      IY      "     ;3
-	.db	"SP      PC      IR      "     ;4
-	.db	"Stack Dump:             ", 0  ;5
-;	.db	"                        "     ;6
-;	.db	"                        ", 0  ;7
-		                               ;8
-		;012345678901234567890123
-
-str_ecreate:
-	.db	"Can't Create File\000" ; don't ask me... looks like tasm fucks up when string literals end
-str_elocate:
-	.db	"Can't Locate File\000" ; with 'e' and discard the zero terminator unless it is added that way...
-str_elink:
-	.db	"Transmission Error", 0
-str_eexist:
-	.db	"File Exists", 0
-str_emem:
-	.db	"Out of Memory", 0
-str_echecksum:
-	.db	"Bad Link Checksum", 0
-str_ecompat:
-	.db "Compat Layer Error", 0
-str_eunhandled:
-	.db	"  UNHANDLED  EXCEPTION ", 0
-		;012345678901234567890123

@@ -23,6 +23,27 @@
 ;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .list
 
+check_text_inverse:
+	; check text inverse flags when TIOS emulation is on...
+	ld	a, (os.flags + osf.general)
+	bit	tios_emulation, a
+	jr	z, $+2+4
+	bit	3, (iy+5)
+	
+	ret
+
+; destroys hl, push af into stack for page restore...
+font_load:
+	pop	hl
+	
+	; font map weighs 2kb : moved to page 1C...
+	in	a, (map_bankA_port)
+	push	af
+	push	hl
+	
+	ld	a, $1C
+	jp	zp.setflashpage
+
 ; brief : clears the console
 ; input : none
 ; output : none
@@ -52,90 +73,6 @@ vect_credraw:
 	ldir
 	jp	zp.vbufdisp
 
-; brief : inverts a nibble of LCD memory (correspond to a line of character cell)
-; input : b -> row, c -> column, d -> number of rows, e -> number of cols
-; output : none
-; destroys : 
-vect_cinvert:
-	; compute mask
-	ld	a, $0F
-	bit	0, c
-	jr	z, $+6
-	add	a, a
-	add	a, a
-	add	a, a
-	add	a, a
-	
-	push	af
-	
-vect_cinvert.oloop:
-	; set column
-	lcd_busy
-	ld	a, c
-	srl	a
-	add	a, $20
-	out	(lcd_cmd_port), a	; 20 - 2B: y-address
-	
-	pop	af
-	rrca
-	rrca
-	rrca
-	rrca
-	push	af
-	
-	push	de
-	push	bc
-	
-	ld	e, a
-	
-	; set row
-	lcd_busy
-	ld	a, b			; 80 - BF: x-address
-	add	a, $80
-	out	(lcd_cmd_port), a
-	
-vect_cinvert.iloop:
-	call	vect_invlcdnibble
-	inc	b
-	dec	d
-	jr	nz, vect_cinvert.iloop
-	pop	bc
-	pop	de
-	
-	inc	c
-	dec	e
-	jr	nz, vect_cinvert.oloop
-	
-	pop	af
-	
-	ret
-
-; destroys : a
-vect_invlcdnibble:
-	; dummy read
-	lcd_busy
-	in	a, (lcd_data_port)
-	
-	; read
-	lcd_busy
-	in	a, (lcd_data_port)
-	
-	; invert
-	xor	e
-	push	af
-	
-	; set row
-	lcd_busy
-	ld	a, b			; 80 - BF: x-address
-	add	a, $80
-	out	(lcd_cmd_port), a
-	
-	lcd_busy
-	pop	af
-	; write
-	out	(lcd_data_port), a
-	ret
-
 ; brief : display the content of the console (directly to LCD, no buffering)
 ; input : none
 ; output : none
@@ -144,7 +81,9 @@ vect_cdisp:
 	push	hl
 	push	de
 	push	bc
-
+	
+	call	font_load
+	
 	ld	hl, os.console
 
 	ld	c, 0
@@ -241,7 +180,10 @@ vect_cdisp._Byte_Loop:
 	ld	a, c
 	cp	12
 	jp	nz, vect_cdisp._row
-
+	
+	pop	af
+	out	(map_bankA_port), a
+	
 	pop	bc
 	pop	de
 	pop	hl
@@ -587,15 +529,6 @@ vect_cgets.bs.atend:
 	
 	jp	vect_cgets.nomove
 
-check_text_inverse:
-	; check text inverse flags when TIOS emulation is on...
-	ld	a, (os.flags + osf.general)
-	bit	tios_emulation, a
-	jr	z, $+2+4
-	bit	3, (iy+5)
-	
-	ret
-
 ; brief : write a character to display buffer using console font
 ; input : a -> char to write, b -> row, c -> column
 ; output : none
@@ -605,6 +538,10 @@ vect_putch_con:
 	push	hl
 	push	de
 	push	bc
+	
+	ld	e, a
+	call	font_load
+	ld	a, e
 	
 	; hl = 12 * b
 	ld	h, 0
@@ -678,6 +615,10 @@ vect_putch_con._oddcolumn:
 	ld	de, 12
 	add	hl, de
 	djnz	vect_putch_con._loop
+	
+	pop	af
+	out	(map_bankA_port), a
+	
 	pop	bc
 	pop	de
 	pop	hl
@@ -757,6 +698,9 @@ vect_putch_6x8:
 	push	de
 	push	bc
 	
+	; font map weighs 2kb : moved to page 1C...
+	call	font_load
+	
 	ld	h, 0
 	ld	l, a
 	add	hl, hl
@@ -765,15 +709,6 @@ vect_putch_6x8:
 	ld	de, os.font_6x8
 	add	hl, de
 	ex	de, hl
-	
-	; font map weighs 2kb : moved to page 1C...
-	in	a, (map_bankA_port)
-	push	af
-	push	bc
-	ld	a, $1C
-	ld	c, map_bankA_port
-	call	zp.setflashpage
-	pop	bc
 	
 	ld	l, b
 	ld	h, 1
@@ -837,20 +772,16 @@ vect_putch_var:
 	push	ix
 	push	hl
 	push	de
-
-	ld	h, 0
-	ld	l, a
+	
+	ld	e, a
 	
 	; font map weighs 2kb : moved to page 1C...
-	in	a, (map_bankA_port)
-	push	af
-	push	bc
-	ld	a, $1C
-	ld	c, map_bankA_port
-	call	zp.setflashpage
-	pop	bc
+	call	font_load
 	
-	ld	a, l
+	ld	a, e
+	
+	ld	h, 0
+	ld	l, a
 	
 	add	hl, hl
 	add	hl, hl

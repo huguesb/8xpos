@@ -56,12 +56,8 @@ zp.deref_hl_alt:	.export zp.deref_hl_alt
 #endif
 .org	$0008
 	jp	compat.rst08
-LCD_BUSY_QUICK: ; 52 T-states (+17 for call -> 69)
-	push	af
-	push	hl
-	pop	hl
-	pop	af
-	ret
+LCD_BUSY_QUICK:
+	jp	zp.lcd_busy
 
 ; rst 10h - Compare HL and DE nd (same flag as 8bit cp)
 #if $ > $0010
@@ -277,6 +273,14 @@ zp.offset_hl:	.export	zp.offset_hl
 	offset_hl
 	ret
 
+zp.lcd_busy:	.export	zp.lcd_busy
+	push	af
+	in	a, (lcd_cmd_port)
+	and	$80
+	jr	nz, $-4
+	pop	af
+	ret
+
 #include "isr.z80"
 
 #include "page1C.exp"
@@ -309,7 +313,9 @@ im2ab = $05
 ; just in case...
 .db im2ab
 
-; room for four bytes
+; safe return point
+zp.console:	.export zp.console
+	jp	vect_console
 
 .org	$0505
 	; jump to custom ISR
@@ -794,27 +800,131 @@ zp.dump_iy:
 	ret
 
 os.libs00:
-#include "lib/bcall.z80"
 
+os.lib_bcall:
+#include "lib/bcall.z80"
+os.lib_keyboard:
 #include "lib/keyboard.z80"
+os.lib_display:
 #include "lib/display.z80"
+os.lib_misc:
 #include "lib/misc.z80"
+os.lib_string:
 #include "lib/string.z80"
+os.lib_parse:
 #include "lib/parse.z80"
+os.lib_stdio:
 #include "lib/stdio.z80"
+os.lib_exception:
 #include "lib/exception.z80"
+os.lib_memory:
 #include "lib/memory.z80"
+os.lib_math:
 #include "lib/math.z80"
+os.lib_link:
 #include "lib/link.z80"
+os.lib_file:
 #include "lib/file.z80"
+os.lib_timers:
 #include "lib/timers.z80"
+os.lib_sprites:
 #include "lib/sprites.z80"
+os.lib_primitives:
 #include "lib/primitives.z80"
+os.lib_dylib:
 #include "lib/dylib.z80"
+os.lib_compat:
 #include "lib/compat.z80"
+os.lib_bcd:
 #include "lib/bcd.z80"
+os.lib_fpmath:
 #include "lib/fpmath.z80"
+os.lib_apps:
 #include "lib/apps.z80"
+
+.echo	"Libs : "
+.echo	$-os.libs00
+.echo	" bytes used\n"
+
+.echo	"\tbcall : "
+.echo	os.lib_keyboard - os.lib_bcall
+.echo	"\n"
+
+.echo	"\tkeyboard : "
+.echo	os.lib_display - os.lib_keyboard
+.echo	"\n"
+
+.echo	"\tdisplay : "
+.echo	os.lib_misc - os.lib_display
+.echo	"\n"
+
+.echo	"\tmisc : "
+.echo	os.lib_string - os.lib_misc
+.echo	"\n"
+
+.echo	"\tstring : "
+.echo	os.lib_parse - os.lib_string
+.echo	"\n"
+
+.echo	"\tparse : "
+.echo	os.lib_stdio - os.lib_parse
+.echo	"\n"
+
+.echo	"\tstdio : "
+.echo	os.lib_exception - os.lib_stdio
+.echo	"\n"
+
+.echo	"\texception : "
+.echo	os.lib_memory - os.lib_exception
+.echo	"\n"
+
+.echo	"\tmemory : "
+.echo	os.lib_math - os.lib_memory
+.echo	"\n"
+
+.echo	"\tmath : "
+.echo	os.lib_link - os.lib_math
+.echo	"\n"
+
+.echo	"\tlink : "
+.echo	os.lib_file - os.lib_link
+.echo	"\n"
+
+.echo	"\tfile : "
+.echo	os.lib_timers - os.lib_file
+.echo	"\n"
+
+.echo	"\ttimers : "
+.echo	os.lib_sprites - os.lib_timers
+.echo	"\n"
+
+.echo	"\tsprites : "
+.echo	os.lib_primitives - os.lib_sprites
+.echo	"\n"
+
+.echo	"\tprimitives : "
+.echo	os.lib_dylib - os.lib_primitives
+.echo	"\n"
+
+.echo	"\tdylib : "
+.echo	os.lib_compat - os.lib_dylib
+.echo	"\n"
+
+.echo	"\tcompat : "
+.echo	os.lib_bcd - os.lib_compat
+.echo	"\n"
+
+.echo	"\tbcd : "
+.echo	os.lib_fpmath - os.lib_bcd
+.echo	"\n"
+
+.echo	"\tfpmath : "
+.echo	os.lib_apps - os.lib_fpmath
+.echo	"\n"
+
+.echo	"\tapps : "
+.echo	$ - os.lib_apps
+.echo	"\n"
 
 compat.rst08:
 	add_hook(os.hook.rst08)
@@ -827,45 +937,8 @@ compat.rst08:
 
 os.data00:
 
-str_esyntax1	.text	"Unknown: \"\000"
-str_esyntax2	.text	"\".\000"
-
-; command table :
-;	* list of mnemonics for CLI lookup
-;	* list of addresses for execution
-command_mnemonics:
-	.db "reboot", 0
-	.db "host", 0
-	.db "help", 0
-	.db "cls", 0
-;	.db "info", 0
-	.db "list", 0
-	.db "del", 0
-	.db "mem", 0
-	.db "run", 0
-	.db "hex", 0
-	.db "chronos", 0
-	.db "touch", 0
-	.db "compat", 0
-	.db 0
-
-command_pointers:
-	.dw cmd_REBOOT
-	.dw zp.host
-	.dw cmd_HELP
-	.dw cmd_CLS
-;	.dw cmd_INFO
-	.dw cmd_LIST
-	.dw cmd_DEL
-	.dw cmd_MEM
-	.dw cmd_RUN
-	.dw app.hexedit
-	.dw cmd_CHRONOS
-	.dw cmd_TOUCH
-	.dw cmd_COMPAT
-
 #include "data/keys.inc"
-#include "data/font_con.inc"
+;#include "data/font_con.inc"
 
 .echo	"Data : "
 .echo	$-os.data00
@@ -879,6 +952,7 @@ os.commands00:
 .echo	" bytes used\n"
 
 #define _HEXEDIT_EMBED_
+os.hexedit:	.export	os.hexedit
 #include "apps/hexedit.z80"
 
 #if $ > $4000

@@ -1,4 +1,7 @@
+cmd_COMPAT       .EQU  $229f
+cmd_RUN          .EQU  $2a74
 os.version       .EQU  $0064
+os.hexedit       .EQU  $2bef
 zp.deref_hl_alt  .EQU  $0003
 zp.call_ix       .EQU  $0016
 zp.call_hl       .EQU  $001f
@@ -14,7 +17,8 @@ zp.deref_hl      .EQU  $00a8
 zp.cmp_hlde      .EQU  $00af
 zp.rowread       .EQU  $00b4
 zp.offset_hl     .EQU  $00bb
-zp.console       .EQU  $032e
+zp.lcd_busy      .EQU  $00c1
+zp.console       .EQU  $0501
 zp.hw_version    .EQU  $050b
 zp.hw_str        .EQU  $050e
 zp.bootcode_version .EQU  $0511

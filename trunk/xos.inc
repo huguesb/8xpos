@@ -158,7 +158,8 @@ vbuf_flush			= 0
 #define	bitmask(pos)	(1<<(pos))
 #define invmask(pos)	~(1<<(pos))
 
-#define lcd_busy	in a,(lcd_cmd_port)\ and $80\ jr nz, $-4
+;#define lcd_busy	in a,(lcd_cmd_port)\ and $80\ jr nz, $-4
+#define lcd_busy	call $000B
 #define range_test(lower,upper,under,over)	cp lower\ jr c, under\ cp upper+1\ jr nc, over
 #define	msb(val)	(val)>>8
 #define	lsb(val)	(val)&$FF

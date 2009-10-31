@@ -253,14 +253,14 @@ apppage_boundaries:
 	.db $2A	; 84+BE
 	.db $6A	; 84+SE
 
-; brief : map a flash page to a memory bank
-; input : a -> flash page, c -> port (6 for bank A, 7 for bank B)
+; brief : map a flash page to a memory bank A
+; input : a -> flash page
 ; destroys : none
 ; note : flash page must be in BE range (00-1F), this routine is only here to
 ; provide hardware abstraction of "common" paging (1C : restricted, 1F : boot code, ...)
 zp.setflashpage:
 	call	zp.flashpage_adjust
-	out	(c), a
+	out	(map_bankA_port), a
 	ret
 
 ; brief : adjust a flash page number in BE range to match calc model
@@ -308,8 +308,7 @@ restricted_syscall:
 	push	af
 	
 	; save page in stack room
-	ld	c, map_bankA_port
-	in	a, (c)
+	in	a, (map_bankA_port)
 	
 	ld	hl, 6
 	add	hl, sp
@@ -351,7 +350,6 @@ restricted_syscall_raw:
 	push	af
 	push	bc
 	ld	a, $1C
-	ld	c, map_bankA_port
 	call	zp.setflashpage
 	pop	bc
 	pop	af
