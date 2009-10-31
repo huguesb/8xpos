@@ -3158,8 +3158,8 @@ _DispOP1A		; equ $4BF7
 ;_CopyDialogNum		equ $4C2D
        .dw $0000
        .db $00
-;_MemClear:
-       .dw $0000
+_MemClear:
+       .dw compat.memclear
        .db $00
 _MemSet:			; equ $4C33
        .dw compat.memset
@@ -5594,6 +5594,8 @@ compat.pagedget:
 	
 	ret
 
+compat.memclear:
+	xor	a
 compat.memset:
 	ld	(hl), a
 	ld	d, h

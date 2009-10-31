@@ -508,6 +508,8 @@ zp.file_meta_find:		.export	zp.file_meta_find
 	jp	vect_file_meta_find
 zp.file_node_info:		.export	zp.file_node_info
 	jp	vect_file_node_info
+zp.file_advance:		.export	zp.file_advance
+	jp	vect_file_advance
 
 zp.throw:				.export	zp.throw
 	jp	vect_throw

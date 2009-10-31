@@ -657,6 +657,29 @@ vect_file_nextchunk.exit:
 	pop	de
 	ret
 
+vect_file_advance:
+	push	de
+	
+	; get node content size
+	dec	hl
+	dec	hl
+	call	zp.file_node_info
+	
+	; skip metadata
+	ld	b, 0
+	ld	c, (hl)
+	inc	bc
+	add	hl, bc
+	ex	de, hl
+	or	a
+	sbc	hl, bc
+	ex	de, hl
+	ld	b, d
+	ld	c, e
+	
+	pop	de
+	ret
+
 ; brief : creates a file
 ; input : hl -> filename, bc -> size, ix -> callback
 ; output : CF set if file created

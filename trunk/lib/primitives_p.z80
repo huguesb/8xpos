@@ -1,0 +1,902 @@
+
+
+_shift	=	os.scrap
+_cols	=	os.scrap + 1
+_offset	=	os.scrap + 2
+
+vect_drawicon:
+	push	hl
+	push	de
+	push	bc
+
+	ld	d, (ix)
+	ld	e, 0
+	ld	(_shift), de
+	ld	e, (ix + 1)
+
+	call	_draw
+	ccf
+
+	pop	bc
+	pop	de
+	pop	hl
+	ret
+
+
+_check_inverse:
+	; check text inverse flags when TIOS emulation is on...
+	push	hl
+	ld	hl, os.flags + osf.general
+	bit	tios_emulation, (hl)
+	pop	hl
+	ret	z
+	bit	3, (iy+5)
+	ret
+
+_draw:
+	ld	h, c
+	ld	a, c
+	or	a
+	jp	m, _X_LT_0
+	cp	96
+	ret	nc
+	jp	_X_In_Range
+
+_X_LT_0:
+	add	a, d
+	ret	m
+	ret	z
+	push	af
+	push	bc
+	sub	d
+	neg
+	ld	c, a
+	srl	c
+	srl	c
+	srl	c
+	ld	b, 0
+	add	ix, bc
+	pop	bc
+	and	7
+	ld	(_shift), a
+	pop	af
+	ld	d, a
+	ld	c, 0
+	cp	96
+	jr	c, _X_In_Range
+_ClipR:
+	ld	a, 95
+	sub	h
+	ld	d, a
+	jp	_VClip
+
+_X_In_Range:
+	add	a, d
+	cp	96
+	jr	nc, _ClipR
+
+_VClip:
+	ld	h, b
+	ld	a, b
+	or	a
+	jp	m, _Y_LT_0
+	cp	64
+	ret	nc
+	jp	_Y_In_Range
+_Y_LT_0:
+	add	a, e
+	ret	m
+	ret	z
+	push	af
+	push	bc
+	ld	a, b
+	neg
+	ld	bc, (_cols)
+	dec	c
+	srl	c
+	srl	c
+	srl	c
+	inc	c
+	ld	b, 0
+	add	ix, bc
+	dec	a
+	jp	nz, $-3
+	pop	bc
+	pop	af
+	ld	e, a
+	
+	ld	b, 0
+	cp	64
+	jr	c, _Y_In_Range
+_ClipB:
+	ld	a, 63
+	sub	h
+	ld	e, a
+	jp	_Display
+_Y_In_Range:
+	add	a, e
+	cp	64
+	jr	nc, _ClipB
+	
+_Display:
+	inc	ix
+	inc	ix
+
+; B = row
+; C = col
+; D = visible cols
+; E = visible rows
+; IX = &image
+
+	ld	a, c
+	ld	c, b
+	ld	b, 0
+	ld	h, b
+	ld	l, c
+	add	hl, hl
+	add	hl, bc
+	add	hl, hl
+	add	hl, hl
+	ld	c, a
+	srl	c
+	srl	c
+	srl	c
+	add	hl, bc
+	ld	bc, (os.vbuf_addr)
+	add	hl, bc
+	and	%00000111
+	ld	(_offset), a
+
+	push	de
+	push	hl
+	push	ix
+_Row_Loop:
+	ld	a, (_shift)
+	or	a
+	ld	b, a
+	ld	a, (ix)
+	ld	c, (ix + 1)
+	push	af
+	call	_check_inverse
+	jr	z, _inv_done
+	cpl
+	push	af
+	ld	a, c
+	cpl
+	ld	c, a
+	pop	af
+	ex	(sp), hl
+	ld	h, a
+	ex	(sp), hl
+_inv_done:
+	pop	af
+	jr	z, _Dont_Shift1
+_Shift1:
+	sla	c
+	rla
+	djnz	_Shift1
+_Dont_Shift1:
+	push	af
+	ld	a, d
+	cp	9
+	jr	c, _Last_Column
+
+	ld	a, (_offset)
+	or	a
+	jr	nz, _Unaligned
+
+	pop	af
+	ld	(hl), a
+	inc	hl
+	jp	_Finish1
+
+_Unaligned:
+	push	de
+	ld	b, a
+	ld	c, 0
+	ld	e, $FF
+	pop	af
+	srl	a
+	rr	c
+	srl	e
+	djnz	$-6
+
+	ld	b, a
+	ld	a, e
+	cpl
+	and	(hl)
+	or	b
+	ld	(hl), a
+	inc	hl
+	ld	a, e
+	and	(hl)
+	or	c
+	ld	(hl), a
+	pop	de
+
+_Finish1:
+	inc	ix
+	ld	a, d
+	sub	8
+	ld	d, a
+	jp	_Row_Loop
+_Last_Column:
+	ld	a, 8
+	sub	d
+	ld	b, a
+	ld	a, $FF
+	jr	z, _Dont_Shift2
+_Shift2:
+	add	a, a
+	djnz	_Shift2
+_Dont_Shift2:
+	ld	b, a
+	cpl
+	ld	c, a
+
+	pop	af
+	and	b
+	ld	b, a
+	ld	a, (_offset)
+	or	a
+	jr	nz, _Unaligned2
+	ld	a, (hl)
+	and	c
+	or	b
+	ld	(hl), a
+	jr	_Finish2
+
+_Unaligned2:
+	push	de
+	ld	de, $00FF
+_Shift3:
+	srl	b
+	rr	d
+	scf
+	rr	c
+	rr	e
+	dec	a
+	jp	nz, _Shift3
+
+	ld	a, (hl)
+	and	c
+	or	b
+	ld	(hl), a
+	inc	hl
+	ld	a, (hl)
+	and	e
+	or	d
+	ld	(hl), a
+	pop	de
+
+_Finish2:
+	pop	ix
+	pop	hl
+	pop	de
+	dec	e
+	scf
+	ret	z
+	push	de
+
+	ld	bc, 12
+	add	hl, bc
+	push	hl
+
+	ld	a, (_cols)
+	dec	a
+	rrca
+	rrca
+	rrca
+	and	%00011111
+	inc	a
+	ld	c, a
+	add	ix, bc
+	push	ix
+
+	ld	a, (_shift)
+	ld	b, a
+	jp	_Row_Loop
+
+
+; draw_line core code (all three code path and vector tables)
+Xbit.res:	.export	Xbit.res
+ .dw DrawX0r,DrawX1r,DrawX2r,DrawX3r
+ .dw DrawX4r,DrawX5r,DrawX6r,DrawX7r
+Xbit.set:
+ .dw DrawX0s,DrawX1s,DrawX2s,DrawX3s
+ .dw DrawX4s,DrawX5s,DrawX6s,DrawX7s
+Xbit.inv:
+ .dw DrawX0i,DrawX1i,DrawX2i,DrawX3i
+ .dw DrawX4i,DrawX5i,DrawX6i,DrawX7i
+Ybit.res:	.export	Ybit.res
+ .dw DrawY0r,DrawY1r,DrawY2r,DrawY3r
+ .dw DrawY4r,DrawY5r,DrawY6r,DrawY7r
+Ybit.set:
+ .dw DrawY0s,DrawY1s,DrawY2s,DrawY3s
+ .dw DrawY4s,DrawY5s,DrawY6s,DrawY7s
+Ybit.inv:
+ .dw DrawY0i,DrawY1i,DrawY2i,DrawY3i
+ .dw DrawY4i,DrawY5i,DrawY6i,DrawY7i
+		
+DrawX0r:
+	res 7,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX1r
+	ret
+DrawX1r:
+	res 6,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX2r
+	ret
+DrawX2r:
+	res 5,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX3r
+	ret
+DrawX3r:
+	res 4,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX4r
+	ret
+DrawX4r:
+	res 3,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX5r
+	ret
+DrawX5r:
+	res 2,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX6r
+	ret
+DrawX6r:
+	res 1,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX7r
+	ret
+DrawX7r:
+	res 0,(ix)
+	inc ix
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX0r
+	ret
+
+DrawY0r_:
+	inc ix
+	sub h
+	dec b
+	ret z
+DrawY0r:
+	res 7,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY1r_
+	djnz DrawY0r
+	ret
+DrawY1r_:
+	sub h
+	dec b
+	ret z
+DrawY1r:
+	res 6,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY2r_
+	djnz DrawY1r
+	ret
+DrawY2r_:
+	sub h
+	dec b
+	ret z
+DrawY2r:
+	res 5,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY3r_
+	djnz DrawY2r
+	ret
+DrawY3r_:
+	sub h
+	dec b
+	ret z
+DrawY3r:
+	res 4,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY4r_
+	djnz DrawY3r
+	ret
+DrawY4r_:
+	sub h
+	dec b
+	ret z
+DrawY4r:
+	res 3,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY5r_
+	djnz DrawY4r
+	ret
+DrawY5r_:
+	sub h
+	dec b
+	ret z
+DrawY5r:
+	res 2,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY6r_
+	djnz DrawY5r
+	ret
+DrawY6r_:
+	sub h
+	dec b
+	ret z
+DrawY6r:
+	res 1,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY7r_
+	djnz DrawY6r
+	ret
+DrawY7r_:
+	sub h
+	dec b
+	ret z
+DrawY7r:
+	res 0,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY0r_
+	djnz DrawY7r
+	ret
+	
+DrawX0s:
+	set 7,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX1s
+	ret
+DrawX1s:
+	set 6,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX2s
+	ret
+DrawX2s:
+	set 5,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX3s
+	ret
+DrawX3s:
+	set 4,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX4s
+	ret
+DrawX4s:
+	set 3,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX5s
+	ret
+DrawX5s:
+	set 2,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX6s
+	ret
+DrawX6s:
+	set 1,(ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX7s
+	ret
+DrawX7s:
+	set 0,(ix)
+	inc ix
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX0s
+	ret
+
+DrawY0s_:
+	inc ix
+	sub h
+	dec b
+	ret z
+DrawY0s:
+	set 7,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY1s_
+	djnz DrawY0s
+	ret
+DrawY1s_:
+	sub h
+	dec b
+	ret z
+DrawY1s:
+	set 6,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY2s_
+	djnz DrawY1s
+	ret
+DrawY2s_:
+	sub h
+	dec b
+	ret z
+DrawY2s:
+	set 5,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY3s_
+	djnz DrawY2s
+	ret
+DrawY3s_:
+	sub h
+	dec b
+	ret z
+DrawY3s:
+	set 4,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY4s_
+	djnz DrawY3s
+	ret
+DrawY4s_:
+	sub h
+	dec b
+	ret z
+DrawY4s:
+	set 3,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY5s_
+	djnz DrawY4s
+	ret
+DrawY5s_:
+	sub h
+	dec b
+	ret z
+DrawY5s:
+	set 2,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY6s_
+	djnz DrawY5s
+	ret
+DrawY6s_:
+	sub h
+	dec b
+	ret z
+DrawY6s:
+	set 1,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY7s_
+	djnz DrawY6s
+	ret
+DrawY7s_:
+	sub h
+	dec b
+	ret z
+DrawY7s:
+	set 0,(ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY0s_
+	djnz DrawY7s
+	ret
+
+DrawX0i:
+	bit	7, (ix)
+	jr	nz, $+5
+	set 7,(ix)
+	jr	$+5
+	res	7, (ix)
+	
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX1i
+	ret
+DrawX1i:
+	bit	6, (ix)
+	jr	nz, $+5
+	set	6, (ix)
+	jr	$+5
+	res	6, (ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX2i
+	ret
+DrawX2i:
+	bit	5, (ix)
+	jr	nz, $+5
+	set	5, (ix)
+	jr	$+5
+	res	5, (ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX3i
+	ret
+DrawX3i:
+	bit	4, (ix)
+	jr	nz, $+5
+	set	4, (ix)
+	jr	$+5
+	res	4, (ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX4i
+	ret
+DrawX4i:
+	bit	3, (ix)
+	jr	nz, $+5
+	set	3, (ix)
+	jr	$+5
+	res	3, (ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX5i
+	ret
+DrawX5i:
+	bit	2, (ix)
+	jr	nz, $+5
+	set	2, (ix)
+	jr	$+5
+	res	2, (ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX6i
+	ret
+DrawX6i:
+	bit	1, (ix)
+	jr	nz, $+5
+	set	1, (ix)
+	jr	$+5
+	res	1, (ix)
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	djnz DrawX7i
+	ret
+DrawX7i:
+	bit	0, (ix)
+	jr	nz, $+5
+	set	0, (ix)
+	jr	$+5
+	res	0, (ix)
+	inc ix
+	add a,c
+	cp h
+	jp c,$+3+2+1
+	add ix,de
+	sub h
+	;djnz DrawX0i
+	dec	b
+	jp	nz, DrawX0i
+	ret
+
+DrawY0i_:
+	inc ix
+	sub h
+	dec b
+	ret z
+DrawY0i:
+	bit	7, (ix)
+	jr	nz, $+5
+	set	7, (ix)
+	jr	$+5
+	res	7, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY1i_
+	djnz DrawY0i
+	ret
+DrawY1i_:
+	sub h
+	dec b
+	ret z
+DrawY1i:
+	bit	6, (ix)
+	jr	nz, $+5
+	set	6, (ix)
+	jr	$+5
+	res	6, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY2i_
+	djnz DrawY1i
+	ret
+DrawY2i_:
+	sub h
+	dec b
+	ret z
+DrawY2i:
+	bit	5, (ix)
+	jr	nz, $+5
+	set	5, (ix)
+	jr	$+5
+	res	5, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY3i_
+	djnz DrawY2i
+	ret
+DrawY3i_:
+	sub h
+	dec b
+	ret z
+DrawY3i:
+	bit	4, (ix)
+	jr	nz, $+5
+	set	4, (ix)
+	jr	$+5
+	res	4, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY4i_
+	djnz DrawY3i
+	ret
+DrawY4i_:
+	sub h
+	dec b
+	ret z
+DrawY4i:
+	bit	3, (ix)
+	jr	nz, $+5
+	set	3, (ix)
+	jr	$+5
+	res	3, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY5i_
+	djnz DrawY4i
+	ret
+DrawY5i_:
+	sub h
+	dec b
+	ret z
+DrawY5i:
+	bit	2, (ix)
+	jr	nz, $+5
+	set	2, (ix)
+	jr	$+5
+	res	2, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY6i_
+	djnz DrawY5i
+	ret
+DrawY6i_:
+	sub h
+	dec b
+	ret z
+DrawY6i:
+	bit	1, (ix)
+	jr	nz, $+5
+	set	1, (ix)
+	jr	$+5
+	res	1, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY7i_
+	djnz DrawY6i
+	ret
+DrawY7i_:
+	sub h
+	dec b
+	ret z
+DrawY7i:
+	bit	0, (ix)
+	jr	nz, $+5
+	set	0, (ix)
+	jr	$+5
+	res	0, (ix)
+	add ix,de
+	add a,l
+	cp h
+	jp nc,DrawY0i_
+	djnz DrawY7i
+	ret
