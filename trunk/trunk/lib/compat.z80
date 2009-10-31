@@ -294,7 +294,7 @@ compat.tios.rst30:
 	ret
 
 
-cmd_COMPAT:
+cmd_COMPAT:		.export	cmd_COMPAT
 	call	zp.compat_start
 	
 	ld	a, $81

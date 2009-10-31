@@ -31,90 +31,158 @@ PAGE = $1C
 
 .org $4000
 
-; a couple of ports are protected and require a precise instruction
-; sequence to be properly written to (and that must be executed from
-; a priviledged flash page
-#define protPortWrite(port) di
-#defcont			 \ nop
-#defcont			 \ nop
-#defcont			 \ im	1
-#defcont			 \ di
-#defcont			 \ out	(port), a
-
-vect_flash_unlock:	.export vect_flash_unlock
-	; bit of magic here to reenable interrupts only if they were disabled
-	; ld a, i (and ld a,r) cause P/V to be set to IFF
-	ld	a,i
-	push	af
-	
-	di
-	
-	ld	a, 1
-	protPortWrite(flash_lock_port)
-	
-	pop	af
-	; po : interrupts were disabled before / pe : interrupts were enabled before
-	ret	po
-	
-	ei
-	ret
-
-vect_flash_lock:	.export vect_flash_lock
-	ld	a, i
-	push	af
-	
-	di
-	
+vect_console_core:	.export	vect_console_core
+	; slow speed
 	xor	a
-	protPortWrite(flash_lock_port)
+	out	(cpu_speed_port), a
+	
+	; reset command recall index
+	;ld	a, $FF
+	dec	a
+	ld	(os.command_mem + 3), a
+	ei
+	
+	; clear command buffer
+ 	ld	hl, os.command
+ 	ld	de, os.command + 1
+ 	ld	(hl), 0
+ 	ld	bc, 128
+ 	ldir
+ 	
+	; show console (in case a previous command left garbage on screen)
+	call	zp.credraw
+	call	zp.cdisp
+	
+	; wait for input
+	ld	a, 128
+	ld	hl, os.command
+	ld	(os.command_buf), hl
+	ld	(os.command_buf + 2), a
+	
+	ld	ix, zp.console.callback
+	call	zp.cgets
+	
+	call	vect_memorize_command
+	
+	; remove command from display
+	ld	a, CMD_PANE
+	call	zp.clrline
+	call	zp.displine
+	
+	; "tokenize" : modify the buffer
+	ld	hl, os.command
+	call	zp.tokenize
+	
+	push	af
+	
+	; find the command invoked
+	
+	ld	de, os.command
+	ld	hl, command_mnemonics
+	call	zp.findstr
+	
+	jr	z, zp.console.exec 
+
+	pop	af
+	
+	ld	hl, str_esyntax1
+	ld	de,	os.scrap
+	ld	bc, 10
+	ldir
+	
+	ld	hl, os.command
+	call	zp.strcpy
+	dec	de
+	
+	ld	hl, str_esyntax2
+	ld	bc, 3
+	ldir
+	
+	ld	hl, os.scrap
+	call	zp.cputs
+	jp		zp.cdisp
+
+; bc : command index
+; de : command parameters
+zp.console.exec:
+	ld	hl, command_pointers
+	
+	; bc holds command index but pointers are 2 bytes
+	add	hl, bc
+	add	hl, bc
+	
+	; deref hl
+	deref_hl
+	
+	; adjust arguments (skip command)
+	ld	de, os.command
+	ex	de, hl
+	call	zp.strnext
+	ex	de, hl
 	
 	pop	af
-	ret	po
 	
-	ei
+	; adjust arg count
+	dec	a
+	
+	; exec command
+	;	hl : command address
+	;	de : command parameters (stringlist)
+	;	a  : number of parameters
+	
+	push	hl
+	ex	de, hl
 	ret
 
-;protected ports are 14,16,22, and 23 - all Flash write/execution protection
-;we allow execution on all Flash pages, then relock Flash
-vect_flash_exec_init_se: .export vect_flash_exec_init_se
-	di
-	call	vect_flash_unlock
-	
-	;Set Flash execution lower limit
-	
+; brief : handle special keypresses in console input
+; note : must preserve all registers... (callee save)
+zp.console.callback:
+	cp	k_up
+	jr	z, zp.console.cb_up
+	cp	k_down
+	jr	z, zp.console.cb_down
+	or	a
+	ret
+
+zp.console.cb_up:
+	push	af
+	ld	a, (os.command_mem + 3)
+	inc	a
+	call	vect_recall_command
+	pop	af
+	scf
+	ret
+
+zp.console.cb_down:
+	push	af
+	ld	a, (os.command_mem + 3)
+	cp	$FF
+	jr	z, zp.console.cb_down.clear
+	or	a
+	jr	z, zp.console.cb_down.clear
+	dec	a
+	call	vect_recall_command
+	pop	af
+	scf
+	ret
+
+zp.console.cb_down.clear:
 	ld	a, $FF
-	protPortWrite(fxl_low_port)
-	;Flash execution upper limit
+	ld	(os.command_mem + 3), a
 	inc	a
-	protPortWrite(fxl_high_port)
 	
-	; TIOS reportedly writes data to port $25, $26... ($10, $20 respectively)
-	; the effect of these writes is not documented so...
-	
-	jp	vect_flash_lock
-	
-vect_flash_exec_init_be: .export vect_flash_exec_init_be
-	di
-	
-	call	vect_flash_unlock
-	
-	; tricky flash execution enabling (untested)
-	
-	xor	a
-	protPortWrite($05)
-	protPortWrite(flash_exec_port)
-	
-	inc	a
-	protPortWrite(flash_exec_port)
-	xor	a
-	protPortWrite(flash_exec_port)
-	
-	ld	a, 2
-	protPortWrite($05)
-	xor	a
-	protPortWrite(flash_exec_port)
-	
-	jp	vect_flash_lock
+	; clear command buffer
+ 	ld	hl, os.command
+ 	ld	de, os.command + 1
+ 	ld	(hl), a
+ 	ld	bc, 128
+	push	hl
+ 	ldir
+	pop	hl
+	ld	e, a
+	pop	af
+	scf
+	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;
@@ -288,6 +356,94 @@ vect_stt.scroll_down:
 	jp	nc, vect_stt.update
 	jr	vect_stt.loop
 
+os.libs1C:
+
+#include "lib/protports.z80"
+#include "lib/commands.z80"
+#include "lib/flash.z80"
+#include "lib/primitives_p.z80"
+
+.echo	"Libs : "
+.echo	$-os.libs1C
+.echo	" bytes used\n"
+
+os.commands1C:
+
+#include "commands/tilp.z80"
+#include "commands/base.z80"
+#include "commands/fs.z80"
+
+.echo	"Commands : "
+.echo	$-os.commands1C
+.echo	" bytes used\n"
+
+os.data1C:
+
+str_esyntax1	.text	"Unknown: \"\000"
+str_esyntax2	.text	"\".\000"
+
+; command table :
+;	* list of mnemonics for CLI lookup
+;	* list of addresses for execution
+command_mnemonics:
+	.db "reboot", 0
+	.db "host", 0
+	.db "help", 0
+	.db "cls", 0
+;	.db "info", 0
+	.db "list", 0
+	.db "del", 0
+	.db "mem", 0
+	.db "run", 0
+	.db "hex", 0
+	.db "chronos", 0
+	.db "touch", 0
+	.db "compat", 0
+	.db 0
+
+command_pointers:
+	.dw cmd_REBOOT
+	.dw zp.host
+	.dw cmd_HELP
+	.dw cmd_CLS
+;	.dw cmd_INFO
+	.dw cmd_LIST
+	.dw cmd_DEL
+	.dw cmd_MEM
+	.dw cmd_RUN
+	.dw os.hexedit
+	.dw cmd_CHRONOS
+	.dw cmd_TOUCH
+	.dw cmd_COMPAT
+
+; console is 24 char wide : occupy it all
+str_exception:	.export	str_exception
+	.db	"EX  -                   "     ;1
+	.db	"AF      BC      DE      "     ;2
+	.db	"HL      IX      IY      "     ;3
+	.db	"SP      PC      IR      "     ;4
+	.db	"Stack Dump:             ", 0  ;5
+		                               ;8
+		;012345678901234567890123
+
+str_ecreate:	.export	str_ecreate
+	.db	"Can't Create File\000" ; don't ask me... looks like tasm fucks up when string literals end
+str_elocate:	.export	str_elocate
+	.db	"Can't Locate File\000" ; with 'e' and discard the zero terminator unless it is added that way...
+str_elink:	.export	str_elink
+	.db	"Transmission Error", 0
+str_eexist:	.export	str_eexist
+	.db	"File Exists", 0
+str_emem:	.export	str_emem
+	.db	"Out of Memory", 0
+str_echecksum:	.export	str_echecksum
+	.db	"Bad Link Checksum", 0
+str_ecompat:	.export	str_ecompat
+	.db "Compat Layer Error", 0
+str_eunhandled:	.export	str_eunhandled
+	.db	"  UNHANDLED  EXCEPTION ", 0
+		;012345678901234567890123
+
 ; console help texts
 help.data:	.export help.data
 	.db	"Console Help", 0
@@ -354,28 +510,48 @@ help.chronos:
 	.db "hexadecimal value."
 	.db 0
 
-os.libs1C:
+; use table to allow maximum sotred precision to change seamlessly
+fp.consts:		.export	fp.consts
+	.dw	fp.0
+	.dw	fp.1
+	.dw	fp.e
+	.dw	fp.ln10
+	.dw	fp.ln2
 
-#include "lib/commands.z80"
-#include "lib/flash.z80"
-#include "lib/primitives_p.z80"
+; some constants : standard precision (TIOS) is 14 decimal places, 30 are stored for extra precision
+; in some algorithms and in case users wish to increase the precision of fp math
+fp.0:
+	.db $00, $80, $00, $00, $00, $00, $00, $00, $00, 	$00, $00, $00, $00, $00, $00, $00 ;, $00
+fp.1:
+	.db $00, $80, $10, $00, $00, $00, $00, $00, $00, 	$00, $00, $00, $00, $00, $00, $00 ;, $00
+fp.e:
+	.db $00, $80, $27, $18, $28, $18, $28, $45, $90, 	$45, $23, $53, $60, $28, $74, $71 ;, $35
+fp.pi:
+	.db $00, $80, $31, $41, $59, $26, $53, $58, $97, 	$93, $23, $84, $62, $64, $33, $83 ;, $28
+fp.ln10:
+	.db $00, $80, $23, $02, $58, $50, $92, $99, $40, 	$45, $68, $40, $17, $99, $14, $54 ;, $68
+fp.ln2:
+	.db $00, $7F, $69, $31, $47, $18, $05, $59, $94, 	$53, $09, $41, $72, $32, $12, $14 ;, $58
+; ; CORDIC table for ln/exp
+; fp.ln1.1:
+; 	.db $00, $7E, $95, $31, $01, $79, $80, $43, $24, 	$86, $00, $43, $95, $21, $23, $28, $07
+; fp.ln1.01:
+; 	.db $00, $7D, $99, $50, $33, $08, $53, $16, $80, 	$82, $84, $82, $15, $35, $75, $44, $26
+; fp.ln1.001:
+; 	.db $00, $7C, $99, $95, $00, $33, $30, $83, $53, 	$31, $66, $80, $93, $98, $92, $05, $35
+; fp.ln1.0001:
+; 	.db $00, $7C, $99, $99, $50, $00, $33, $33, $08, 	$33, $53, $33, $16, $66, $80, $95, $11
+; fp.ln1.0001:
+; 	.db $00, $7C, $99, $99, $50, $00, $33, $33, $08, 	$33, $53, $33, $16, $66, $80, $95, $11
 
-.echo	"Libs : "
-.echo	$-os.libs1C
-.echo	" bytes used\n"
+; √2
+; 	≈ 1.41421 35623 73095 04880 16887 24209 69807
+; √3
+; 	≈ 1.73205 08075 68877 29352 74463 41505 87236
+; √5
+; 	≈ 2.23606 79774 99789 69640 91736 68731 27623
 
-os.commands1C:
-
-#include "commands/tilp.z80"
-#include "commands/base.z80"
-#include "commands/fs.z80"
-
-.echo	"Commands : "
-.echo	$-os.commands1C
-.echo	" bytes used\n"
-
-os.data1C:
-
+#include "data/font_con.inc"
 #include "data/font_6x8.inc"
 ;#include "data/font_var.inc"
 #include "data/83p_varl.inc"
@@ -403,6 +579,7 @@ os.data1C:
 .export	cmd_CHRONOS
 .export	zp.host
 
+.export	os.font_con
 .export	os.font_6x8
 .export	os.font_var
 

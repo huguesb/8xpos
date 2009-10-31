@@ -123,19 +123,12 @@ vect_fp_pop.end:
 ; output : fp number written to de
 ; destroys : none
 vect_fp_top:
-	push	af
 	push	hl
-	push	de
-	push	bc
 	
 	ld	hl, (os.fpstack)
-	ld	bc, 9
-	ldir
+	call	vect_fp_cpy
 	
-	pop	bc
-	pop	de
 	pop	hl
-	pop	af
 	ret
 
 ; brief : drop a fp number from the stack
@@ -148,38 +141,6 @@ vect_fp_drop:
 	ld	de, $0000
 	call	vect_fp_pop
 	pop	de
-	ret
-	
-; 	push	af
-; 	push	hl
-; 	
-; 	ld	hl, (os.fpstack)
-; 	
-; 	ld	a, h
-; 	or	l
-; 	jr	z, vect_fp_drop.end
-; 	
-; 	push	de
-; 	push	bc
-; 	
-; 	; "remove" entry from stack by storing pointer to previous entry in FPS
-; 	push	hl
-; 	ld	c, (hl)
-; 	inc	hl
-; 	ld	b, (hl)
-; 	inc	hl
-; 	ld	(os.fpstack), bc
-; 	pop	hl
-; 	
-; 	; free memory
-; 	call	zp.free
-; 	
-; 	pop	de
-; 	pop	bc
-; 	
-; vect_fp_drop.end:
-; 	pop	hl
-; 	pop	af
 	ret
 
 ; brief : copy the content of a fp number into another
@@ -202,13 +163,6 @@ vect_fp_cpy:
 ; output : de incremented accordingly
 ; destroys : a, bc
 vect_ftoa:
-; 	call	zp.htoa_word
-; 	
-; 	ld	a, ':'
-; 	ld	(de), a
-; 	inc	de
-; 	
-	
 	bit	7, (hl)
 	inc	hl
 	jr	z, vect_ftoa.nosign
@@ -590,13 +544,10 @@ vect_ftoi.error:
 ; output : hl -> fp number
 ; destroys : a, bc, de
 vect_itof:
-	push	hl
-	push	de
-	ld	hl, fp.0
-	ld	bc, 9
-	ldir
-	pop	de
-	pop	hl
+	xor	a
+	ex	de, hl
+	call	vect_fp_const
+	ex	de, hl
 	
 	; check for null input
 	ld	a, h
@@ -711,61 +662,32 @@ vect_fp_normalize.zero:
 ; brief : set a fp number to a given constant
 ; input : a -> constant id, hl -> fp number
 ; output : fp number in hl set to corresponding constant
-; destroys : none
+; destroys : a
 vect_fp_const:
 	push	hl
 	push	de
-	push	bc
 	
 	ex	de, hl
-	ld	h, 0
-	ld	l, a
-	add	hl, hl
-	add	hl, hl
-	add	hl, hl
-	add	hl, hl
-	ld	bc, fp.0
-	add	hl, bc
-	ld	bc, 9
-	ldir
 	
-	pop	bc
+	ld	hl, fp.consts
+	add	a, a
+	offset_hl
+	
+	in	a, (map_bankA_port)
+	push	af
+	ld	a, $1C
+	call	zp.setflashpage
+	
+	deref_hl
+	
+	call	vect_fp_cpy
+	
+	pop	af
+	out	(map_bankA_port), a
+	
 	pop	de
 	pop	hl
 	ret
-
-; some constants : standard precision (TIOS) is 14 decimal places, 30 are stored for extra precision
-; in some algorithms and in case users wish to increase the precision of fp math
-fp.0:
-	.db $00, $80, $00, $00, $00, $00, $00, $00, $00, 	$00, $00, $00, $00, $00, $00, $00 ;, $00
-fp.1:
-	.db $00, $80, $10, $00, $00, $00, $00, $00, $00, 	$00, $00, $00, $00, $00, $00, $00 ;, $00
-fp.e:
-	.db $00, $80, $27, $18, $28, $18, $28, $45, $90, 	$45, $23, $53, $60, $28, $74, $71 ;, $35
-fp.pi:
-	.db $00, $80, $31, $41, $59, $26, $53, $58, $97, 	$93, $23, $84, $62, $64, $33, $83 ;, $28
-fp.ln10:
-	.db $00, $80, $23, $02, $58, $50, $92, $99, $40, 	$45, $68, $40, $17, $99, $14, $54 ;, $68
-fp.ln2:
-	.db $00, $7F, $69, $31, $47, $18, $05, $59, $94, 	$53, $09, $41, $72, $32, $12, $14 ;, $58
-; ; CORDIC table for ln/exp
-; fp.ln1.1:
-; 	.db $00, $7E, $95, $31, $01, $79, $80, $43, $24, 	$86, $00, $43, $95, $21, $23, $28, $07
-; fp.ln1.01:
-; 	.db $00, $7D, $99, $50, $33, $08, $53, $16, $80, 	$82, $84, $82, $15, $35, $75, $44, $26
-; fp.ln1.001:
-; 	.db $00, $7C, $99, $95, $00, $33, $30, $83, $53, 	$31, $66, $80, $93, $98, $92, $05, $35
-; fp.ln1.0001:
-; 	.db $00, $7C, $99, $99, $50, $00, $33, $33, $08, 	$33, $53, $33, $16, $66, $80, $95, $11
-; fp.ln1.0001:
-; 	.db $00, $7C, $99, $99, $50, $00, $33, $33, $08, 	$33, $53, $33, $16, $66, $80, $95, $11
-
-; √2
-; 	≈ 1.41421 35623 73095 04880 16887 24209 69807
-; √3
-; 	≈ 1.73205 08075 68877 29352 74463 41505 87236
-; √5
-; 	≈ 2.23606 79774 99789 69640 91736 68731 27623
 
 ; brief : compares two numbers
 ; input : hl, de -> fp number

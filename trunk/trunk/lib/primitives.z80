@@ -94,9 +94,10 @@ vect_flip_pixel:
 ; destroys : a, bc, de, hl, ix
 ; note : no clipping
 vect_draw_line:
-	ld	c, map_bankA_port
-	in	b, (c)
-	push	bc
+	ld	b, a
+	in	a, (map_bankA_port)
+	push	af
+	ld	a, b
 	
 	push	hl
 	ld	hl, vect_draw_line.return

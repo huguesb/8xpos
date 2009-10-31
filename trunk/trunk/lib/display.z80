@@ -292,3 +292,87 @@ vect_clrlcd._iloop:
 	pop	hl
 	pop	af
 	ret
+
+; brief : inverts a nibble of LCD memory (correspond to a line of character cell)
+; input : b -> row, c -> column, d -> number of rows, e -> number of cols
+; output : none
+; destroys : 
+vect_cinvert:
+	; compute mask
+	ld	a, $0F
+	bit	0, c
+	jr	z, $+6
+	add	a, a
+	add	a, a
+	add	a, a
+	add	a, a
+	
+	push	af
+	
+vect_cinvert.oloop:
+	; set column
+	lcd_busy
+	ld	a, c
+	srl	a
+	add	a, $20
+	out	(lcd_cmd_port), a	; 20 - 2B: y-address
+	
+	pop	af
+	rrca
+	rrca
+	rrca
+	rrca
+	push	af
+	
+	push	de
+	push	bc
+	
+	ld	e, a
+	
+	; set row
+	lcd_busy
+	ld	a, b			; 80 - BF: x-address
+	add	a, $80
+	out	(lcd_cmd_port), a
+	
+vect_cinvert.iloop:
+	call	vect_invlcdnibble
+	inc	b
+	dec	d
+	jr	nz, vect_cinvert.iloop
+	pop	bc
+	pop	de
+	
+	inc	c
+	dec	e
+	jr	nz, vect_cinvert.oloop
+	
+	pop	af
+	
+	ret
+
+; destroys : a
+vect_invlcdnibble:
+	; dummy read
+	lcd_busy
+	in	a, (lcd_data_port)
+	
+	; read
+	lcd_busy
+	in	a, (lcd_data_port)
+	
+	; invert
+	xor	e
+	push	af
+	
+	; set row
+	lcd_busy
+	ld	a, b			; 80 - BF: x-address
+	add	a, $80
+	out	(lcd_cmd_port), a
+	
+	lcd_busy
+	pop	af
+	; write
+	out	(lcd_data_port), a
+	ret

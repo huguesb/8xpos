@@ -513,28 +513,10 @@ vect_file_delete.callback:
 vect_file_delete.loop:
 	push	hl
 	
-; 	push	bc
-; 	push	hl
-; 	
-; 	ld	de, os.scrap
-; 	ld	a, b
-; 	inc	b
-; 	call	zp.htoa_byte
-; 	xor	a
-; 	ld	(de), a
-; 	ld	hl, os.scrap
-; 	call	zp.cputs
-; 	
-; 	pop	hl
-; 	push	hl
-; 	call	_meta_disp
-; 	pop	hl
-	
 	; release the node
 	ld	iy, os.falloc.start
 	call	zp.free_iy
 	
-; 	pop	bc
 	pop	hl
 	
 	; loop over chunks (if file split)
@@ -542,86 +524,6 @@ vect_file_delete.loop:
 	ret	c
 	
 	jr	vect_file_delete.loop
-
-; _meta_disp:
-; 	ld	de, os.scrap
-; 	
-; 	ld	c, (hl)
-; 	inc	hl
-; 	ld	a, c
-; 	or	a
-; 	push	af
-; 	call	zp.htoa_byte
-; 	pop	af
-; 	jr	z, _end
-; 	
-; 	ld	a, $0A
-; 	ld	(de), a
-; 	inc	de
-; 	
-; _loop:
-; 	ld	b, (hl)
-; 	inc	hl
-; 	dec	c
-; 	jr	z, _end
-; 	ld	a, (hl)
-; 	inc	hl
-; 	dec	c
-; 	push	af
-; 	call	zp.htoa_byte
-; 	
-; 	ld	a, ':'
-; 	ld	(de), a
-; 	inc	de
-; 	ld	a, b
-; 	call	zp.htoa_byte
-; 	
-; 	ld	a, ':'
-; 	ld	(de), a
-; 	inc	de
-; 	
-; 	pop	af
-; 	jr	z, _end
-; 	cp	meta_NAME
-; 	jr	z, _name
-; 	
-; 	ld	a, (hl)
-; 	inc	hl
-; 	dec	c
-; 	jr	z, _end
-; 	call	zp.htoa_byte
-; 	djnz	$-8
-; 	
-; 	jr	_common
-; 	
-; _name:
-; 	ld	a, (hl)
-; 	inc	hl
-; 	dec	c
-; 	jr	z, _end
-; 	or	a
-; 	jr	nz, $+4
-; 	ld	a, '*'
-; 	ld	(de), a
-; 	inc	de
-; 	djnz	_name
-; 	
-; _common:
-; 	ld	a, $0A ; LF
-; 	ld	(de), a
-; 	inc	de
-; 	
-; 	jr	_loop
-; 	
-; _end:
-; 	xor	a
-; 	ld	(de), a
-; 	
-; 	ld	hl, os.scrap
-; 	call	zp.cputs
-; 	call	zp.cdisp
-; 	
-; 	ret
 
 ; brief : find next file chunk, if file split
 ; input : hl -> node contents pointer (points to metadata size)

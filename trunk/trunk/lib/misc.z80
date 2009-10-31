@@ -88,7 +88,6 @@ vect_bootcode_str:
 	push	af
 	
 	ld	a, $1F
-	ld	c, map_bankA_port
 	call	zp.setflashpage
 	
 	; address of zero terminated boot code version string (courtesy of WikiTi)
@@ -113,7 +112,6 @@ vect_bootcode_version:
 	push	de
 	
 	ld	a, $1F
-	ld	c, map_bankA_port
 	call	zp.setflashpage
 	
 	; address of zero terminated boot code version string (courtesy of WikiTi)

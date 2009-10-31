@@ -40,7 +40,6 @@ init:
 	
 	; set page $1C in memory bank A (4000-7FFF)
 	ld	a, $1C
-	ld	c, map_bankA_port
 	call	zp.setflashpage
 	
 	call	zp.hw_version
