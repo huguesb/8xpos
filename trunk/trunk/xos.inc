@@ -38,7 +38,11 @@ os.keymap.alpha	= os.keymap.shift + 2
 
 os.vbuf_addr	= os.keymap.alpha + 2
 
-os.ram_masks	= os.vbuf_addr + 2
+os.font.con		= os.vbuf_addr + 2
+os.font.6x8		= os.font.con + 2
+os.font.var		= os.font.6x8 + 2
+
+os.ram_masks	= os.font.var + 2
 
 os.hook.rst08	= os.ram_masks + 2
 os.hook.rst10	= os.hook.rst08 + 2
