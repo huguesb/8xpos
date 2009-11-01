@@ -63,6 +63,9 @@ cmd_RUN:	.export	cmd_RUN
 	; start TIOS emulation
 	call	zp.compat_start
 	
+	ld	a, $81
+	out	(map_bankB_port), a
+	
 	; just in case...
 	ld	hl, zp.console
 	push	hl

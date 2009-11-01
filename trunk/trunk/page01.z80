@@ -5074,94 +5074,96 @@ compat.chkfindsym:
 	scf
 	ret
 	
-	ld	hl, (progPtr)
-	ld	de, (pTemp)
-	ld	bc, -6
-	
-compat.cfs.loop:
-	ex	de, hl
-	cmp_hlde
-	ex	de, hl
-	ccf
-	ret	c
-	
-	ld	a, (OP1)
-	cp	(hl)
-	jr	nz, compat.cfs.invalid
-	add	hl, bc
-	ld	b, (hl)
-	
-	push	hl
-	push	de
-	
-	dec	hl
-	ld	de, OP1 + 1
-	
-compat.cfs.cmp:
-	ld	a, (de)
-	inc	de
-	cp	(hl)
-	dec	hl
-	jr	nz, compat.cfs.skip
-	djnz	compat.cfs.cmp
-	
-	pop	de
-	pop	hl
-	
-	push	hl
-	
-	dec	hl
-	dec	hl
-	ld	e, (hl)
-	dec	hl
-	ld	d, (hl)
-	dec	hl
-	ld	a, (hl)
-	
-	pop	hl
-	or	a
-	ret
-	
-compat.cfs.skip:
-	pop	de
-	pop	hl
-	
-	jr	$+3
-	
-compat.cfs.invalid:
-	add	hl, bc
-	
-	; skip name
-	ld	a, (hl)
-	ld	a, l
-	sub	(hl)
-	ld	l, a
-	jr	nc, compat.cfs.loop
-	dec	h
-	jr	compat.cfs.loop
+; 	ld	hl, (progPtr)
+; 	ld	de, (pTemp)
+; 	ld	bc, -6
+; 	
+; compat.cfs.loop:
+; 	ex	de, hl
+; 	cmp_hlde
+; 	ex	de, hl
+; 	ccf
+; 	ret	c
+; 	
+; 	ld	a, (OP1)
+; 	cp	(hl)
+; 	jr	nz, compat.cfs.invalid
+; 	add	hl, bc
+; 	ld	b, (hl)
+; 	
+; 	push	hl
+; 	push	de
+; 	
+; 	dec	hl
+; 	ld	de, OP1 + 1
+; 	
+; compat.cfs.cmp:
+; 	ld	a, (de)
+; 	inc	de
+; 	cp	(hl)
+; 	dec	hl
+; 	jr	nz, compat.cfs.skip
+; 	djnz	compat.cfs.cmp
+; 	
+; 	pop	de
+; 	pop	hl
+; 	
+; 	push	hl
+; 	
+; 	dec	hl
+; 	dec	hl
+; 	ld	e, (hl)
+; 	dec	hl
+; 	ld	d, (hl)
+; 	dec	hl
+; 	ld	a, (hl)
+; 	
+; 	pop	hl
+; 	or	a
+; 	ret
+; 	
+; compat.cfs.skip:
+; 	pop	de
+; 	pop	hl
+; 	
+; 	jr	$+3
+; 	
+; compat.cfs.invalid:
+; 	add	hl, bc
+; 	
+; 	; skip name
+; 	ld	a, (hl)
+; 	ld	a, l
+; 	sub	(hl)
+; 	ld	l, a
+; 	jr	nc, compat.cfs.loop
+; 	dec	h
+; 	jr	compat.cfs.loop
 
 compat.findsym:
 	scf
 	ret
 
 compat.memchk:
-	call	zp.file_meminfo
-	ld	h, b
-	ld	l, c
+; 	call	zp.file_meminfo
+; 	ld	h, b
+; 	ld	l, c
+	ld	hl, 0
 	ret
 
 compat.insertmem:
 	ret
 	
 compat.enoughmem:
-	call	zp.file_meminfo
-	ld	d, b
-	ld	e, c
-	ex	de, hl
-	or	a
-	sbc	hl, de
-	add	hl, de
-	ex	de, hl
+; 	call	zp.file_meminfo
+; 	ld	d, b
+; 	ld	e, c
+; 	ex	de, hl
+; 	or	a
+; 	sbc	hl, de
+; 	add	hl, de
+; 	ex	de, hl
+	scf
 	ret
 
 compat.delvar:
@@ -5171,52 +5173,54 @@ compat.delmem:
 
 compat.arc_unarc:
 	; OP1 = $8478
-	call	compat.chkfindsym
-	ret	c
+; 	call	compat.chkfindsym
+; 	ret	c
+; 	
+; 	push	hl
+; 	pop	ix
+; 	
+; 	in	a, (map_bankB_port)
+; 	push	af
+; 	ld	a, b
+; 	out	(map_bankB_port), a
+; 	
+; 	ex	de, hl
+; 	ld	c, (hl)
+; 	inc	hl
+; 	ld	b, (hl)
+; 	dec	hl
+; 	
+; 	; todo copy data to some free space...
+; 	
+; 	pop	af
+; 	out	(map_bankB_port), a
 	
-	push	hl
-	pop	ix
-	
-	in	a, (map_bankB_port)
-	push	af
-	ld	a, b
-	out	(map_bankB_port), a
-	
-	ex	de, hl
-	ld	c, (hl)
-	inc	hl
-	ld	b, (hl)
-	dec	hl
-	
-	; todo copy data to some free space...
-	
-	pop	af
-	out	(map_bankB_port), a
-	
+	scf
 	ret
 
 compat.createappvar:
 	; data in OP1
+	scf
 	ret
 	
-	push	ix
-	push	iy
-	
-	ld	b, h
-	ld	c, l
-	ld	hl, OP1 + 1
-	ld	ix, compat.cav.cb
-	call	zp.file_create
-	
-	push	hl
-	push	de
-	; create VAT entry
-	ccall(0)
-	pop	de
-	pop	hl
-	
-	pop	iy
-	pop	ix
+; 	push	ix
+; 	push	iy
+; 	
+; 	ld	b, h
+; 	ld	c, l
+; 	ld	hl, OP1 + 1
+; 	ld	ix, compat.cav.cb
+; 	call	zp.file_create
+; 	
+; 	push	hl
+; 	push	de
+; 	; create VAT entry
+; 	ccall(0)
+; 	pop	de
+; 	pop	hl
+; 	
+; 	pop	iy
+; 	pop	ix
 	
 	ret
 

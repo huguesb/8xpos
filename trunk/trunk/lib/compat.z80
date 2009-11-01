@@ -36,6 +36,13 @@ vect_compat_start:
 	
 	; RAM setup
 	
+	; start of by clearing everything...
+	ld	hl, $4000
+	ld	de, $4001
+	ld	bc, $3FFF
+	ld	(hl), 0
+	ldir
+	
 	; fake VAT : start from end of bank B
 	ld	hl, $BFFF
 	; set progPtr (start of relevant part (progs/appvars) of VAT)
@@ -43,9 +50,9 @@ vect_compat_start:
 	; set PTemp (end of VAT)
 	ld	(pTemp - $4000), hl
 	
-	ld	ix, compat.mkvat_cb
-	ld	c, bitmask(list_alloc)
-	call	zp.file_list
+; 	ld	ix, compat.mkvat_cb
+; 	ld	c, bitmask(list_alloc)
+; 	call	zp.file_list
 	
 	; rst setup
 	ld	hl, compat.tios.rst08
