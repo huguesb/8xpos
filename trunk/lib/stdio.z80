@@ -682,25 +682,28 @@ vect_putsn_con._newline:
 ; output : CF set if coords are out of range (in this case nothing is printed)
 ; destroys : a
 vect_putch_6x8:
+	push	hl
+	push	de
+	push	bc
+	
+	ld	e, a
+	
 	; putsprite doesn't bother with clipping
 	; so we do simple range checks to avoid writing garbage...
 	ld	a, c
 	cp	90
 	ccf
-	ret	c
+	jr	c, vect_putch_6x8.end
 	
 	ld	a, b
 	cp	56
 	ccf
-	ret	c
-	
-	push	hl
-	push	de
-	push	bc
+	jr	c, vect_putch_6x8.end
 	
 	; font map weighs 2kb : moved to page 1C...
 	call	font_load
 	
+	ld	a, e
 	ld	h, 0
 	ld	l, a
 	add	hl, hl
@@ -718,6 +721,7 @@ vect_putch_6x8:
 	pop	af
 	out	(map_bankA_port), a
 	
+vect_putch_6x8.end:
 	pop	bc
 	pop	de
 	pop	hl
@@ -762,12 +766,12 @@ vect_putsn_6x8._loop:
 	ld	c, a
 	dec	d
 	ret	z
-	jr	vect_puts_6x8._loop
+	jr	vect_putsn_6x8._loop
 
 ; brief : write a character to display buffer using small variable width font
 ; input : a -> char to write, b -> row, c -> column
 ; output : CF set if coords are out of range (in this case nothing is printed)
-; destroys : a
+; destroys : a, bc
 vect_putch_var:
 	push	ix
 	push	hl
@@ -839,5 +843,5 @@ vect_putsn_var._loop:
 	ret	c
 	dec	d
 	ret	z
-	jr	vect_puts_var._loop
+	jr	vect_putsn_var._loop
 

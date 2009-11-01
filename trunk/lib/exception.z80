@@ -273,18 +273,21 @@ _throw_show:
 	; display the console
 	call	zp.cdisp
 	
-	ld	bc, $0603
+	ld	hl, os.console + 24
+	ld	c, 1
+	call	_throw_next
 	
 _throw_update:
+	
 	; display address selection indicator
 	call _throw_disp
 	
 	; wait for key input
 _throw_wait:
-	push	bc
+	; a bit of delay is in order and we can't afford to halt since
+	; we have disabled interrupts and do not want to reenable them now
 	ld	c, 100
 	call	zp.timer_msleep
-	pop	bc
 	
 	call	zp.getkey
 	cp	sk_clear
@@ -302,149 +305,122 @@ _throw_wait:
 	cp	sk_mode
 	jr	nz, _throw_wait
 	
-	; restore default keymap just in case...
-	ld	hl, 0
-	ld	(os.keymap.normal), hl
-	ld	(os.keymap.shift), hl
-	ld	(os.keymap.alpha), hl
-	
 	; return to console
 	jp zp.console
 
+_throw_move:
+	ex	(sp), hl
+	call	_throw_disp
+	pop	hl
+	jr	_throw_update
+
+_throw_nomove
+	pop	hl
+	jr	_throw_wait
+
 _throw_up:
-	ld	a, b
-	sub	6
-	cp $06
-	jr	c, _throw_wait
-	cp	$18
-	jr	nc, $+11
-	call	_throw_disp
-	ld	a, b
-	sub	6
-	ld	b, a
-	jr	_throw_update
-	
-	call	_throw_disp
-	ld	a, b
-	sub	6
-	ld	b, a
-	cp	$18
-	jr	nz, _throw_update
-	sub	6
-	ld	b, a
-	
-	ld	a, c
-	dec	a
-	; mlt 4
-	add	a, a
-	add	a, a
-	; div 3
-	ld	d, a
-	ld	e, 3
-	call	zp.div_d_e
-	ld	c, d
-	inc	c
-	inc	c
-	inc	c
-	jr	_throw_update
+	push	hl
+	ld	de, -25
+	add	hl, de
+	ld	c, 1
+	call	_throw_next
+	;jr	nc, _throw_nomove
+	jr	_throw_move
 
 _throw_down:
-	ld	a, b
-	add	a, 6
-	cp	$18
-	jr	nc, $+11
-	call	_throw_disp
-	ld	a, b
-	add	a, 6
-	ld	b, a
-	jr	_throw_update
-	
-	ld	e, c
-	ld	d, a
-	
-	jr	nz, _throw_down.nojmp
-	add	a, 6
-	ld	d, a
-	
-	ld	a, c
-	sub	3
-	rra
-	;rra
-	and	$3E
-	ld	e, a
-	rra
-	add	a, e
-	inc	a
-	ld	e, a
-_throw_down.nojmp:
-	call	_throw_check
-	jp	c, _throw_wait
-	
-	push	de
-	call	_throw_disp
-	pop	bc
-	
-	jp	_throw_update
+	push	hl
+	ld	de, 25
+	add	hl, de
+	ld	c, 0
+	call	_throw_next
+	;jr	nc, _throw_nomove
+	jr	_throw_move
 
 _throw_left:
-	ld	a, c
-	cp	$07
-	jp	c, _throw_wait
-	call	_throw_disp
-	ld	a, b
-	cp	$18
-	ld	a, c
-	ld	e, 8
-	jr	c, $+4
-	dec	e
-	dec	e
-	sub	e
-	ld	c, a
-	jp	_throw_update
+	ld	c, 0
+	push	hl
+	call	_throw_next
+	jr	c, _throw_nomove
+	jr	_throw_move
 
 _throw_right:
-	ld	a, c
-	cp	$13
-	jp	nc, _throw_wait
-	
-	ld	a, b
-	cp	$18
-	ld	a, c
-	ld	e, 8
-	jr	c, $+4
-	dec	e
-	dec	e
-	add	a, e
-	ld	e, a
-	ld	d, b
-	
-	call	_throw_check
-	jp	c, _throw_wait
-	push	de
-	call	_throw_disp
-	pop	bc
-	jp	_throw_update
+	ld	c, 1
+	push	hl
+	call	_throw_next
+	jr	c, _throw_nomove
+	jr	_throw_move
 
-_throw_check:
-	push	de
-	ld	a, d
-	add	a, a
-	add	a, a
-	add	a, e
-	ld	e, a
-	adc	a, 0
-	sub	e
-	ld	d, a
-	ld	hl, os.console
-	add	hl, de
-	pop	de
+
+; c = 1 : ++, c = 0 : --
+_throw_next:
+	bit	0, c
+	jr	z, _throw_next.dec
 	
-	; basic checks for number
+	ld	de, os.console + (24*9)
+	cmp_hlde
+	ccf
+	ret	c
+	inc	hl
+	jr	_throw_next.ok
+	
+_throw_next.dec:
+	ld	de, os.console + 24
+	cmp_hlde
+	ret	c
+	dec	hl
+	
+_throw_next.ok:
 	ld	a, (hl)
 	cp	'0'
-	ret	c
+	jr	c, _throw_next
+	cp	'9'+1
+	jr	c, _throw_check
+	cp	'A'
+	jr	c, _throw_next
 	cp	'F'+1
-	ccf
+	jr	c, _throw_check
+; 	cp	'a'
+; 	jr	c, _throw_next
+; 	cp	'f'+1
+; 	ret	c
+	jr	_throw_next
+
+_throw_check:
+	dec	hl
+	ld	a, ' '
+	cp	(hl)
+	inc	hl
+	jr	c, _throw_next
+	ld	de, 4
+	push	hl
+	add	hl, de
+	cp	(hl)
+	pop	hl
+	ret	nc
+	jr	_throw_next
+
+_throw_disp:
+	push	hl
+	ld	de, -os.console
+	add	hl, de
+	
+	ld	c, 24
+	call	zp.div_hl_c
+	
+	;add	a, a
+	;add	a, a
+	ld	c, a
+	
+	ld	a, l
+	add	a, a
+	add	a, l
+	add	a, a
+	ld	b, a
+	
+	ld	de, $0604
+	call	vect_cinvert
+	
+	pop	hl
 	ret
 
 ; return to caller, *virtually* unharmed (console and screen have been altered...)
@@ -506,19 +482,7 @@ _throw_return:
 _throw_hexedit:
 	; set parameters
 	
-	; (/6 *24 : *4) /256 : /4
-	; convert coordinates
-	ld	a, b
-	add	a, a
-	add	a, a
-	add	a, c
-	ld	c, a
-	adc	a, 0
-	sub	c
-	ld	b, a
-	ld	hl, os.console
-	add	hl, bc
-	
+	push	hl
 	push	hl
 	; ensure zero termination
 	ld	bc, 4
@@ -526,21 +490,39 @@ _throw_hexedit:
 	ld	(hl), 0
 	pop	hl
 	
+	ex	de, hl
+	ld	hl, (os.keymap.normal)
+	push	hl
+	ld	hl, (os.keymap.shift)
+	push	hl
+	ld	hl, (os.keymap.alpha)
+	push	hl
+	
+	; restore default keymap just in case...
+	ld	hl, 0
+	ld	(os.keymap.normal), hl
+	ld	(os.keymap.shift), hl
+	ld	(os.keymap.alpha), hl
+	
+	ld	hl, os.flags + osf.general
+	res	tios_emulation, (hl)
+	
+	ex	de, hl
+	
 	ld	a, 1
 	call	app.hexedit
 	
-	; todo : preserve regdump and go back to it?
+	pop	hl
+	ld	(os.keymap.normal), hl
+	pop	hl
+	ld	(os.keymap.shift), hl
+	pop	hl
+	ld	(os.keymap.alpha), hl
+	
+	pop	hl
 	di
-	jp	_throw_show
-	;jp	zp.console
-
-_throw_disp:
-	;ld	bc, $0603
-	push	bc
-	ld	de, $0604
-	call	vect_cinvert
-	pop	bc
-	ret
+	call	zp.cdisp
+	jp	_throw_update
 
 err_strings:
 	.dw	str_ecreate

@@ -34,6 +34,15 @@
 .org	prgm.start - 2
 	.db magic.executable, 0
 	
+	call	zp.clrscr
+	
+	ld	hl, test.6x8
+	ld	bc, 0
+	
+	call	zp.puts_6x8
+	call	zp.vbufdisp
+	call	zp.getch
+	
 	; load custom keymap
 	ld	hl, keymap.normal
 	ld	(os.keymap.normal), hl
@@ -197,6 +206,9 @@ cmd_restore:
 cmd_cleanup:
 	ld	hl, (os.lcd.back + $110)
 	jp	zp.free
+
+test.6x8:
+	.db "A small test.", 0
 
 keymap.normal:
 .DB	$00, $01, $02, $03, $04, $00, $00, $00, $00

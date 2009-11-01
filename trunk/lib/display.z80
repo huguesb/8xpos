@@ -301,11 +301,8 @@ vect_cinvert:
 	; compute mask
 	ld	a, $0F
 	bit	0, c
-	jr	z, $+6
-	add	a, a
-	add	a, a
-	add	a, a
-	add	a, a
+	jr	z, $+4
+	ld	a, $F0
 	
 	push	af
 	

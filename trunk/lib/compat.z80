@@ -137,6 +137,10 @@ vect_compat_stop:
 	ld	(os.hook.rst20), hl
 	ld	(os.hook.rst30), hl
 	
+	ld	(os.keymap.normal), hl
+	ld	(os.keymap.shift), hl
+	ld	(os.keymap.alpha), hl
+	
 	in	a, (hw_port)
 	rlca
 	ret	nc

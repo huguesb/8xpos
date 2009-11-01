@@ -36,6 +36,12 @@ vect_console_core:	.export	vect_console_core
 	xor	a
 	out	(cpu_speed_port), a
 	
+	; restore default keymap just in case...
+	ld	hl, 0
+	ld	(os.keymap.normal), hl
+	ld	(os.keymap.shift), hl
+	ld	(os.keymap.alpha), hl
+	
 	; reset command recall index
 	;ld	a, $FF
 	dec	a
@@ -552,9 +558,10 @@ fp.ln2:
 ; 	≈ 2.23606 79774 99789 69640 91736 68731 27623
 
 #include "data/font_con.inc"
-#include "data/font_6x8.inc"
+;#include "data/font_6x8.inc"
+#include "data/83p_6x8.inc"
 ;#include "data/font_var.inc"
-#include "data/83p_varl.inc"
+#include "data/83p_var.inc"
 
 .echo	"Data : "
 .echo	$-os.data1C

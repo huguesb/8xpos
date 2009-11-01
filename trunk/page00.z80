@@ -358,10 +358,14 @@ zp.putch_6x8:			.export	zp.putch_6x8
 	jp	vect_putch_6x8
 zp.puts_6x8:			.export	zp.puts_6x8
 	jp	vect_puts_6x8
+zp.putsn_6x8:			.export	zp.putsn_6x8
+	jp	vect_putsn_6x8
 zp.putch_var:			.export	zp.putch_var
 	jp	vect_putch_var
 zp.puts_var:			.export	zp.puts_var
 	jp	vect_puts_var
+zp.putsn_var:			.export	zp.putsn_var
+	jp	vect_putsn_var
 
 zp.vbufcopy:			.export	zp.vbufcopy
 zp.vbufdisp:			.export	zp.vbufdisp
