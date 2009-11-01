@@ -20,15 +20,18 @@ mkdir -p build
 #	so a proper tasm80.tab is supplied to ensure a smooth build process
 #
 
+# behold the hackish handling of circular dependency
+# [ really need a better assembler that can deal with this without such a crap...]
+
 # build this before as we need to export some symbols
 # for use by the OS basecode in page00
-wine tools/tasm -80 -c -o20 -fC7 -y -e page1C.z80 build/page1C.hex
+wine tools/tasm -80 -c -o20 -fC7 -y -e page1C.z80 build/page1C.hex &> /dev/null
 
 if [ $? != 0 ]
 then
 	echo "errors in page 1C..." $?
 	exit 1
-fi	
+fi
 
 wine tools/tasm -80 -c -o20 -fC7 -y -e page00.z80 build/page00.hex
 
@@ -39,8 +42,16 @@ then
 fi
 
 # update "SDK"
-
 mv page00.exp xos.exp
+
+# rebuild in case some symbols changed...
+wine tools/tasm -80 -c -o20 -fC7 -y -e page1C.z80 build/page1C.hex
+
+if [ $? != 0 ]
+then
+	echo "errors in page 1C..." $?
+	exit 1
+fi
 
 wine tools/tasm -80 -c -o20 -fC7 -y -e page01.z80 build/page01.hex
 
