@@ -34,15 +34,6 @@
 .org	prgm.start - 2
 	.db magic.executable, 0
 	
-	call	zp.clrscr
-	
-	ld	hl, test.6x8
-	ld	bc, 0
-	
-	call	zp.puts_6x8
-	call	zp.vbufdisp
-	call	zp.getch
-	
 	; load custom keymap
 	ld	hl, keymap.normal
 	ld	(os.keymap.normal), hl
