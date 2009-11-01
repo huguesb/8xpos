@@ -1418,8 +1418,8 @@ _VPutMap		; equ $455E
 _VPutS			; equ $4561
        .dw compat.vputs
        .db $00
-;_VPutSN			equ $4564
-       .dw $0000
+_VPutSN			; equ $4564
+       .dw compat.vputsn
        .db $00
 ;_vputsnG		equ $4567
        .dw $0000
@@ -1520,8 +1520,8 @@ _RunIndicOff		; equ $4570
 ;_showCursor:
        .dw $0000
        .db $00
-;_KeyToString		equ $45CA
-       .dw $0000
+_KeyToString		; equ $45CA
+       .dw compat.keytostring
        .db $00
 ;_PULLDOWNCHK		equ $45CD ;something wrong here
        .dw $0000
@@ -3215,8 +3215,8 @@ _MemSet:			; equ $4C33
 ;_DrawCirc2		equ $4C66
        .dw $0000
        .db $00
-;_CanAlphIns		equ $4C69
-       .dw $0000
+_CanAlphIns		; equ $4C69
+       .dw compat.null
        .db $00
 ;cxRedisp		equ $4C6C
        .dw $0000
@@ -3287,8 +3287,8 @@ _EnableApd:		; equ $4C87 ;set apdable,(iy+apdflags)
 ;_SGetTokString		equ $4CAE
        .dw $0000
        .db $00
-;_LoadPattern	 	equ $4CB1
-       .dw $0000
+_LoadPattern	 	; equ $4CB1
+       .dw compat.loadpattern
        .db $00
 ;_SStringLength		equ $4CB4
        .dw $0000
@@ -3503,8 +3503,8 @@ _DrawRectBorder		; equ $4D7D
 _EraseRectBorder	; equ $4D86
        .dw compat.eraserectborder
        .db $00
-;_FillRectPattern	equ $4D89
-       .dw $0000
+_FillRectPattern	; equ $4D89
+       .dw compat.fillrectpattern
        .db $00
 _DrawRectBorderClear	; equ $4D8C
        .dw compat.drawrectborderclear
@@ -5231,48 +5231,120 @@ compat.createprotprog:
 	ret
 
 compat.putmap:
-	ld	bc, (curRow)
+	push	bc
+	push	hl
+	ld	hl, curRow
+	push	af
+	ld	a, (hl)
+	add	a, a
+	add	a, a
+	add	a, a
+	ld	b, a
+	pop	af
+	inc	hl
+	ld	c, (hl)
+	pop	hl
 	call	zp.putch_6x8
+	pop	bc
 	ret
 compat.putc:
-	ld	bc, (curRow)
+	push	bc
+	push	hl
+	ld	hl, curRow
+	push	af
+	ld	a, (hl)
+	add	a, a
+	add	a, a
+	add	a, a
+	ld	b, a
+	pop	af
+	inc	hl
+	ld	c, (hl)
+	pop	hl
 	call	zp.putch_6x8
-	ld	(curRow), bc
+	push	hl
+	ld	hl, curRow
+	ld	(hl), b
+	inc	hl
+	ld	(hl), c
+	pop	hl
+	pop	bc
 	ret
 compat.puts:
-	ld	bc, (curRow)
+	push	bc
+	push	hl
+	ld	hl, curRow
+	push	af
+	ld	a, (hl)
+	add	a, a
+	add	a, a
+	add	a, a
+	ld	b, a
+	pop	af
+	inc	hl
+	ld	c, (hl)
+	pop	hl
 	call	zp.puts_6x8
-	ld	(curRow), bc
+	push	hl
+	ld	hl, curRow
+	ld	(hl), b
+	inc	hl
+	ld	(hl), c
+	pop	hl
+	pop	bc
 	ret
 
 compat.vputmap:
-	ld	bc, (penCol)
-; 	; well, err...
-; 	srl	c
-; 	srl	c
-; 	call	zp.putch_con
-	call	zp.putch_var
-	
-	bit	bufferOnly, (iy + plotFlag3)
-	ret	nz
-	
 	push	hl
-	ld	hl, os.flags + osf.compat
-	set	vbuf_flush, (hl)
-	pop	hl
-	ret
-	
-compat.vputs:
+	push	bc
 	ld	bc, (penCol)
-; 	; well, err...
-; 	srl	c
-; 	srl	c
-; 	call	zp.puts_con
-; 	sla	c
-; 	sla	c
-	call	zp.puts_var
-	ld	(penCol), bc
 	
+	bit	fracDrawLFont, (iy + fontFlags)
+	jr	nz, $+7
+	call	zp.putch_var
+	jr	$+5
+	call	zp.putch_6x8
+	
+	pop	bc
+	pop	hl
+	jp	compat.disp_workaround
+
+compat.vputsn:
+	push	af
+	push	bc
+	push	de
+	
+	ld	d, b
+	
+	ld	bc, (penCol)
+	
+	bit	fracDrawLFont, (iy + fontFlags)
+	jr	nz, $+7
+	call	zp.putsn_var
+	jr	$+5
+	call	zp.putsn_6x8
+	
+	ld	(penCol), bc
+	pop	de
+	pop	bc
+	pop	af
+	jp	compat.disp_workaround
+
+compat.vputs:
+	push	af
+	push	bc
+	ld	bc, (penCol)
+
+	bit	fracDrawLFont, (iy + fontFlags)
+	jr	nz, $+7
+	call	zp.puts_var
+	jr	$+5
+	call	zp.puts_6x8
+	
+	ld	(penCol), bc
+	pop	bc
+	pop	af
+compat.disp_workaround:
 	bit	bufferOnly, (iy + plotFlag3)
 	ret	nz
 	
@@ -5309,53 +5381,19 @@ compat.getkey:
 	call	nz, compat.grbufcpy
 	
 	push	hl
-	push	de
-	push	bc
-	; e -> flags
-	ld	e, 0
-_poll:
-	ei
-	halt
-	call	zp.getkey
-	
-	or	a
-	jr	z, _poll
-	
-	; update flags
-	; todo : emulate TIOS flags behavior...
-	cp	sk_2nd
-	jr	nz, _not_shift
-	ld	a, e
-	xor	$02
-	ld	e, a
-	jr	_poll
-_not_shift:
-	cp	sk_alpha
-	jr	nz, _not_alpha
-	ld	a, e
-	xor	$01
-	ld	e, a
-	jr	_poll
-_not_alpha:
-	
-	ld	h, $38
-	call	zp.mult_h_e
-	
-	ld	bc, gk_table
-	add	hl, bc
-	offset_hl
-	
-	ld	a, (hl)
-	or	a
-	jp	z, _poll
-	
-_end:
-	pop	bc
-	pop	de
+	ld	hl, gk_table
+	ld	(os.keymap.normal), hl
+	ld	hl, gk_table + 57
+	ld	(os.keymap.shift), hl
+	ld	hl, gk_table + (57*2)
+	ld	(os.keymap.alpha), hl
 	pop	hl
+	
+	call	zp.getch
 	ret
 
 ; getcsc -> getkey mapping
+; sk_null
 ; sk_down,  sk_left,  sk_right, sk_up,     sk_null,   sk_null,  sk_null,  sk_null
 ; sk_enter, sk_plus,  sk_minus, sk_times,  sk_obelus, sk_caret, sk_clear, sk_null
 ; sk_chs,   sk_3,     sk_6,     sk_9,      sk_rparen, sk_tan,   sk_vars,  sk_null
@@ -5365,6 +5403,7 @@ _end:
 ; sk_graph, sk_trace, sk_zoom,  sk_window, sk_yequ,   sk_2nd,   sk_mode,  sk_del
 gk_table:
 ; normal
+	.db	$00
 	.db $04, $02, $01, $03, $00, $00, $00, $00
 	.db $05, $80, $81, $82, $83, $84, $09, $00
 	.db $8C, $91, $94, $97, $86, $BB, $35, $00
@@ -5373,6 +5412,7 @@ gk_table:
 	.db $00, $8A, $BF, $C1, $BD, $B6, $32, $00
 	.db $44, $5A, $51, $48, $49, $00, $45, $0A
 ; alpha
+	.db	$00
 	.db $08, $00, $00, $07, $00, $00, $00, $00
 	.db $06, $CC, $B0, $AB, $A6, $A1, $00, $00
 	.db $CA, $CB, $AF, $AA, $A5, $A0, $00, $00
@@ -5381,6 +5421,7 @@ gk_table:
 	.db $00, $B1, $AC, $A7, $A2, $9D, $9A, $00
 	.db $00, $00, $00, $00, $00, $00, $00, $00
 ; shift
+	.db	$00
 	.db $00, $00, $00, $00, $00, $00, $00, $00
 	.db $0D, $36, $88, $87, $EF, $B5, $00, $00
 	.db $C5, $F5, $F8, $FB, $ED, $BC, $38, $00
@@ -5389,6 +5430,7 @@ gk_table:
 	.db $00, $0C, $C0, $C2, $BE, $37, $33, $00
 	.db $4A, $3B, $57, $4B, $55, $00, $40, $0B
 ; shift + alpha (same as alpha in TIOS...)
+	.db	$00
 	.db $08, $00, $00, $07, $00, $00, $00, $00
 	.db $06, $CC, $B0, $AB, $A6, $A1, $00, $00
 	.db $CA, $CB, $AF, $AA, $A5, $A0, $00, $00
@@ -5403,6 +5445,51 @@ gk_table:
 ; 	.db $00, $00, $00, $00, $00, $00, $00, $00
 ; 	.db $00, $00, $00, $00, $00, $00, $00, $00
 ; 	.db $00, $00, $00, $00, $00, $00, $00, $00
+
+compat.keytostring:
+	ld	hl, keyToStrRam
+	ld	(hl), 0
+	
+	; ignore two byte keys
+	ld	a, d
+	or	a
+	ret	nz
+	
+	; search keymapping
+	ld	a, e
+	
+	sub	$80
+	ret	c
+	
+	cp	$EE-$80+1
+	ret	nc
+	
+	ld	(hl), 1
+	inc	hl
+	
+	ld	de, kts_tbl
+	offset_de
+	ld	a, (de)
+	
+	ld	(hl), a
+	dec	hl
+	
+	ret
+
+kts_tbl:
+	.db "+-*/^(){}"
+	.db $00, $00
+	.db ",-.0123456789", $1B, " abcdefghijklmnopqrstuvwxyz"
+	.db "X", $C4
+	.db $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00
+	.db ":"
+	.db $00, $08, $10
+	.db "?\"", $5B
+	.db $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00
+	.db $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00
+	.db $00, $00, $00, $00, $00, $00, $00
+	.db "[]", $D7
+
 
 compat.disphl:
 	ld	de, os.scrap
@@ -5734,12 +5821,270 @@ compat.displayimage:
 	
 	pop	af
 	
-	bit	bufferOnly, (iy + plotFlag3)
-	ret	nz
+	jp	compat.disp_workaround
+
+compat.loadpattern:
+	ld	h, 0
+	ld	l, a
+	add	hl, hl
+	add	hl, hl
+	add	hl, hl
 	
-	ld	hl, os.flags + osf.compat
-	set	vbuf_flush, (hl)
+	ld	a, $1C
+	call	zp.flashpage_adjust
 	
+	bit	fracDrawLFont, (iy + fontFlags)
+	jr	nz, compat.loadpattern.large
+	
+	ld	bc, os.font_var
+	add	hl, bc
+	ld	de, sFont_record
+	ld	b, a
+	call	zp.deref_paged_byte
+	inc	hl
+	inc	hl
+	ex	de, hl
+	ld	(hl), c
+	inc	hl
+	ex	de, hl
+	
+	ld	bc, 6
+	call	zp.flashtoram
+	ex	de, hl
+	ld	(hl), 0
+	
+	ld	hl, sFont_record
+	jp	compat.loadpattern.shift
+
+compat.loadpattern.large:
+	ld	bc, os.font_6x8+1
+	add	hl, bc
+	ld	de, lFont_record+1
+	ld	bc, 7
+	call	zp.flashtoram
+	ld	hl, lFont_record
+	ld	(hl), 6
+
+compat.loadpattern.shift:
+	; gotta be fillrectpattern-compatible ie right justififed...
+	
+	ld	c, (hl)
+	ld	a, 8
+	sub	c
+	ret	z
+	
+	ld	b, 7
+	
+	inc	hl
+	push	af
+	rrc	(hl)
+	dec	a
+	jr	nz, $-3
+	pop	af
+	djnz	$-8
+	
+	ret
+
+compat.fillrectpattern:
+	;RectFillPattern
+	;RectFillPHeight
+	;RectFillPWidth
+	;jp	compat.clearrect
+	
+	push	ix
+	
+	;(h, l)->(d, e)
+	
+	; compute height, width of rectangle to fill
+	ld	a, e
+	sub	l
+	ld	c, a
+	inc	c
+	ld	a, d
+	sub	h
+	ld	b, a
+	inc	b
+	
+	; compute vbuf addr
+	ld	a, l
+	ld	l, h
+	ld	h, 0
+	ld	d, h
+	ld	e, l
+	add	hl, hl
+	add	hl, de
+	add	hl, hl
+	add	hl, hl
+	ld	e, a
+	srl	e
+	srl	e
+	srl	e
+	add	hl, de
+	ld	de, (os.vbuf_addr)
+	add	hl, de
+	
+	ld	e, a
+	; compute pattern mask
+	ld	a, (RectFillPWidth)
+	ld	d, $FF
+	sla	d
+	dec	a
+	jr	nz, $-3
+	ld	a, e
+	
+	; get pattern data
+	ld	ix, RectFillPattern
+	
+	; init pattern row counter
+	ld	e, 0
+	
+row_loop:
+	push	af
+	push	bc
+	push	de
+	push	hl
+	
+	ld	b, a
+	;d : pattern_mask
+	;e : pattern
+	
+	; b : column
+	; c : rect width
+col_loop:
+	;call	zp.throw_compat
+	
+	call	write_pattern
+	
+	; check for end of rect row
+	ld	a, (RectFillPWidth)
+	sub	c
+	jr	nc, $+7
+	neg
+	ld	c, a
+	jr	col_loop
+	
+	; go down on vbuf
+	pop	hl
+	ld	de, 12
+	add	hl, de
+	pop	de
+	pop	bc
+	
+	; jump back to first pattern row if needed
+	inc	e
+	ld	a, (RectFillPHeight)
+	cp	e
+	jr	nz, $+2+3+2+2
+	ld	ix, RectFillPattern
+	ld	e, 0
+	jr	$+2
+	inc	ix
+	
+	pop	af
+	djnz	row_loop
+	
+	pop	ix
+	
+	jp	compat.disp_workaround
+
+write_pattern:
+	push	de
+	push	bc
+	
+	ld	a, (RectFillPWidth)
+	sub	c
+	jr	c, write_pattern.nocrop
+	jr	z, write_pattern.nocrop
+	; crop mask and pattern
+; 	sll	d
+; 	dec	a
+; 	jr	nz, $-3
+	
+	ld	c, 0
+	
+	sll	c
+	dec	a
+	jr	nz, $-3
+	
+	ld	a, c
+	or	d
+	ld	d, a
+write_pattern.nocrop
+	
+	ld	a, d
+	cpl
+	and	(ix)
+	ld	e, a
+	
+	; shift count : n = (column & 7) - (8 - pwidth)
+	ld	a, b
+	and	7
+	ld	b, a
+	ld	a, (RectFillPWidth)
+	sub	8
+	add	a, b
+	ld	bc, 0
+	jp	p, write_pattern.shift_right
+	neg
+	
+	scf
+	rl	d
+	sla	e
+	dec	a
+	jr	nz, $-6
+	
+	jr	write_pattern.noshift
+	
+write_pattern.shift_right
+	and	7
+	jr	z, write_pattern.noshift
+	
+	scf
+	rr	d \ rr b
+	srl	e \ rr c
+	dec	a
+	jr	nz, $-10
+	
+write_pattern.noshift:
+	;call	zp.throw
+	
+	ld	a, (hl)
+	and	d
+	or	e
+	ld	(hl), a
+	
+	ld	a, c
+	or	a
+	jr	z, write_pattern.skip
+	
+write_pattern.wide:
+	inc	hl
+	ld	a, (hl)
+	and	b
+	or	c
+	ld	(hl), a
+	dec	hl
+write_pattern.skip:
+	pop	bc
+	
+	; advance column counter
+	ld	a, (RectFillPWidth)
+	ld	d, b
+	add	a, b
+	ld	b, a
+	
+	rra
+	rra
+	rra
+	and	$1F
+	srl	d
+	srl	d
+	srl	d
+	cp	d
+	jr	z, $+3
+	inc	hl
+	
+	pop	de
 	ret
 
 ; naive...
@@ -5778,12 +6123,7 @@ compat.rect.loop:
 	
 	djnz	compat.rect.loop
 	
-	bit	bufferOnly, (iy + plotFlag3)
-	ret	nz
-	
-	ld	hl, os.flags + osf.compat
-	set	vbuf_flush, (hl)
-	ret
+	jp	compat.disp_workaround
 
 compat.fillrect:
 	ld	c, 1
@@ -5864,17 +6204,11 @@ compat.drb.sub:
 	
 	call	zp.draw_line
 	
-	bit	bufferOnly, (iy + plotFlag3)
-	ret	nz
-	
-	ld	hl, os.flags + osf.compat
-	set	vbuf_flush, (hl)
-	ret
+	jp	compat.disp_workaround
 
 compat.eraserectborder:
 	xor	a
 	jp	compat.drb.sub
-
 
 
 compat.op1exop2:
