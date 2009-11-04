@@ -485,6 +485,8 @@ zp.malloc_placed:		.export	zp.malloc_placed
 	jp	vect_malloc_placed
 zp.free:				.export	zp.free
 	jp	vect_free
+zp.realloc:				.export	zp.realloc
+	jp	vect_realloc
 
 zp.meminit_iy:			.export	zp.meminit_iy
 	jp	vect_meminit_iy

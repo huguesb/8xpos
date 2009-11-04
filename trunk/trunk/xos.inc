@@ -116,7 +116,7 @@ os.maxstacksize	= 1024
 os.falloc.start		= $8000
 os.falloc.mp_start	= os.falloc.start + 2
 os.falloc.mp_end	= os.falloc.mp_start + 2
-os.falloc.split_record		= os.falloc.mp_end + 2
+os.falloc.params	= os.falloc.mp_end + 2
 os.falloc.firstnode	= $8010
 os.falloc.poolend	= $C000
 
