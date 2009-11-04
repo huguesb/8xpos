@@ -120,7 +120,7 @@ vect_meminfo:
 	
 	ld	a, (os.flags + osf.dynamicmem)
 	bit	dmeminfo_dirty, a
-	;jr	z, vect_meminfo.clean
+	jr	z, vect_meminfo.clean
 	
 	push	hl
 	push	de
@@ -174,6 +174,13 @@ vect_meminfo.loop:
 	ex	de, hl
 	
 	pop	af
+; 	call	vect_block_size
+; 	push	af
+; 	add	hl, bc
+; 	ld	b, h
+; 	ld	c, l
+; 	ex	de, hl
+; 	pop	af
 	jr	nc, vect_meminfo.loop
 	
 	ld	hl, os.flags + osf.dynamicmem
@@ -256,6 +263,28 @@ vect_meminfo.sizefix:
 ; 	pop	de
 ; 	pop	af
 ; 	ret
+
+; input : hl -> block start (pointer to next), iy -> malloc data
+; output : de -> block data (hl + 2), hl -> block size, CF set if last block
+vect_block_size:
+	ld	d, (hl)
+	inc	hl
+	ld	e, (hl)
+	inc	hl
+	set	7, d
+	or	a
+	ex	de, hl
+	sbc	hl, de
+	ret	nc
+	; This is the highest block and its size can't be determined from its link.
+	;ld	hl, (os.malloc.mp_end)
+	ld	l, (iy + 4)
+	ld	h, (iy + 5)
+	or	a
+	sbc	hl, de
+	
+	scf
+	ret
 
 ;; =malloc=
 ;;
@@ -402,22 +431,7 @@ vect_malloc.merge_upd:
 ; Check that the block is large enough
 vect_malloc.allocate:
 	push	hl
-	ld	d, (hl)
-	inc	hl
-	ld	e, (hl)
-	inc	hl
-	set	7, d
-	or	a
-	ex	de, hl
-	sbc	hl, de
-	jr	nc, vect_malloc.allocate_nofix
-	; This is the highest block and its size can't be determined from its link.
-	;ld	hl, (os.malloc.mp_end)
-	ld	l, (iy + 4)
-	ld	h, (iy + 5)
-	or	a
-	sbc	hl, de
-vect_malloc.allocate_nofix:
+	call	vect_block_size
 	sbc	hl, bc
 	jr	c, vect_malloc.search_upd
 
@@ -484,17 +498,16 @@ vect_malloc.search_upd_np:
 	ld	l, (hl)
 	ld	h, a
 	
-	set 	7, h
+	set	7, h
 vect_malloc.search_chk:
 	;ld	de, (os.malloc.start)
 	ld	e, (iy + 0)
 	ld	d, (iy + 1)
 	
-	or	a
-	sbc	hl, de
-	add	hl, de
+	cmp_hlde
 	jr	nz, vect_malloc.search_loop
 	
+	; impossible to allocate requested size...
 	scf
 	ret
 
@@ -553,11 +566,13 @@ vect_free_iy:
 ; Mark node free
 	;call	_dump_hl
 	
+	dec	hl
+	dec	hl
+	
+	; range checking (must be above $8000)
 	bit	7, h
 	call	z, zp.throw_memory
 	
-	dec	hl
-	dec	hl
 	res	7, (hl)
 	jr	vect_free.fmerge_upd
 
@@ -597,6 +612,147 @@ vect_free.done:
 	ret	nc
 	ld	(iy + 0), l
 	ld	(iy + 1), h
+	ret
+
+
+; brief : reallocate a memory block (resize it)
+; input :	hl -> address of allocated chunk
+;			bc -> new size requested
+; output : CF set on failure, hl -> updated chunk address
+; destroys : a, de
+vect_realloc:
+	push	iy
+	ld	iy, os.malloc.start
+	call	vect_realloc_iy
+	pop	iy
+	ret
+
+; brief : reallocate a memory block (resize it)
+; input :	hl -> address of allocated chunk
+;			bc -> new size requested
+;			iy -> malloc data
+; output : CF set on failure, hl -> updated chunk address
+; destroys : a, de
+vect_realloc_iy:
+; Check for null pointer
+	ld	a, h
+	or	l
+	ret	z
+	
+	dec	hl
+	dec	hl
+	
+	; range checking (must be above $8000)
+	bit	7, h
+	call	z, zp.throw_memory
+	
+; 	; check for allocated chunk
+; 	bit	7, (hl)
+; 	scf
+; 	ret	z
+	
+	call	vect_block_size
+	
+	or	a
+	sbc	hl, bc
+	jr	c, vect_realloc_iy.grow
+
+vect_realloc_iy.shrink:
+	push	de
+	ld	de, MIN_BLOCK_SIZE
+	cmp_hlde
+	pop	de
+	jr	nc, $+4
+	; return with unmodified hl
+	ex	de, hl
+	ret
+	
+	; split block (remove a trailing block)
+	push	de
+	ld	hl, -2
+	add	hl, de
+	ex	de, hl
+	add	hl, bc
+	ex	de, hl
+	
+	; init trailing block
+	ld	a, (hl)
+	res	7, a
+	ld	(de), a
+	inc	hl
+	inc	de
+	
+	ld	a, (hl)
+	ld	(de), a
+	dec	hl
+	
+	pop	de
+	
+	; adjust block next pointer
+	ex	de, hl
+	add	hl, bc
+	ex	de, hl
+	
+	res	7, d
+	
+	ld	(hl), d
+	inc	hl
+	ld	(hl), e
+	inc	hl
+	
+	or	a
+	ret
+
+vect_realloc_iy.grow:
+	add	hl, bc
+	push	hl
+	add	hl, de
+	
+	ld	a, (hl)
+	rlca
+	jr	c, vect_realloc_iy.move
+	rrca
+	; next block is free : see if merging gives sufficient room
+	
+	push	de
+	call	vect_block_size
+	pop	de
+	
+	ex	de, hl
+	ex	(sp), hl
+	add	hl, de
+	pop	de
+	cmp_hlbc
+	jr	c, vect_realloc_iy.move+1
+	
+	; rely on placed malloc to update pool
+	ld	h, d
+	ld	l, e
+	dec	hl
+	dec	hl
+	res	7, (hl)
+	jp	vect_malloc_placed_iy
+	
+vect_realloc_iy.move:
+	pop	af
+	push	de
+	; must dealloc and re-malloc
+	call	vect_malloc_iy
+	ex	de, hl
+	pop	hl
+	ret	c
+	
+	push	de
+	push	hl
+	; copy data from new to old block
+	ldir
+	
+	; free old block
+	pop	hl
+	call	vect_free_iy
+	
+	pop	hl
+	or	a
 	ret
 
 ; brief : swaps to blocks of memory
