@@ -1,0 +1,343 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+;Redistribution and use in source and binary forms, with or without modification, are
+;permitted provided that the following conditions are met:
+;Redistributions of source code must retain the above copyright notice, this list of
+;conditions and the following disclaimer.
+;
+;Redistributions in binary form must reproduce the above copyright notice, this list of
+;conditions and the following disclaimer in the documentation and/or other materials
+;provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+;"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+;TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+;PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+;CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+;EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+;PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+;PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.list
+
+.nolist
+; OS config file
+#include "xos.inc"
+; syscalls addresses
+#include "xos.exp"
+; library header file
+#include "apps/gui.inc"
+.list
+
+#define t_dump call dump.pool
+
+#define t_malloc(n,sz) ld bc, sz \ call zp.malloc \ ld (n*2 + slots), hl \ t_dump
+#define t_free(n) ld hl, (n*2 + slots) \ call zp.free \ t_dump
+#define t_realloc(n,sz) ld hl, (n*2 + slots) \ ld bc, sz \ call zp.realloc \ ld (n*2 + slots), hl \ t_dump
+
+.org	prgm.start - 2
+	.db magic.executable, 0
+	
+	;jp	vat.test
+	
+	; first test malloc/free/realloc
+malloc.test:
+	
+	t_malloc(0, $0100)
+	t_malloc(1, $0100)
+	t_malloc(2, $0100)
+	t_malloc(3, $0100)
+	t_free(1)
+	t_free(2)
+	t_malloc(1, $0200)
+	t_realloc(0, $0200)
+	t_free(3)
+	t_realloc(1, $0300)
+	
+	t_free(1)
+	t_free(0)
+	
+	ret
+
+slots:
+	.dw 0, 0, 0, 0
+
+dump.pool:
+	ld	hl, (os.malloc.mp_start)
+	
+dump.pool.loop:
+	call	zp.cscroll
+	push	hl
+	ld	hl, $0800
+	ld	(os.curpos.col), hl
+	pop	hl
+	
+	ld	d, (hl)
+	inc	hl
+	ld	e, (hl)
+	inc	hl
+	
+	ld	a, $80
+	and	d
+	rlca
+	add	a, '0'
+	set	7, d
+	
+	push	de
+	
+	call	zp.cputch
+	ld	a, ':'
+	call	zp.cputch
+	
+	ex	de, hl
+	or	a
+	sbc	hl, de
+	
+	push	af
+	
+	ld	de, os.scrap
+	call	zp.htoa_word
+	xor	a
+	ld	(de), a
+	ld	hl, os.scrap
+	call	zp.cprint
+	
+	pop	af
+	pop	hl
+	jr	z, $+4
+	jr	nc, dump.pool.loop
+	
+	call zp.cdisp
+	jp	zp.getch
+
+;
+; FILE structure (internal, subject to change) :
+;
+; {
+;   byte : number of chunks
+;   word : index of file pointer
+;   byte + word : paged address of file pointer
+;   (byte + word)+ : paged addresses of chunks
+; }
+;
+
+; brief : Open a file and setup a FILE object to access it using high level file I/O API
+; input : hl -> filename
+; output : CF set on failure, hl -> FILE object pointer (allocated on heap)
+; destroys : a, bc, de, ix, iy
+vect_fopen:
+	ld	de, 0
+	ld	(), de
+	
+	ld	ix, fopen.cb
+	call	zp.file_find
+	
+	ld	hl, ()
+	
+	ret
+
+fopen.cb:
+	push	de
+	ld	bc, 9
+	call	zp.malloc
+	pop	de
+	
+	push	hl
+	
+	inc	de
+	inc	de
+	
+	xor	a
+	ld	(hl), 1
+	inc	hl
+	
+	ld	(hl), a
+	inc	hl
+	ld	(hl), a
+	inc	hl
+	
+	call	fopen.cb.initf
+	jr	fopen.cb.skip
+	
+fopen.cb.loop:
+	; realloc FILE object with bigger size
+	pop	hl
+	inc	bc
+	inc	bc
+	inc	bc
+	call	zp.realloc
+	push	hl
+	; increase chunk counter in FILE object
+	inc	(hl)
+	; update storage pointer
+	add	hl, bc
+	dec	hl
+	dec	hl
+	dec	hl
+fopen.cb.skip:
+	; store a chunk pointer in FILE object
+	call	fopen.cb.initf
+	
+	; check for last chunk
+	ex	de, hl
+	call	zp.file_nextchunk
+	ex	de, hl
+	
+	; loop if needed
+	jr	nc, fopen.cb.loop
+	
+	pop	hl
+	ld	(), hl
+	
+	ret
+
+fopen.cb.initf:
+	in	a, (map_bankB_port)
+	
+	ld	(hl), a
+	inc	hl
+	ld	(hl), e
+	inc	hl
+	ld	(hl), d
+	inc	hl
+	ret
+
+; brief : close a file and release memory used by the FILE object
+; input : hl -> pointer to FILE object
+; output : none
+; destroys : a, de, hl
+vect_fclose:
+	
+	jp	zp.free
+
+; brief : inserts space in a file (at current position)
+; input : hl -> pointer to FILE object, bc -> size of space to insert
+; output : none
+; destroys : 
+vect_finsert:
+	
+	
+	ret
+
+; brief : set the file data pointer to a given position
+; input : hl -> pointer to FILE object, de -> offset in file
+; output : none
+; destroys : 
+vect_fseek:
+	
+	ret
+
+; brief : get the position of the file data pointer
+; input : hl -> pointer to FILE object
+; output : de -> offset in file
+; destroys : 
+vect_ftell:
+	
+	ret
+
+; brief : read a chunk of data from a file
+; input : hl -> pointer to FILE object, bc -> size of chunk, de -> buffer
+; output : de -> end of buffer (de += bc)
+; destroys : a, bc
+vect_fread:
+	dec	bc
+	ld	a, b
+	ld	b, c
+	ld	c, a
+	inc	b
+	inc	c
+
+vect_fread.loop:
+	push	bc
+	call	vect_fgetc
+	pop	bc
+	ld	(de), a
+	inc	de
+	djnz	vect_fread.loop
+	dec	c
+	jr	nz, vect_fread.loop
+	
+	ret
+
+; brief : write a chunk of data to a file
+; input : hl -> pointer to FILE object, bc -> size of chunk, de -> buffer
+; output : de -> end of buffer (de += bc)
+; destroys : a, bc
+vect_fwrite:
+	dec	bc
+	ld	a, b
+	ld	b, c
+	ld	c, a
+	inc	b
+	inc	c
+
+vect_fwrite.loop:
+	ld	a, (de)
+	inc	de
+	push	bc
+	call	vect_fputc
+	pop	bc
+	djnz	vect_fwrite.loop
+	dec	c
+	jr	nz, vect_fwrite.loop
+	
+	ret
+
+; brief : read a character (byte) from a file
+; input : hl -> pointer to FILE object
+; output : a -> character
+; destroys :
+vect_fgetc:
+	
+	ret
+
+; brief : write a character (byte) from file
+; input : hl -> pointer to FILE object, a -> character
+; output : none
+; destroys :
+vect_fputc:
+	
+	ret
+
+vat.test:
+	call	load
+	jr	nc, ok
+	; setup VAT if needed
+	
+	
+ok:
+	
+	ret
+
+load:
+	ld	hl, vat_dump
+	ld	ix, load.cb
+	jp	zp.file_find
+
+load.cb:
+	push	hl
+	call	zp.malloc
+	jr	c, load.error
+	ex	de, hl
+	pop	hl
+	
+	push	de
+	ldir
+	pop	hl
+	ret
+
+load.error:
+	pop	hl
+	ret
+
+save:
+	
+	
+	ret
+
+vat_dump:
+	.db "compat-vat", 0
+
+.end
