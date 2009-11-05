@@ -1,7 +1,7 @@
-cmd_COMPAT       .EQU  $22ce
-cmd_RUN          .EQU  $2aa3
+cmd_COMPAT       .EQU  $22cc
+cmd_RUN          .EQU  $2aa1
 os.version       .EQU  $0064
-os.hexedit       .EQU  $2c22
+os.hexedit       .EQU  $2c20
 zp.deref_hl_alt  .EQU  $0003
 zp.call_ix       .EQU  $0016
 zp.call_hl       .EQU  $001f
