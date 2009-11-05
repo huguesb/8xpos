@@ -46,11 +46,9 @@ vect_get_pixel:
 	add	hl, de
 	
 	and	7
-	jr	nz, $+5
-	ld	a, $80
-	ret
-	
 	ld	b, a
+	ld	a, $80
+	ret	z
 	
 	rrca
 	djnz	$-1
@@ -72,7 +70,7 @@ vect_set_pixel:
 ; output : none
 ; destorys : a, b, de, hl
 vect_res_pixel:
-	call	vect_res_pixel
+	call	vect_get_pixel
 	cpl
 	and	(hl)
 	ld	(hl), a

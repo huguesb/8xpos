@@ -102,7 +102,9 @@ os.flashwrite.dest		= os.flashwrite.source + 3
 
 os.rand_seed		= os.flashwrite.dest + 3
 
-#if os.rand_seed + 2 >= $CC00
+os.fopen.out		= os.rand_seed + 2
+
+#if os.fopen.out + 2 > $CC00
 !!!
 .echo "RAM layout is screwed.\n"
 #endif
