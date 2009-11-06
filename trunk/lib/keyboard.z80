@@ -86,7 +86,7 @@ vect_getch._xlat:
 
 vect_getch._reset:
 	ld	(hl), sk_null
-	jp	vect_getch._poll
+	jr	vect_getch._poll
 
 ; brief : key input (does not wait for key press)
 ; input : none
@@ -98,6 +98,11 @@ vect_getkey:
 	;ld	a, i
 	;push	af
 	;di
+	
+	; check for link activity
+	call	zp.can_read
+	call	nz, zp.silent_host
+	
 	ld	a, $FF
 	out	(key_port), a
 	ld	c, 1

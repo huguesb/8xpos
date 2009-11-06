@@ -30,9 +30,7 @@ zp.host:
 	; use link assist on SE
 	in	a, (hw_port)
 	rlca
-	jr	nc, zp.host.loop
-	
-	call	zp.enableLA
+	call	c, zp.enableLA
 	
 zp.host.loop
 	ei
@@ -52,6 +50,7 @@ zp.host.str:
 zp.tilp:
 	call	zp.get_command
 	
+zp.tilp.silent_entry:	.export	zp.tilp.silent_entry
 	ld	hl, 0
 	
 	push	af

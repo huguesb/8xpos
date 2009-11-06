@@ -133,7 +133,6 @@ tios_emulation		= 7 ; 1 = TIOS emulation is turned on
 
 ; os.flags : group 1 -> filesystem
 osf.filesystem	= 1
-
 fmeminfo_dirty		= 3
 
 ; os.flags : group 2 -> dynamic memory
@@ -142,10 +141,9 @@ dmeminfo_dirty		= 0
 
 ; os.flags : group 3 -> silent link
 osf.silentlink	= 3
-silent_wait			= 0
+silent_on			= 0
 link_dump_on		= 1
 proto_dump_on		= 2
-silent_abort		= 3
 silent_assist		= 7
 
 ; os.flags : group 4 -> compat layer
@@ -166,6 +164,7 @@ vbuf_flush			= 0
 
 #define	bitmask(pos)	(1<<(pos))
 #define invmask(pos)	~(1<<(pos))
+#define fmask(m)	$FF & (m)
 
 ;#define lcd_busy	in a,(lcd_cmd_port)\ and $80\ jr nz, $-4
 #define lcd_busy	call $000B

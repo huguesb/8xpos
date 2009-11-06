@@ -124,7 +124,7 @@ vect_dylib_load:
 	push	hl
 	pop	iy
 	
-	ld	c, bitmask(list_alloc)
+	ld	c, fmask( bitmask(list_alloc) )
 	ld	ix, vect_dylib_load.cb
 	call	zp.file_list
 	

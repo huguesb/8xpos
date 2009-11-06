@@ -5145,25 +5145,21 @@ compat.findsym:
 	ret
 
 compat.memchk:
-; 	call	zp.file_meminfo
-; 	ld	h, b
-; 	ld	l, c
-	ld	hl, 0
+	call	zp.file_meminfo
+	ld	h, b
+	ld	l, c
 	ret
 
 compat.insertmem:
 	ret
 	
 compat.enoughmem:
-; 	call	zp.file_meminfo
-; 	ld	d, b
-; 	ld	e, c
-; 	ex	de, hl
-; 	or	a
-; 	sbc	hl, de
-; 	add	hl, de
-; 	ex	de, hl
-	scf
+	call	zp.file_meminfo
+	ld	d, b
+	ld	e, c
+	ex	de, hl
+	cmp_hlde
+	ex	de, hl
 	ret
 
 compat.delvar:

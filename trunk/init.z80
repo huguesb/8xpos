@@ -222,11 +222,17 @@ init.lcd_loop:
 	ld	(os.contrast), a
 	
 	; reset OS flags
-	ld	a, bitmask(calc_on) | bitmask(aps_on) | bitmask(debug_on)
+	ld	a, fmask( bitmask(calc_on) | bitmask(aps_on) | bitmask(debug_on) )
 	ld	(os.flags), a
 	
-	ld	a, bitmask(proto_dump_on)
+	;ld	a, bitmask(proto_dump_on)
+	ld	a, fmask( bitmask(silent_on) )
 	ld	(os.flags + osf.silentlink), a
+	
+	; enabled link assist on SE
+	in	a, (hw_port)
+	rlca
+	call	c, zp.enableLA
 	
 	; reset APS timer (Auto Power Save)
 	ld	hl, default.aps_time
