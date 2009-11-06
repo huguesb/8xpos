@@ -135,7 +135,7 @@ os_func.boot:
 	
 	; boot code page
 	ld	a, $1F	; 7
-	call	zp.flashpage_adjust	; 17 + ?
+	call	vect_flashpage_adjust	; 17 + ?
 	
 	; 97 T-states from here
 os_func.go:
@@ -157,7 +157,7 @@ os_func.go:
 	jp	z, $+5	; 10
 	out	(map_bankA_port), a	; 11
 	
-	;call	zp.throw_compat ; 11
+; 	call	zp.throw_compat ; 11
 	
 	; check for null pointer (bcall not implemented...)
 	; debug mode... comment out if needed
@@ -261,7 +261,7 @@ apppage_boundaries:
 ; note : flash page must be in BE range (00-1F), this routine is only here to
 ; provide hardware abstraction of "common" paging (1C : restricted, 1F : boot code, ...)
 zp.setflashpage:
-	call	zp.flashpage_adjust
+	call	vect_flashpage_adjust
 	out	(map_bankA_port), a
 	ret
 
@@ -269,7 +269,7 @@ zp.setflashpage:
 ; input : a -> flash page (00-1F)
 ; output : adjusted flash page (00-7F), CF set if no adjustment required, reset otherwise
 ; destroys : none
-zp.flashpage_adjust:	.export	zp.flashpage_adjust
+vect_flashpage_adjust:
 	;; Set local page corresponding to given BE page
 	;; Bit    7,in(2)  5,in(2)  0,in(21)
 	;; ---------------------------------

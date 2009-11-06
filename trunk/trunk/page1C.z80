@@ -36,6 +36,10 @@ vect_console_core:	.export	vect_console_core
 	xor	a
 	out	(cpu_speed_port), a
 	
+; 	; enable silent link
+; 	ld	hl, os.flags + osf.silentlink
+; 	set silent_on, (hl)
+	
 	; restore default keymap just in case...
 	ld	hl, 0
 	ld	(os.keymap.normal), hl
@@ -67,6 +71,10 @@ vect_console_core:	.export	vect_console_core
 	
 	ld	ix, zp.console.callback
 	call	zp.cgets
+	
+; 	; disable silent link
+; 	ld	hl, os.flags + osf.silentlink
+; 	res silent_on, (hl)
 	
 	call	vect_memorize_command
 	

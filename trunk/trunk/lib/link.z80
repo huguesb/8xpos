@@ -303,6 +303,7 @@ vect_can_read:
 
 vect_can_read.be:
 	; use link assist ?
+	
 vect_can_read.low:
 	; err... does that work???
 	
@@ -553,6 +554,7 @@ vect_send_command.loop:
 	or	c
 	jr	nz, vect_send_command.loop
 	
+vect_send_checksum:
 	; send checksum
 	ld	a, e
 	call	vect_send_byte
@@ -560,3 +562,59 @@ vect_send_command.loop:
 	call	vect_send_byte
 	
 	ret
+
+vect_silent_host:
+	push	af
+	push	bc
+	push	de
+	push	hl
+	
+	; check whether silent linking is enabled
+	ld	a, (os.flags + osf.silentlink)
+	rrca
+	jr	nc, vect_silent_host.exit
+	
+	call	zp.get_command
+	
+	jr	vect_silent_host.ok
+	
+; 	; presently only allow screenshots through silent link...
+; 	cp	link_SCR
+; 	jr	z, vect_silent_host.ok
+; 	
+; vect_silent_host.reject:
+; 	; reject to avoid lockup of linking software
+; 	ld	d, link_REJ
+; 	call	zp.send_error
+; 	
+; 	; wait for rejection acknowledgement
+; 	call	zp.get_command
+; 	;cp	link_ACK
+; 	; call	z, zp.throw_link
+	
+vect_silent_host.exit:
+	pop	hl
+	pop	de
+	pop	bc
+	pop	af
+	ret
+	
+vect_silent_host.ok:
+	push	iy
+	push	ix
+	
+	ld	l, a
+	in	a, (map_bankA_port)
+	push	af
+	ld	a, $1C
+	call	zp.setflashpage
+	ld	a, l
+	
+	call	zp.tilp.silent_entry
+	
+	pop	af
+	out	(map_bankA_port), a
+	
+	pop	ix
+	pop	iy
+	jr	vect_silent_host.exit

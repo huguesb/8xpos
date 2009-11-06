@@ -257,6 +257,8 @@ cmd_RUN.cb.tios_emul:
 	
 	ld	de, $9D95-$4000
 	
+	call	zp.throw
+	
 cmd_RUN.cb.tios_cpy:
 	ldir
 	

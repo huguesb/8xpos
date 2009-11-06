@@ -1,7 +1,7 @@
-cmd_COMPAT       .EQU  $22cc
-cmd_RUN          .EQU  $2aa1
+cmd_COMPAT       .EQU  $2308
+cmd_RUN          .EQU  $2add
 os.version       .EQU  $0064
-os.hexedit       .EQU  $2c20
+os.hexedit       .EQU  $2c5f
 zp.deref_hl_alt  .EQU  $0003
 zp.call_ix       .EQU  $0016
 zp.call_hl       .EQU  $001f
@@ -201,5 +201,7 @@ zp.fp_idiv       .EQU  $071b
 zp.fp_mod        .EQU  $071e
 zp.fp_rand       .EQU  $0721
 zp.screenshot    .EQU  $0724
-zp.end           .EQU  $0727
-zp.flashpage_adjust .EQU  $0830
+zp.silent_host   .EQU  $0727
+zp.flashpage_adjust .EQU  $072a
+zp.get_base_app_page .EQU  $072d
+zp.end           .EQU  $0730

@@ -36,10 +36,10 @@ vect_compat_start:
 	
 	; RAM setup
 	
-	; start of by clearing everything...
+	; start of by clearing everything... (well everything but program space)
 	ld	hl, $4000
 	ld	de, $4001
-	ld	bc, $3FFF
+	ld	bc, $1D94
 	ld	(hl), 0
 	ldir
 	
@@ -51,7 +51,7 @@ vect_compat_start:
 	ld	(pTemp - $4000), hl
 	
 ; 	ld	ix, compat.mkvat_cb
-; 	ld	c, bitmask(list_alloc)
+; 	ld	c, fmask( bitmask(list_alloc) )
 ; 	call	zp.file_list
 	
 	; rst setup

@@ -725,6 +725,14 @@ zp.fp_rand:				.export	zp.fp_rand
 zp.screenshot:			.export	zp.screenshot
 	jp	vect_screenshot
 
+zp.silent_host:			.export	zp.silent_host
+	jp	vect_silent_host
+
+zp.flashpage_adjust:	.export	zp.flashpage_adjust
+	jp	vect_flashpage_adjust
+zp.get_base_app_page:	.export	zp.get_base_app_page
+	jp	vect_getbaseapppage
+
 ;zp.expr_eval:			.export	zp.expr_eval
 ;	jp	vect_expr_eval
 
