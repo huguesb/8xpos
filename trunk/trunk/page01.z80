@@ -20,9 +20,6 @@
 ;OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 ;NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 ;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-; This file reuses code from CSX (same licensing terms, see above) :
-;Copyright (c) 2004, Sean McLaughlin.
 .list
 
 .nolist
@@ -5007,26 +5004,39 @@ compat.iline:
 	push	ix
 	; draw line from (b, c) to (d, e) according to h {0:light, 1:dark, 2:invert}
 	
-	; <weird and hackish adjustment to attempt to match TIOS behavior...>
-	
-	ld	a, c
-	cp	e
-	jr	nz, compat.iline.noadjust
-	inc	c
-	inc	e
-	
-	ld	a, c
-	cp	64
-	jr	c, $+4
-	sub	64
+	; deal with TIOS weird (i.e row-reversed) pixel addressing
+	ld	a, 63
+	sub	c
+	jr	nc, $+3
+	xor	a
 	ld	c, a
 	
-	ld	a, e
-	cp	64
-	jr	c, $+4
-	sub	64
+	ld	a, 63
+	sub	e
+	jr	nc, $+3
+	xor	a
 	ld	e, a
-	; </weird and hackish adjustment to attempt to match TIOS behavior...>
+	
+; 	; <weird and hackish adjustment to attempt to match TIOS behavior...>
+; 	
+; 	ld	a, c
+; 	cp	e
+; 	jr	nz, compat.iline.noadjust
+; 	inc	c
+; 	inc	e
+; 	
+; 	ld	a, c
+; 	cp	64
+; 	jr	c, $+4
+; 	sub	64
+; 	ld	c, a
+; 	
+; 	ld	a, e
+; 	cp	64
+; 	jr	c, $+4
+; 	sub	64
+; 	ld	e, a
+; 	; </weird and hackish adjustment to attempt to match TIOS behavior...>
 	
 compat.iline.noadjust:
 	ld	a, h
@@ -5034,6 +5044,7 @@ compat.iline.noadjust:
 	ld	l, c
 	ex	de, hl
 	call	zp.draw_line
+	
 	pop	ix
 	pop	hl
 	pop	de
@@ -5050,8 +5061,13 @@ compat.ipoint:
 	ld	hl, compat.ipoint.return
 	ex	(sp), hl
 	
+	;ld	a, b
+	;ld l, c
+	
+	ld	a, 63
+	sub	c
+	ld	l, a
 	ld	a, b
-	ld	l, c
 	
 	inc	d
 	dec	d
