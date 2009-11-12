@@ -157,7 +157,12 @@ os_func.go:
 	jp	z, $+5	; 10
 	out	(map_bankA_port), a	; 11
 	
-; 	call	zp.throw_compat ; 11
+; 	push	hl
+; 	ld	hl, $401A
+; 	or	a
+; 	sbc	hl, de
+; 	pop	hl
+; 	call	nz, zp.throw_compat ; 11
 	
 	; check for null pointer (bcall not implemented...)
 	; debug mode... comment out if needed

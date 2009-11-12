@@ -5050,7 +5050,7 @@ compat.iline.noadjust:
 	pop	de
 	pop	bc
 	pop	af
-	ret
+	jp	compat.disp_workaround
 
 compat.ipoint:
 	push	af
@@ -5083,7 +5083,7 @@ compat.ipoint.return:
 	pop	de
 	pop	bc
 	pop	af
-	ret
+	jp	compat.disp_workaround
 
 compat.chkfindsym:
 	; data in OP1
@@ -5262,7 +5262,8 @@ compat.putmap:
 	pop	hl
 	call	zp.putch_6x8
 	pop	bc
-	ret
+	jp	compat.disp_workaround
+	
 compat.putc:
 	push	bc
 	push	hl
@@ -5285,7 +5286,8 @@ compat.putc:
 	ld	(hl), c
 	pop	hl
 	pop	bc
-	ret
+	jp	compat.disp_workaround
+	
 compat.puts:
 	push	bc
 	push	hl
@@ -5308,7 +5310,7 @@ compat.puts:
 	ld	(hl), c
 	pop	hl
 	pop	bc
-	ret
+	jp	compat.disp_workaround
 
 compat.vputmap:
 	push	hl
@@ -5372,22 +5374,22 @@ compat.disp_workaround:
 
 compat.getcsc:
 ; 	;; gotta slow things down a bit..
-; 	push	bc
-; 	ld	b, 80
-; 	call	zp.timer_msleep
-; 	pop	bc
-	
 	ei
 	halt
 	halt
 	halt
 	halt
+	
+	; reset APD timer
+	push	hl
+	ld	hl, default.aps_time
+	ld	(os.aps.timer), hl
+	pop	hl
 	
 	ld	a, (os.flags + osf.compat)
 	bit	vbuf_flush, a
 	call	nz, compat.grbufcpy
 	
-	ei
 	halt
 	jp	zp.getkey
 
