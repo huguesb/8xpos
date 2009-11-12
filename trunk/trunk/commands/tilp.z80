@@ -885,7 +885,7 @@ tilp.RTS.cb.loop:
 	; check for packet end
 	ld	a, d
 	or	e
-	jr	z, tilp.RTS.cb.loopend
+	jr	z, tilp.RTS.cb.loopend2
 	
 	ex	de, hl
 	
@@ -918,6 +918,7 @@ tilp.RTS.cb.loop:
 	ld	h, (iy + 3)
 	call	zp.file_nextchunk
 	jr	c, tilp.RTS.cb.loopend
+	
 	; store node start for next iteration
 	ld	(iy + 2), l
 	ld	(iy + 3), h
@@ -944,12 +945,15 @@ tilp.RTS.cb.loop:
 	jr	tilp.RTS.cb.loop
 	
 tilp.RTS.cb.loopend:
-	ld	hl, 8
-	add	hl, sp
-	ld	sp, hl
+	pop	af
+tilp.RTS.cb.loopend2:
+	
+; 	ld	hl, 6
+; 	add	hl, sp
+; 	ld	sp, hl
 	
 	ld	de, (os.silentlink.check)
-	jr	tilp.RTS.cb.checksum
+	jr	tilp.RTS.cb.checksum - 3
 	
 tilp.RTS.cb.lastchunk:
 	; for now let's suppose we're mono packet, mono chunk (with matching size)
