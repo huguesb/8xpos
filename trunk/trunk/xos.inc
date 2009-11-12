@@ -182,7 +182,7 @@ vbuf_flush			= 0
 
 #define offset_hl	add a, l \ ld l, a \ adc a, h \ sub l \ ld h, a
 #define offset_de	add a, e \ ld e, a \ adc a, d \ sub e \ ld d, a
-#define offset_bc	add a, c \ ld c, a \ adc a, b \ sub e \ ld b, a
+#define offset_bc	add a, c \ ld c, a \ adc a, b \ sub c \ ld b, a
 #define deref_hl	ld a, (hl) \ inc hl \ ld h, (hl) \ ld l, a
 #define cmp_hlde	or a \ sbc hl, de \ add hl, de
 #define cmp_hlbc	or a \ sbc hl, bc \ add hl, bc

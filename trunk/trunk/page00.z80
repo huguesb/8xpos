@@ -324,6 +324,11 @@ zp.console:	.export zp.console
 	ex	(sp), hl
 	ret
 
+zp.hexedit:	.export	zp.hexedit
+	jp	app.hexedit
+zp.run:		.export	zp.run
+	jp	cmd_RUN
+
 zp.syscalls:
 
 zp.hw_version:			.export	zp.hw_version
@@ -733,6 +738,16 @@ zp.flashpage_adjust:	.export	zp.flashpage_adjust
 zp.get_base_app_page:	.export	zp.get_base_app_page
 	jp	vect_getbaseapppage
 
+zp.chunk_size:			.export	zp.chunk_size
+	jp	vect_chunk_size
+zp.chunk_atend:			.export	zp.chunk_atend
+	jp	vect_chunk_atend
+
+zp.fopen:				.export	zp.fopen
+	jp	vect_fopen
+zp.fclose:				.export	zp.fclose
+	jp	vect_fclose
+
 ;zp.expr_eval:			.export	zp.expr_eval
 ;	jp	vect_expr_eval
 
@@ -780,36 +795,36 @@ zp.dump_hl:
 	pop	de
 	pop	af
 	ret
-	
-zp.dump_bc:
-	push	hl
-	ld	h, b
-	ld	l, c
-	call	zp.dump_hl
-	pop	hl
-	ret
-
-zp.dump_de:
-	ex	de, hl
-	call	zp.dump_hl
-	ex	de, hl
-	ret
-
-zp.dump_ix:
-	push	ix
-	ex	(sp), hl
-	call	zp.dump_hl
-	ex	(sp), hl
-	pop	ix
-	ret
-
-zp.dump_iy:
-	push	iy
-	ex	(sp), hl
-	call	zp.dump_hl
-	ex	(sp), hl
-	pop	iy
-	ret
+; 	
+; zp.dump_bc:
+; 	push	hl
+; 	ld	h, b
+; 	ld	l, c
+; 	call	zp.dump_hl
+; 	pop	hl
+; 	ret
+; 
+; zp.dump_de:
+; 	ex	de, hl
+; 	call	zp.dump_hl
+; 	ex	de, hl
+; 	ret
+; 
+; zp.dump_ix:
+; 	push	ix
+; 	ex	(sp), hl
+; 	call	zp.dump_hl
+; 	ex	(sp), hl
+; 	pop	ix
+; 	ret
+; 
+; zp.dump_iy:
+; 	push	iy
+; 	ex	(sp), hl
+; 	call	zp.dump_hl
+; 	ex	(sp), hl
+; 	pop	iy
+; 	ret
 
 os.libs00:
 
@@ -853,6 +868,8 @@ os.lib_fpmath:
 #include "lib/fpmath.z80"
 os.lib_apps:
 #include "lib/apps.z80"
+os.lib_stdfileio:
+#include "lib/stdfileio.z80"
 
 .echo	"Libs : "
 .echo	$-os.libs00
@@ -935,7 +952,11 @@ os.lib_apps:
 .echo	"\n"
 
 .echo	"\tapps : "
-.echo	$ - os.lib_apps
+.echo	os.lib_stdfileio - os.lib_apps
+.echo	"\n"
+
+.echo	"\tstdfileio : "
+.echo	$ - os.lib_stdfileio
 .echo	"\n"
 
 compat.rst08:
@@ -964,7 +985,6 @@ os.commands00:
 .echo	" bytes used\n"
 
 #define _HEXEDIT_EMBED_
-os.hexedit:	.export	os.hexedit
 #include "apps/hexedit.z80"
 
 #if $ > $4000

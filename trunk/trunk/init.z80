@@ -222,7 +222,8 @@ init.lcd_loop:
 	ld	(os.contrast), a
 	
 	; reset OS flags
-	ld	a, fmask( bitmask(calc_on) | bitmask(aps_on) | bitmask(debug_on) )
+	;ld	a, fmask( bitmask(calc_on) | bitmask(aps_on) | bitmask(debug_on) )
+	ld	a, fmask( bitmask(calc_on) | bitmask(aps_on) )
 	ld	(os.flags), a
 	
 	;ld	a, bitmask(proto_dump_on)

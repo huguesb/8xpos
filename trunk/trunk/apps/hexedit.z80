@@ -555,7 +555,7 @@ _XORCursor:
 	add	hl, de
 	add	a, 3
 	offset_hl
-	ld	de, os.lcd.mem
+	ld	de, (os.vbuf_addr)
 	add	hl, de
 	ld	b, 6
 	ld	de, 12

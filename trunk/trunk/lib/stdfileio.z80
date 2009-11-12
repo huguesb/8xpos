@@ -1,0 +1,130 @@
+.nolist
+; malloc code (meminit, malloc, free) :
+; Copyright (c) 2008 Sean McLaughlin.
+;
+; slight modifications, documentation, and rest of this file :
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+; 
+; Permission is hereby granted, free of charge, to any person
+; obtaining a copy of this software and associated documentation
+; files (the "Software"), to deal in the Software without
+; restriction, including without limitation the rights to use,
+; copy, modify, merge, publish, distribute, sublicense, and/or sell
+; copies of the Software, and to permit persons to whom the
+; Software is furnished to do so, subject to the following
+; conditions:
+; 
+; The above copyright notice and this permission notice shall be
+; included in all copies or substantial portions of the Software.
+; 
+; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+; EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+; OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+; NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+; HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+; WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+; FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+; OTHER DEALINGS IN THE SOFTWARE.
+.list
+
+;
+; FILE structure (internal, subject to change) :
+;
+; {
+;   byte : number of chunks
+;   byte + word : paged address of file pointer
+;	byte : current chunk
+;   (byte + word)+ : paged addresses of chunks (malloc - 2 : next ptr)
+; }
+;
+
+; brief : Open a file and setup a FILE object to access it using high level file I/O API
+; input : hl -> filename
+; output : CF set on failure, hl -> FILE object pointer (allocated on heap)
+; destroys : a, bc, de, ix, iy
+vect_fopen:
+	ld	ix, fopen.cb
+	call	zp.file_find
+	
+	ld	hl, (os.fopen.out)
+	
+	ret
+
+fopen.cb:
+	push	de
+	ld	bc, 8
+	call	zp.malloc
+	pop	de
+	
+	push	hl
+	
+	ld	(hl), 1
+	inc	hl
+	
+	push	de
+	inc	de
+	inc	de
+	ld	a, (de)
+	inc	de
+	offset_de
+	call	fopen.cb.initf
+	pop	de
+	
+	ld	(hl), 0
+	inc	hl
+	
+	jr	fopen.cb.skip
+	
+fopen.cb.loop:
+	; realloc FILE object with bigger size
+	pop	hl
+	inc	bc
+	inc	bc
+	inc	bc
+	push	de
+	call	zp.realloc
+	pop	de
+	push	hl
+	; increase chunk counter in FILE object
+	inc	(hl)
+	; update storage pointer
+	add	hl, bc
+	dec	hl
+	dec	hl
+	dec	hl
+fopen.cb.skip:
+	; store a chunk pointer in FILE object
+	call	fopen.cb.initf
+	
+	; check for last chunk
+	ex	de, hl
+	call	zp.file_nextchunk
+	ex	de, hl
+	
+	; loop if needed
+	jr	nc, fopen.cb.loop
+	
+	pop	hl
+	ld	(os.fopen.out), hl
+	
+	ret
+
+fopen.cb.initf:
+	in	a, (map_bankB_port)
+	
+	ld	(hl), a
+	inc	hl
+	ld	(hl), e
+	inc	hl
+	ld	(hl), d
+	inc	hl
+	ret
+
+; brief : close a file and release memory used by the FILE object
+; input : hl -> pointer to FILE object
+; output : none
+; destroys : a, de, hl
+vect_fclose:
+	
+	jp	zp.free
+
