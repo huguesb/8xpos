@@ -525,9 +525,92 @@ vect_file_delete.loop:
 	
 	jr	vect_file_delete.loop
 
+; input : ahl -> chunk address
+; output : bc -> chunk size
+; destroys : de
+vect_chunk_size:
+	push	hl
+	
+	ld	b, a
+	
+	in	a, (map_bankB_port)
+	ld	c, a
+	ld	a, b
+	out	(map_bankB_port), a
+	
+	ld	d, (hl)
+	inc	hl
+	set	7, d
+	ld	e, (hl)
+	inc	hl
+	ex	de, hl
+	ld	a, $FF
+	sub	(hl)
+	or	a
+	sbc	hl, de
+	
+	jr	nc, $+6
+	ld	hl, - os.falloc.poolend
+	add	hl, de
+	
+	; metadata adjustment
+	ld	e, a
+	rla
+	sbc	a, a
+	ld	d, a
+	add	hl, de
+	
+	ld	a, c
+	out	(map_bankB_port), a
+	
+	ld	a, b
+	
+	ld	b, h
+	ld	c, l
+	
+	pop	hl
+	ret
+
+; input : ahl -> chunk address, de -> inchunk addr
+; output : CF reset if at chunk end
+; destroys : bc
+vect_chunk_atend:
+	push	hl
+	
+	ld	b, a
+	
+	in	a, (map_bankB_port)
+	ld	c, a
+	ld	a, b
+	out	(map_bankB_port), a
+	
+	push	de
+	
+	ld	d, (hl)
+	inc	hl
+	ld	e, (hl)
+	inc	hl
+	set	7, d
+	cmp_hlde
+	
+	jr	c, $+5
+	ld	de, os.falloc.poolend
+	
+	pop	hl
+	cmp_hlde
+	ex	de, hl
+	
+	ld	a, c
+	out	(map_bankB_port), a
+	
+	ld	a, b
+	
+	pop	hl
+	ret
+
 ; brief : find next file chunk, if file split
 ; input : hl -> node contents pointer (points to metadata size)
-; output : hl -> node contents pointer (points to metadata size)
+; output : CF set if no next chunk available, hl -> node contents pointer (points to metadata size)
 ; destroys : a
 vect_file_nextchunk:
 	push	de
@@ -584,7 +667,7 @@ vect_file_advance:
 
 ; brief : creates a file
 ; input : hl -> filename, bc -> size, ix -> callback
-; output : CF set if file created
+; output : CF set on failure
 ; destroys : a, hl, bc, de, ix, iy
 vect_file_create:
 	
@@ -649,7 +732,7 @@ vect_file_create:
 	jr	c, vect_file_create.ok
 	
 	; second attemp with split
-	ld	d, bitmask(list_free)
+	ld	c, bitmask(list_free)
 	ld	ix, vect_file_create.cbsplit
 	call	vect_file_list
 	
@@ -711,16 +794,19 @@ vect_file_create.ok:
 	ld	hl, os.flags + osf.filesystem
 	set	fmeminfo_dirty, (hl)
 	
+	or	a
 	jr	vect_file_create.exit
 	
 vect_file_create.die:
 	pop	ix
+	scf
 vect_file_create.exit:
 	
 	; free memory (file info struct)
 	pop	hl
+	push	af
 	call	zp.free
-	
+	pop	af
 	ret
 
 ; input :
@@ -759,6 +845,7 @@ vect_file_create.cb.sub:
 	
 	; metadata size
 	ld	a, (iy + 2)
+	
 	ld	(hl), a
 	inc	hl
 	
@@ -820,16 +907,16 @@ vect_file_create.cbsplit:
 	ld	l, (iy + 4)
 	ld	h, (iy + 5)
 	; alloc size - metadata size - 1 = requested size
-	or	a
+	;or	a
+	scf
 	sbc	hl, bc
-	dec	hl
+	;dec	hl
 	ex	(sp), hl
 	
 	; split -> add SIZE and NEXT fields, resp 5 and 4 bytes
 	ld	a, c
 	add	a, 5+4
 	ld	c, a
-	ld	(iy + 2), c
 	
 	; determine whether the node has sufficient space for metadata
 	ex	de, hl
@@ -842,6 +929,8 @@ vect_file_create.cbsplit:
 	pop	hl
 	or	a
 	ret
+	
+	ld	(iy + 2), c
 	
 	; set info of prev chunk (this one) for next one to perform the linking
 	in	a, (map_bankB_port)
@@ -907,6 +996,7 @@ vect_file_create.cbsplit:
 	; set chunk count
 	ld	(iy + 3), 1
 	
+	or	a
 	ret
 	
 vect_file_create.cbcont:
@@ -961,6 +1051,8 @@ vect_file_create.cbcont:
 	
 	ld	d, meta_NEXT
 	call	vect_file_meta_find
+	
+	call	c, zp.throw
 	
 	; move directly to field (skip field size and type)
 	add	a, 2
