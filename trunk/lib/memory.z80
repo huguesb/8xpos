@@ -344,7 +344,7 @@ vect_block_size:
 ; brief : allocate a chunk of memory
 ; input :	hl -> node where data should be allocated
 ;			bc -> size of chunk to allocate
-; output : hl -> address of allocated chunk
+; output : CF set on failure, hl -> address of allocated chunk
 ; destroys : a, de
 vect_malloc_placed:
 	push	iy
@@ -361,7 +361,7 @@ vect_malloc_placed:
 	
 ; brief : allocate a chunk of memory
 ; input :	bc -> size of chunk to allocate
-; output : hl -> address of allocated chunk
+; output : CF set on failure, hl -> address of allocated chunk
 ; destroys : a, de
 vect_malloc:
 	push	iy
@@ -379,7 +379,7 @@ vect_malloc:
 ; brief : allocate a chunk of memory
 ; input :	bc -> size of chunk to allocate
 ;			iy -> pointer to memory pool data (6 bytes)
-; output : hl -> address of allocated chunk
+; output : CF set on failure, hl -> address of allocated chunk
 ; destroys : a, de
 vect_malloc_iy:
 ; Pick up from where we left off.
@@ -389,20 +389,41 @@ vect_malloc_iy:
 	
 	;call	_dump_hl
 	
+vect_malloc.search_loop:
+	bit	7, (hl)
+	jp	nz, vect_malloc.search_upd_np
+
+	call	vect_malloc_placed_iy
+	
+	ret	nc
+	
+; Next node.
+vect_malloc.search_upd_np:
+	ld	a, (hl)
+	inc	hl
+	ld	l, (hl)
+	ld	h, a
+	
+	set	7, h
+vect_malloc.search_chk:
+	;ld	de, (os.malloc.start)
+	ld	e, (iy + 0)
+	ld	d, (iy + 1)
+	
+	cmp_hlde
+	jr	nz, vect_malloc.search_loop
+	
+	; impossible to allocate requested size...
+	scf
+	ret
+
 ; brief : allocate a chunk of memory
 ; input :	hl -> node where data should be allocated
 ;			bc -> size of chunk to allocate
 ;			iy -> pointer to memory pool data (6 bytes)
 ; output : hl -> address of allocated chunk
 ; destroys : a, de
-vect_malloc_placed_iy:
-; Find a free node.
-vect_malloc.search_loop:
-	bit	7, (hl)
-	jp	nz, vect_malloc.search_upd_np
 
-; Coalesce with succeeding nodes.
-	jr	vect_malloc.merge_upd
 vect_malloc.merge_loop:
 	;call	_dump_hl
 	;call	_dump_de
@@ -415,25 +436,32 @@ vect_malloc.merge_loop:
 	ld	(hl), a
 	dec	hl
 
+; entry point is here (moved to save 2 bytes and 12 T-states of a jr)
+vect_malloc_placed_iy:
+	
+	
 vect_malloc.merge_upd:
 	ld	d, (hl)
 	inc	hl
 	ld	e, (hl)
 	dec	hl
 	set	7, d
+	cmp_hlde
+	jr	nc, vect_malloc.allocate
 	ld	a, (de)
 	rlca
-	jr	c, vect_malloc.allocate
-	sbc	hl, de
-	add	hl, de
-	jr	c, vect_malloc.merge_loop
+	jr	nc, vect_malloc.merge_loop
 
 ; Check that the block is large enough
 vect_malloc.allocate:
 	push	hl
 	call	vect_block_size
+	or	a
 	sbc	hl, bc
-	jr	c, vect_malloc.search_upd
+	jr	nc, $+4
+	pop	hl
+	ret
+	;jr	c, vect_malloc.search_upd
 
 ; Get entire node if there isn't enough space left over.
 	ld	de, MIN_BLOCK_SIZE
@@ -487,28 +515,6 @@ vect_malloc.pass:
 	;call	_dump_de
 	
 	or	a
-	ret
-
-; Next node.
-vect_malloc.search_upd:
-	pop	hl
-vect_malloc.search_upd_np:
-	ld	a, (hl)
-	inc	hl
-	ld	l, (hl)
-	ld	h, a
-	
-	set	7, h
-vect_malloc.search_chk:
-	;ld	de, (os.malloc.start)
-	ld	e, (iy + 0)
-	ld	d, (iy + 1)
-	
-	cmp_hlde
-	jr	nz, vect_malloc.search_loop
-	
-	; impossible to allocate requested size...
-	scf
 	ret
 
 ;; =free=
