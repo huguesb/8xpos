@@ -498,6 +498,12 @@ _throw_hexedit:
 	ld	hl, (os.keymap.alpha)
 	push	hl
 	
+	; use default sys vbuf
+	ld	hl, (os.vbuf_addr)
+	push	hl
+	ld	hl, os.lcd.mem
+	ld	(os.vbuf_addr), hl
+	
 	; restore default keymap just in case...
 	ld	hl, 0
 	ld	(os.keymap.normal), hl
@@ -512,6 +518,11 @@ _throw_hexedit:
 	ld	a, 1
 	call	app.hexedit
 	
+	; restore vbuf addr
+	pop	hl
+	ld	(os.vbuf_addr), hl
+	
+	; restore keymaps
 	pop	hl
 	ld	(os.keymap.normal), hl
 	pop	hl
