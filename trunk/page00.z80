@@ -747,6 +747,22 @@ zp.fopen:				.export	zp.fopen
 	jp	vect_fopen
 zp.fclose:				.export	zp.fclose
 	jp	vect_fclose
+zp.fsize:				.export	zp.fsize
+	jp	vect_fsize
+zp.feof:				.export	zp.feof
+	jp	vect_feof
+zp.fgetc:				.export	zp.fgetc
+	jp	vect_fgetc
+zp.fputc:				.export	zp.fputc
+	jp	vect_fputc
+zp.fread:				.export	zp.fread
+	jp	vect_fread
+zp.fwrite:				.export	zp.fwrite
+	jp	vect_fwrite
+zp.fseek:				.export	zp.fseek
+	jp	vect_fseek
+zp.ftell:				.export	zp.ftell
+	jp	vect_ftell
 
 ;zp.expr_eval:			.export	zp.expr_eval
 ;	jp	vect_expr_eval

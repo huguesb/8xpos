@@ -384,7 +384,7 @@ vect_atod._loop:
 	; add a
 	offset_hl
 	
-	djnz	vect_atoh._loop
+	djnz	vect_atod._loop
 	ret
 
 ; brief : convert string to number

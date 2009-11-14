@@ -44,37 +44,55 @@
 fileio.test:
 	or	a
 	ret	z
+	dec	a
+	ret	z
+	
+	push	hl
 	
 	call	zp.fopen
 	ret	c
 	ld	(fptr), hl
 	
+	call	vect_fsize
+	push	hl
+	ld	de, os.scrap
+	ld	h, b
+	ld	l, c
+	call	zp.htoa_word
+	xor	a
+	ld	(de), a
+	ld	hl, os.scrap
+	call	zp.cputs
+	call	zp.cdisp
+	call	zp.getch
+	pop	hl
+	
 	call	dump.filehandle
 	
-; 	call	vect_fsize
-; 	push	hl
-; 	ld	de, os.scrap
-; 	ld	h, b
-; 	ld	l, c
-; 	call	zp.htoa_word
-; 	xor	a
-; 	ld	(de), a
-; 	ld	hl, os.scrap
-; 	call	zp.cputs
-; 	call	zp.cdisp
-; 	call	zp.getch
-; 	pop	hl
+	ex	(sp), hl
 	
-	ld	de, $0380
+	call	zp.strnext
+	ld	b, 4
+	ex	de, hl
+	call	zp.atoh
+	call	dump_hl
+	
+	ex	de, hl
+	pop	hl
+	
 	call	vect_fseek
 	
-	;call	dump.filehandle
+	call	dump.filehandle
 	
 	call	vect_ftell
 	ex	de, hl
 	call	dump_hl
 	ex	de, hl
 	
+	
+; 	ld	de, 0
+; 	call	vect_seek
+; 	
 	ld	de, os.scrap
 	ld	bc, $50
 	call	vect_fread
@@ -218,619 +236,6 @@ dump.filehandle:
 	
 	ret
 
-; brief : checks whether End Of File has been reached
-; input : hl -> pointer to FILE object
-; output : CF reset if EOF reached, set otherwise
-; destroys : a, bc, de
-vect_feof:
-	push	hl
-	ld	a, (hl)
-	inc	hl
-	inc	hl
-	ld	e, (hl)
-	inc	hl
-	ld	d, (hl)
-	inc	hl
-	cp	(hl)
-	jr	nz, vect_feof.no
-	
-	inc	hl
-	ld	c, a
-	add	a, a
-	add	a, c
-	ld	c, a
-	add	hl, bc
-	
-	push	de
-	
-	ld	a, (hl)
-	inc	hl
-	ld	e, (hl)
-	inc	hl
-	ld	d, (hl)
-	
-	ex	de, hl
-	
-	pop	de
-	
-	call	zp.chunk_atend
-	pop	hl
-	ret
-
-vect_feof.no:
-	pop	hl
-	scf
-	ret
-
-; brief : compute the size of the data in a file
-; input : hl -> pointer to FILE object
-; output : CF set on failure, bc -> file size
-; destroys : a
-vect_fsize:
-	ld	a, (hl)
-	dec	a
-	
-	; beware : the following MUST NOT affect the Zero flag
-	push	hl
-	ld	bc, 5
-	add	hl, bc
-	ld	a, (hl)
-	inc	hl
-	ld	c, (hl)
-	inc	hl
-	ld	h, (hl)
-	ld	l, c
-	
-	jr	z, vect_fsize.nosplit
-	; multiple chunks : use meta_SIZE field
-	ld	c, a
-	in	a, (map_bankB_port)
-	push	af
-	ld	a, c
-	out	(map_bankB_port), a
-	
-	inc	hl
-	inc	hl
-	push	de
-	ld	d, meta_SIZE
-	call	zp.file_meta_find
-	pop	de
-	pop	bc
-	
-	push	af
-	add	a, 2
-	offset_hl
-	pop	af
-	
-	ld	a, b
-	
-	; todo : iterate over chunks if size field missing?
-	;jr	c, $+5
-	
-	ld	c, (hl)
-	inc	hl
-	ld	b, (hl)
-	
-	out	(map_bankB_port), a
-	pop	hl
-	ret
-	
-vect_fsize.nosplit:
-	; single chunk : get chunk size
-	push	de
-	call	zp.chunk_size
-	pop	de
-	
-	or	a
-	pop	hl
-	ret
-
-; brief : resizes a file
-; input : hl -> pointer to FILE object, bc -> new size
-; output : none
-; destroys : 
-vect_fresize:
-	push	bc
-	call	vect_fsize
-	pop	de
-	ex	de, hl
-	or	a
-	sbc	hl, bc
-	ex	de, hl
-	jr	c, vect_fgrow
-	
-vect_fshrink:
-	; need to remove de bytes from end
-	push	hl
-	
-	; todo...
-	
-	pop	hl
-	ret
-
-vect_fgrow:
-	; need to add -de bytes at end
-	
-	push	hl
-	ld	a, (hl)
-	ld	c, a
-	inc	a
-	add	a, a
-	add	a, c
-	offset_hl
-	
-	ld	a, (hl)
-	inc	hl
-	push	hl
-	ld	c, (hl)
-	inc	hl
-	ld	h, (hl)
-	ld	l, c
-	
-	push	de
-	call	zp.chunk_size
-	pop	de
-	
-	push	hl
-	ld	hl, 0
-	or	a
-	sbc	hl, de
-	add	hl, bc
-	ld	b, h
-	ld	c, l
-	pop	hl
-	
-	inc	hl
-	inc	hl
-	call	zp.realloc
-	dec	hl
-	dec	hl
-	
-	; todo : handle failure more gracefully...
-	call	c, zp.throw_memory
-	
-	pop	de
-	ex	de, hl
-	ld	(hl), e
-	inc	hl
-	ld	(hl), d
-	
-	pop	hl
-	ret
-
-; brief : set the file data pointer to a given position
-; input : hl -> pointer to FILE object, de -> offset in file
-; output : none
-; destroys : 
-; note :
-vect_fseek:
-	push	hl
-	ld	a, (hl)
-	
-	ld	bc, 4
-	add	hl, bc
-	
-	ld	c, 0
-	
-vect_fseek.loop:
-	push	af
-	
-	push	bc
-	
-	; get chunk size
-	inc	hl
-	ld	a, (hl)
-	inc	hl
-	ld	c, (hl)
-	inc	hl
-	push	hl
-	ld	h, (hl)
-	ld	l, c
-	push	de
-	call	zp.chunk_size
-	pop	de
-	pop	hl
-	
-	ex	(sp), hl
-	add	hl, bc
-	
-	; hl now holds cumulated chunk size
-	; if de (seek offset) is strictly less than that we've reached the proper block
-	ex	de, hl
-	cmp_hlde
-	ex	de, hl
-	
-	jr	c, vect_fseek.found
-	
-	; update bc (cumulated size) and get back hl (pointer to next chunk address)
-	ld	b, h
-	ld	c, l
-	pop	hl
-	
-	pop	af
-	dec	a
-	jr	nz, vect_fseek.loop
-	
-	;;;; this code should be *dead*
-	; todo : set file poitner to EOF
-	
-	jr	vect_fseek.end
-
-vect_fseek.found:
-	; compute chunk offset
-	or	a
-	sbc	hl, bc
-	ex	de, hl
-	or	a
-	sbc	hl, de
-	ex	de, hl
-	
-	pop	hl
-	
-	; get back chunk address
-	ld	b, (hl)
-	dec	hl
-	ld	c, (hl)
-	dec	hl
-	inc	bc
-	inc	bc
-	
-	in	a, (map_bankB_port)
-	push	af
-	ld	a, (hl)
-	out	(map_bankB_port), a
-	
-	; metadata adjust
-	ld	a, (bc)
-	inc	bc
-	offset_bc
-	
-	; compute file pointer
-	ex	de, hl
-	add	hl, bc
-	ex	de, hl
-	
-	pop	af
-	out	(map_bankB_port), a
-	
-	ld	b, (hl)
-	pop	af
-	
-	pop	hl
-	
-	; compute chunk index
-	neg
-	add	a, (hl)
-	
-	; set file pointer
-	push	hl
-	
-	inc	hl
-	
-	; update file pointer
-	ld	(hl), b
-	inc	hl
-	ld	(hl), e
-	inc	hl
-	ld	(hl), d
-	inc	hl
-	
-	; update chunk index
-	ld	(hl), a
-	
-vect_fseek.end:
-	pop	hl
-	ret
-
-; brief : get the position of the file data pointer
-; input : hl -> pointer to FILE object
-; output : de -> offset in file
-; destroys : a, bc
-vect_ftell:
-	push	hl
-	
-	ld	bc, 4
-	add	hl, bc
-	
-	ld	b, (hl)
-	ld	de, 0
-	
-	ld	a, b
-	or	a
-	jr	z, vect_ftell.skip
-	
-	push	de
-	
-vect_ftell.loop:
-	inc	hl
-	ld	a, (hl)
-	inc	hl
-	ld	e, (hl)
-	inc	hl
-	ld	d, (hl)
-	
-	push	hl
-	ex	de, hl
-	call	zp.chunk_size
-	pop	hl
-	ex	(sp), hl
-	add	hl, bc
-	ex	(sp), hl
-	
-	djnz	vect_ftell.loop
-	
-	pop	de
-	
-vect_ftell.skip:
-	
-	inc	hl
-	ld	b, (hl)
-	inc	hl
-	ld	c, (hl)
-	inc	hl
-	
-	; tricky shit : the metadata size must be retrieved from the fs page without scrambling registers...
-	in	a, (map_bankB_port)
-	push	af
-	ld	a, b
-	out	(map_bankB_port), a
-	
-	ld	b, (hl)
-	
-	; metadata adjust
-	inc	bc
-	inc	bc
-	ld	a, (bc)
-	inc	bc
-	offset_bc
-	
-	pop	af
-	out	(map_bankB_port), a
-	
-	pop	hl
-	
-	push	hl
-	inc	hl
-	inc	hl
-	ld	a, (hl)
-	inc	hl
-	ld	h, (hl)
-	cpl
-	ld	l, a
-	ld	a, h
-	cpl
-	inc	hl
-	add	hl, bc
-	add	hl, de
-	ex	de, hl
-	pop	hl
-	ret
-
-; brief : read a chunk of data from a file
-; input : hl -> pointer to FILE object, bc -> size of chunk, de -> buffer
-; output : CF set if reading ended prematurely due to EOF being reached, de -> end of buffer (de += bc)
-; destroys : a, bc
-vect_fread:
-	dec	bc
-	ld	a, b
-	ld	b, c
-	ld	c, a
-	inc	b
-	inc	c
-
-vect_fread.loop:
-	push	de
-	call	vect_fgetc
-	pop	de
-	ld	(de), a
-	inc	de
-	ret	c
-	djnz	vect_fread.loop
-	dec	c
-	jr	nz, vect_fread.loop
-	
-	ret
-
-; brief : write a chunk of data to a file
-; input : hl -> pointer to FILE object, bc -> size of chunk, de -> buffer
-; output : de -> end of buffer (de += bc)
-; destroys : a, bc
-vect_fwrite:
-	dec	bc
-	ld	a, b
-	ld	b, c
-	ld	c, a
-	inc	b
-	inc	c
-
-vect_fwrite.loop:
-	ld	a, (de)
-	inc	de
-	push	de
-	call	vect_fputc
-	pop	de
-	djnz	vect_fwrite.loop
-	dec	c
-	jr	nz, vect_fwrite.loop
-	
-	ret
-
-; brief : read a character (byte) from a file
-; input : hl -> pointer to FILE object
-; output : CF set if EOF reached, a -> character
-; destroys : de
-vect_fgetc:
-	call	vect_feof
-	jr	nz, vect_fgetc.unsafe
-	scf
-	ret
-vect_fgetc.unsafe:
-	push	bc
-	
-	in	a, (map_bankB_port)
-	push	af
-	
-	push	hl
-	inc	hl
-	
-	ld	a, (hl)
-	inc	hl
-	ld	e, (hl)
-	inc	(hl)
-	inc	hl
-	ld	d, (hl)
-	jr	nz, $+3
-	inc	(hl)
-	inc	hl
-	ld	c, (hl)
-	inc	hl
-	
-	out	(map_bankB_port), a
-	
-	ld	b, 0
-	add	hl, bc
-	add	hl, bc
-	add	hl, bc
-	
-	ld	a, (hl)
-	inc	hl
-	ld	b, (hl)
-	inc	hl
-	ld	h, (hl)
-	ld	l, b
-	
-	ex	de, hl
-	ld	b, (hl)
-	ex	de, hl
-	
-	push	bc
-	call	zp.chunk_atend
-	pop	bc
-	pop	hl
-	call	nc, vect_next
-	
-	pop	af
-	out	(map_bankB_port), a
-	
-	ld	a, b
-	
-	pop	bc
-	or	a
-	ret
-
-; brief : write a character (byte) from file
-; input : hl -> pointer to FILE object, a -> character
-; output : none
-; destroys : a, de
-vect_fputc:
-	call	vect_feof
-	jr	nz, vect_fputc.unsafe
-	; make room for the byte
-	
-	; weird huh? that's the price of short-circuiting...
-	; this will make the file grow by one byte
-	; (todo : make more room to areduce the number of grow
-	; in case caller is too stupid to reserve memory himself...)
-	ld	de, -1
-	call	vect_fgrow
-	
-vect_fputc.unsafe:
-	push	bc
-	
-	ld	b, a
-	in	a, (map_bankB_port)
-	push	af
-	
-	push	hl
-	inc	hl
-	
-	ld	a, (hl)
-	inc	hl
-	ld	e, (hl)
-	inc	(hl)
-	inc	hl
-	ld	d, (hl)
-	jr	nz, $+3
-	inc	(hl)
-	inc	hl
-	ld	c, (hl)
-	inc	hl
-	
-	out	(map_bankB_port), a
-	ld	a, b
-	ld	(de), a
-	
-	ld	b, 0
-	add	hl, bc
-	add	hl, bc
-	add	hl, bc
-	
-	ld	a, (hl)
-	inc	hl
-	ld	b, (hl)
-	inc	hl
-	ld	h, (hl)
-	ld	l, b
-	
-	call	zp.chunk_atend
-	pop	hl
-	call	nc, vect_next
-	
-	pop	af
-	out	(map_bankB_port), a
-	
-	pop	bc
-	ret
-
-; brief : adjust FILE object when moving to next chunk
-; input : hl -> pointer to FILE object, c -> current chunk
-; output : CF set if last chunk reached
-; destroys : a, de
-vect_next:
-	ld	a, c
-	cp	(hl)
-	ccf
-	ret	c
-	
-	call	zp.throw
-	
-	push	hl
-	
-	push	hl
-	inc c
-	add	a, 2
-	add	a, a
-	add	a, c
-	offset_hl
-	ld	a, (hl)
-	inc	hl
-	ld	e, (hl)
-	inc	hl
-	ld	d, (hl)
-	pop	hl
-	
-	inc	hl
-	
-	ld	(hl), a
-	inc	hl
-	
-	inc	de
-	inc	de
-	ld	a, (de)
-	inc	de
-	offset_de
-	
-	ld	(hl), e
-	inc	hl
-	ld	(hl), d
-	inc	hl
-	
-	inc	(hl)
-	
-	pop	hl
-	or	a
-	ret
-
 vat.test:
 	call	load
 	ret	c
@@ -884,5 +289,7 @@ vat_FILE:
 
 vat_dump:
 	.db "compat-vat", 0
+
+#include "lib/stdfileio.z80"
 
 .end
