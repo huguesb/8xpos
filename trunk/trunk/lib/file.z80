@@ -543,22 +543,18 @@ vect_chunk_size:
 	set	7, d
 	ld	e, (hl)
 	inc	hl
+	ld	a, (hl)
+	inc	hl
+	offset_hl
 	ex	de, hl
-	ld	a, $FF
-	sub	(hl)
+	
 	or	a
 	sbc	hl, de
 	
-	jr	nc, $+6
-	ld	hl, - os.falloc.poolend
-	add	hl, de
-	
-	; metadata adjustment
-	ld	e, a
-	rla
-	sbc	a, a
-	ld	d, a
-	add	hl, de
+	jr	nc, $+8
+	ld	hl, os.falloc.poolend
+	or	a
+	sbc	hl, de
 	
 	ld	a, c
 	out	(map_bankB_port), a

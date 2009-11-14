@@ -207,4 +207,12 @@ zp.chunk_size    .EQU  $0736
 zp.chunk_atend   .EQU  $0739
 zp.fopen         .EQU  $073c
 zp.fclose        .EQU  $073f
-zp.end           .EQU  $0742
+zp.fsize         .EQU  $0742
+zp.feof          .EQU  $0745
+zp.fgetc         .EQU  $0748
+zp.fputc         .EQU  $074b
+zp.fread         .EQU  $074e
+zp.fwrite        .EQU  $0751
+zp.fseek         .EQU  $0754
+zp.ftell         .EQU  $0757
+zp.end           .EQU  $075a
