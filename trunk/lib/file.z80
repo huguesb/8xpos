@@ -596,12 +596,15 @@ vect_chunk_atend:
 	cmp_hlde
 	ex	de, hl
 	
+	;call	nc, zp.throw
+	
 	ld	a, c
 	out	(map_bankB_port), a
 	
 	ld	a, b
 	
 	pop	hl
+	ccf
 	ret
 
 ; brief : find next file chunk, if file split

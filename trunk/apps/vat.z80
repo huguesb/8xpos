@@ -53,21 +53,21 @@ fileio.test:
 	ret	c
 	ld	(fptr), hl
 	
-	call	vect_fsize
-	push	hl
-	ld	de, os.scrap
-	ld	h, b
-	ld	l, c
-	call	zp.htoa_word
-	xor	a
-	ld	(de), a
-	ld	hl, os.scrap
-	call	zp.cputs
-	call	zp.cdisp
-	call	zp.getch
-	pop	hl
-	
-	call	dump.filehandle
+; 	call	vect_fsize
+; 	push	hl
+; 	ld	de, os.scrap
+; 	ld	h, b
+; 	ld	l, c
+; 	call	zp.htoa_word
+; 	xor	a
+; 	ld	(de), a
+; 	ld	hl, os.scrap
+; 	call	zp.cputs
+; 	call	zp.cdisp
+; 	call	zp.getch
+; 	pop	hl
+; 	
+; 	call	dump.filehandle
 	
 	ex	(sp), hl
 	
@@ -75,24 +75,27 @@ fileio.test:
 	ld	b, 4
 	ex	de, hl
 	call	zp.atoh
-	call	dump_hl
+; 	call	dump_hl
 	
 	ex	de, hl
 	pop	hl
 	
 	call	vect_fseek
 	
-	call	dump.filehandle
+	;call	dump.filehandle
 	
+; 	ld	de, 0
+; 	call	vect_seek
+; 	
+	
+dump.loop:
 	call	vect_ftell
 	ex	de, hl
 	call	dump_hl
 	ex	de, hl
 	
+; 	call	dump.filehandle
 	
-; 	ld	de, 0
-; 	call	vect_seek
-; 	
 	ld	de, os.scrap
 	ld	bc, $50
 	call	vect_fread
@@ -108,6 +111,21 @@ fileio.test:
 	call	zp.getch
 	pop	hl
 	
+; 	call	dump.filehandle
+	
+	call	vect_feof
+	jr	nc, dump.loop
+	
+	call	vect_ftell
+	ex	de, hl
+	call	dump_hl
+	ex	de, hl
+	
+; 	ld	a, $99
+; 	call	vect_fputc
+; 	ld	a, $11
+; 	call	vect_fputc
+; 	
 	ld	hl, (fptr)
 	call	zp.fclose
 	ret
@@ -214,27 +232,6 @@ dump.pool.loop:
 	
 	call zp.cdisp
 	jp	zp.getch
-
-dump.filehandle:
-	ld	a, (hl)
-	inc	a
-	ld	b, a
-	inc	a
-	add	a, a
-	add	a, b
-	ld	b, a
-	ld	de, os.console
-	
-	push	hl
-	call	zp.memdump
-	inc	hl
-	djnz	$-4
-	
-	call	zp.cdisp
-	call	zp.getch
-	pop	hl
-	
-	ret
 
 vat.test:
 	call	load

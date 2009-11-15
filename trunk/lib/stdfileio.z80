@@ -135,8 +135,8 @@ vect_fclose:
 
 ; brief : checks whether End Of File has been reached
 ; input : hl -> pointer to FILE object
-; output : CF reset if EOF reached, set otherwise
-; destroys : a, bc, de
+; output : CF set if EOF reached, set otherwise
+; destroys : a, de
 vect_feof:
 	push	hl
 	ld	a, (hl)
@@ -146,15 +146,17 @@ vect_feof:
 	inc	hl
 	ld	d, (hl)
 	inc	hl
+	dec	a
 	cp	(hl)
 	jr	nz, vect_feof.no
+	
+	push	bc
 	
 	inc	hl
 	ld	c, a
 	add	a, a
 	add	a, c
-	ld	c, a
-	add	hl, bc
+	offset_hl
 	
 	push	de
 	
@@ -169,12 +171,14 @@ vect_feof:
 	pop	de
 	
 	call	zp.chunk_atend
+	pop	bc
+	
 	pop	hl
 	ret
 
 vect_feof.no:
 	pop	hl
-	scf
+	or	a
 	ret
 
 ; brief : compute the size of the data in a file
@@ -520,7 +524,6 @@ vect_ftell.skip:
 	ld	l, a
 	or	a
 	sbc	hl, bc
-	call	zp.throw
 	add	hl, de
 	ex	de, hl
 	pop	hl
@@ -537,7 +540,7 @@ vect_fread:
 	ld	c, a
 	inc	b
 	inc	c
-
+	
 vect_fread.loop:
 	push	de
 	call	vect_fgetc
@@ -581,9 +584,7 @@ vect_fwrite.loop:
 ; destroys : de
 vect_fgetc:
 	call	vect_feof
-	jr	nz, vect_fgetc.unsafe
-	scf
-	ret
+	ret	c
 vect_fgetc.unsafe:
 	push	bc
 	
@@ -622,12 +623,12 @@ vect_fgetc.unsafe:
 	ex	de, hl
 	ld	b, (hl)
 	ex	de, hl
+	inc	de
 	
 	push	bc
 	call	zp.chunk_atend
 	pop	bc
 	pop	hl
-	ccf
 	call	c, vect_next
 	
 	; save carry...
@@ -650,7 +651,7 @@ vect_fgetc.unsafe:
 ; destroys : a, de
 vect_fputc:
 	call	vect_feof
-	jr	nz, vect_fputc.unsafe
+	jr	nc, vect_fputc.unsafe
 	; make room for the byte
 	
 	; weird huh? that's the price of short-circuiting...
@@ -698,9 +699,11 @@ vect_fputc.unsafe:
 	ld	h, (hl)
 	ld	l, b
 	
+	inc	de
+	
 	call	zp.chunk_atend
 	pop	hl
-	call	nc, vect_next
+	call	c, vect_next
 	
 	pop	af
 	out	(map_bankB_port), a
@@ -710,21 +713,19 @@ vect_fputc.unsafe:
 
 ; brief : adjust FILE object when moving to next chunk
 ; input : hl -> pointer to FILE object, c -> current chunk
-; output : CF set if last chunk reached
-; destroys : a, de
+; output : CF set if EOF reached
+; destroys : a, c, de
 vect_next:
+	inc c
 	ld	a, c
-	inc	a
 	cp	(hl)
 	ccf
 	ret	c
 	
-; 	call	zp.throw
-	
 	push	hl
 	
 	push	hl
-	inc c
+	inc	c
 	add	a, 2
 	add	a, a
 	add	a, c
@@ -739,13 +740,24 @@ vect_next:
 	inc	hl
 	
 	ld	(hl), a
+	
+	in	a, (map_bankB_port)
+	push	af
+	ld	a, (hl)
+	out	(map_bankB_port), a
+	
 	inc	hl
 	
 	inc	de
 	inc	de
+	
 	ld	a, (de)
+	
 	inc	de
 	offset_de
+	
+	pop	af
+	out	(map_bankB_port), a
 	
 	ld	(hl), e
 	inc	hl
@@ -755,5 +767,35 @@ vect_next:
 	inc	(hl)
 	
 	pop	hl
+	
 	or	a
+	ret
+
+
+dump.filehandle:
+	push	af
+	push	bc
+	push	de
+	
+	ld	a, (hl)
+	inc	a
+	ld	b, a
+	inc	a
+	add	a, a
+	add	a, b
+	ld	b, a
+	ld	de, os.console
+	
+	push	hl
+	call	zp.memdump
+	inc	hl
+	djnz	$-4
+	
+	call	zp.cdisp
+	call	zp.getch
+	pop	hl
+	
+	pop	de
+	pop	bc
+	pop	af
 	ret
