@@ -247,7 +247,7 @@ vect_fsize.nosplit:
 ; brief : resizes a file
 ; input : hl -> pointer to FILE object, bc -> new size
 ; output : none
-; destroys : 
+; destroys : a, bc, de
 vect_fresize:
 	push	bc
 	call	vect_fsize
@@ -256,10 +256,11 @@ vect_fresize:
 	or	a
 	sbc	hl, bc
 	ex	de, hl
-	jr	c, vect_fgrow
+	ret	z
+	jr	nc, vect_fgrow
 	
 vect_fshrink:
-	; need to remove de bytes from end
+	; need to remove -de bytes from end
 	push	hl
 	
 	; todo...
@@ -268,9 +269,20 @@ vect_fshrink:
 	ret
 
 vect_fgrow:
-	; need to add -de bytes at end
+	; need to add de bytes at end
+	call	dump.filehandle
 	
 	push	hl
+	
+	push	ix
+	in	a, (map_bankB_port)
+	push	af
+	
+	push	de
+	
+	push	hl
+	pop	ix
+	
 	ld	a, (hl)
 	ld	c, a
 	inc	a
@@ -280,42 +292,332 @@ vect_fgrow:
 	
 	ld	a, (hl)
 	inc	hl
-	push	hl
-	ld	c, (hl)
+	out	(map_bankB_port), a
+	
+	ld	a, (hl)
 	inc	hl
-	ld	h, (hl)
-	ld	l, c
-	
-	push	de
-	call	zp.chunk_size
-	pop	de
-	
 	push	hl
-	ld	hl, 0
-	or	a
-	sbc	hl, de
+	ld	h, (hl)
+	ld	l, a
+	
+	ld	a, (ix + 0)
+	dec	a
+	cp	(ix + 4)
+	
+	push	af
+	jr	nz, vect_fgrow.skip1
+	; turn fptr into foff if adj needed
+	ld	a, (ix + 2)
+	sub	l
+	ld	(ix + 2), a
+	ld	a, (ix + 3)
+	sbc	a, h
+	ld	(ix + 3), a
+vect_fgrow.skip1:
+	
+	; compute realloc params (chunk addr, new size)
+	push	de
+	call	zp.file_node_info
+	pop	bc
+	ex	de, hl
 	add	hl, bc
 	ld	b, h
 	ld	c, l
-	pop	hl
+	ex	de, hl
 	
-	inc	hl
-	inc	hl
+	; do the realloc
 	call	zp.realloc
 	dec	hl
 	dec	hl
 	
-	; todo : handle failure more gracefully...
+	; todo : smarter handling of failure (e.g : try allocating new chunk on another page)
 	call	c, zp.throw_memory
 	
-	pop	de
+	pop	af
+	jr	nz, vect_fgrow.skip2
+	; turn foff back into fptr if adj needed
+	ld	a, (ix + 2)
+	add	a, l
+	ld	(ix + 2), a
+	ld	a, (ix + 3)
+	adc	a, h
+	ld	(ix + 3), a
+vect_fgrow.skip2:
+	
 	ex	de, hl
-	ld	(hl), e
-	inc	hl
+	
+	; update chunk entry in FILE object
+	pop	hl
 	ld	(hl), d
+	dec	hl
+	ld	(hl), e
+	dec	hl
+	
+	ld	a, (ix + 0)
+	dec	a
+	jr	z, vect_fgrow.skip3
+	
+	in	a, (map_bankB_port)
+	push	af
+	ld	b, d
+	ld	c, e
+	inc	bc
+	inc	bc
+	
+	; more than one chunk : update previous NEXT field
+	dec	hl
+	ld	d, (hl)
+	dec	hl
+	ld	e, (hl)
+	dec	hl
+	ld	a, (hl)
+	out	(map_bankB_port), a
+	ex	de, hl
+	inc	hl
+	inc	hl
+	
+	; locate SIZE field
+	ld	d, meta_NEXT
+	call	zp.file_meta_find
+	
+	call	c, zp.throw
+	
+	add	a, 2
+	offset_hl
+	
+	pop	af
+	; update NEXT field
+	ld	(hl), c
+	inc	hl
+	ld	(hl), b
+	inc	hl
+	ld	(hl), a
+	
+	; more than one chunk : update SIZE field
+	ld	a, (ix + 5)
+	ld	e, (ix + 6)
+	ld	d, (ix + 7)
+	out	(map_bankB_port), a
+	ex	de, hl
+	inc	hl
+	inc	hl
+	
+	; locate SIZE field
+	ld	d, meta_SIZE
+	call	zp.file_meta_find
+	
+	call	c, zp.throw
+	
+	add	a, 2
+	offset_hl
+	
+	pop	de
+	
+	; update SIZE field
+	ld	a, e
+	add	a, (hl)
+	ld	(hl), a
+	inc	hl
+	ld	a, d
+	adc	a, (hl)
+	ld	(hl), a
+	
+vect_fgrow.skip3:
+	pop	af
+	out	(map_bankB_port), a
+	pop	ix
 	
 	pop	hl
+	
+	call	dump.filehandle
 	ret
+	
+; 	; need to add de bytes at end
+; 	in	a, (map_bankB_port)
+; 	push	af
+; 	
+; 	push	de
+; 	push	hl
+; 	
+; 	ld	a, (hl)
+; 	dec	a
+; 	inc	hl
+; 	inc	hl
+; 	push	hl
+; 	inc	hl
+; 	inc	hl
+; 	cp	(hl)
+; 	inc	hl
+; 	
+; 	push	af
+; 	ld	c, a
+; 	add	a, a
+; 	add	a, c
+; 	offset_hl
+; 	pop	af
+; 	
+; 	ld	a, (hl)
+; 	inc	hl
+; 	ld	c, (hl)
+; 	inc	hl
+; 	ld	b, (hl)
+; 	
+; 	ex	(sp), hl
+; 	
+; 	push	af
+; 	push	hl
+; 	
+; 	jr	nz, vect_fgrow.fptr_ok
+; 	; fptr update : step 1 -> offset conversion
+; 	push	af
+; 	ld	a, (hl)
+; 	sub	c
+; 	ld	(hl), a
+; 	inc	hl
+; 	ld	a, (hl)
+; 	sbc	a, b
+; 	ld	(hl), a
+; 	pop	af
+; vect_fgrow.fptr_ok:
+; 	
+; 	ld	h, b
+; 	ld	l, c
+; 	push	de
+; 	call	zp.chunk_size
+; 	pop	de
+; 	
+; 	ex	de, hl
+; 	add	hl, bc
+; 	ex	de, hl
+; 	ld	b, d
+; 	ld	c, e
+; 	
+; 	;call	zp.throw
+; 	
+; 	out	(map_bankB_port), a
+; 	
+; 	; reallocate last chunk
+; 	inc	hl
+; 	inc	hl
+; 	call	zp.realloc
+; 	dec	hl
+; 	dec	hl
+; 	
+; 	pop	de
+; 	
+; 	; todo : handle failure more gracefully (try to alloc chunk on another fs page)...
+; 	call	c, zp.throw_memory
+; 	
+; 	pop	af
+; 	jr	nz, vect_fgrow.fptr_ok2
+; 	; fptr update : step 2 -> relocation
+; 	push	hl
+; 	ex	de, hl
+; 	ld	a, (hl)
+; 	add	a, e
+; 	ld	(hl), a
+; 	inc	hl
+; 	ld	a, (hl)
+; 	adc	a, d
+; 	ld	(hl), a
+; 	pop	hl
+; vect_fgrow.fptr_ok2:
+; 	
+; 	pop	de
+; 	
+; 	; update FILE object
+; 	ex	de, hl
+; 	ld	(hl), d
+; 	dec	hl
+; 	ld	(hl), e
+; 	
+; 	; check number of chunks to determine whether there is a NEXT field to update
+; 	ex	(sp), hl
+; 	ld	a, (hl)
+; 	ex	(sp), hl
+; 	
+; 	dec	a
+; 	jr	z, vect_fgrow.done
+; 	
+; 	; locate chunk to update
+; 	dec	hl
+; 	dec	hl
+; 	ld	b, (hl)
+; 	dec	hl
+; 	ld	c, (hl)
+; 	dec	hl
+; 	ld	a, (hl)
+; 	
+; 	out	(map_bankB_port), a
+; 	
+; 	inc	de
+; 	inc	de
+; 	
+; 	call	zp.throw
+; 	
+; 	; update NEXT field of previous chunk
+; 	ld	hl, 2
+; 	add	hl, bc
+; 	push	de
+; 	ld	d, meta_NEXT
+; 	call	zp.file_meta_find
+; 	pop	de
+; 	call	c, zp.throw_memory
+; 	add	a, 2
+; 	offset_hl
+; 	ld	(hl), e
+; 	inc	hl
+; 	ld	(hl), d
+; 	
+; 	pop	af
+; 	pop	hl
+; 	pop	de
+; 	
+; 	push	hl
+; 	push	af
+; 	
+; 	; locate first chunk
+; 	ld	bc, 5
+; 	add	hl, bc
+; 	
+; 	ld	a, (hl)
+; 	inc	hl
+; 	ld	c, (hl)
+; 	inc	hl
+; 	ld	h, (hl)
+; 	ld	l, c
+; 	
+; 	out	(map_bankB_port), a
+; 	
+; 	inc	hl
+; 	inc	hl
+; 	
+; 	; locate SIZE field of first chunk
+; 	push	de
+; 	ld	d, meta_SIZE
+; 	call	zp.file_meta_find
+; 	pop	de
+; 	add	a, 2
+; 	offset_hl
+; 	
+; 	; update SIZE field of first chunk
+; 	ld	a, e
+; 	add	a, (hl)
+; 	ld	(hl), a
+; 	ld	a, d
+; 	adc	a, (hl)
+; 	ld	(hl), a
+; 	
+; 	jr	$+3
+; 	
+; vect_fgrow.done:
+; 	pop	de
+; 	pop	hl
+; 	
+; 	pop	af
+; 	out	(map_bankB_port), a
+; 	
+; 	ret
 
 ; brief : set the file data pointer to a given position
 ; input : hl -> pointer to FILE object, de -> offset in file
@@ -656,21 +958,22 @@ vect_fgetc.unsafe:
 ; output : none
 ; destroys : a, de
 vect_fputc:
+	push	bc
+	ld	b, a
+	
 	call	vect_feof
 	jr	nc, vect_fputc.unsafe
 	; make room for the byte
 	
-	; weird huh? that's the price of short-circuiting...
-	; this will make the file grow by one byte
 	; (todo : make more room to reduce the number of grow
 	; in case caller is too stupid to reserve memory himself...)
-	ld	de, -16
+	push	bc
+	ld	de, 16
 	call	vect_fgrow
+	pop	bc
 	
 vect_fputc.unsafe:
-	push	bc
 	
-	ld	b, a
 	in	a, (map_bankB_port)
 	push	af
 	
