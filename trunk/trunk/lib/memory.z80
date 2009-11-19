@@ -202,71 +202,20 @@ vect_meminfo.sizefix:
 	sbc	hl, de
 	ret
 
-; _dump_de:
-; 	ret
-; 	push	af
-; 	push	de
-; 	push	hl
-; 	push	bc
-; 	ex	de, hl
-; 	ld	de, os.scrap
-; 	call	zp.htoa_word
-; 	ld	a, '@'
-; 	ld	(de), a
-; 	inc	de
-; 	ld	hl, 8
-; 	add	hl, sp
-; 	deref_hl
-; 	dec	hl
-; 	dec	hl
-; 	dec	hl
-; 	call	zp.htoa_word
-; 	xor	a
-; 	ld	(de), a
-; 	ld	hl, os.scrap
-; 	call	zp.cputs
-; 	call	zp.cdisp
-; 	
-; 	pop	bc
-; 	pop	hl
-; 	pop	de
-; 	pop	af
-; 	ret
-; 	
-; _dump_hl:
-; 	ret
-; 	push	af
-; 	push	de
-; 	push	hl
-; 	push	bc
-; 	
-; 	ld	de, os.scrap
-; 	call	zp.htoa_word
-; 	ld	a, '@'
-; 	ld	(de), a
-; 	inc	de
-; 	ld	hl, 8
-; 	add	hl, sp
-; 	deref_hl
-; 	dec	hl
-; 	dec	hl
-; 	dec	hl
-; 	call	zp.htoa_word
-; 	xor	a
-; 	ld	(de), a
-; 	ld	hl, os.scrap
-; 	call	zp.cputs
-; 	call	zp.cdisp
-; 	
-; 	pop	bc
-; 	pop	hl
-; 	pop	de
-; 	pop	af
-; 	ret
+; input : hl -> block start (pointer to next)
+; output : de -> block data (hl + 2), hl -> block size, CF set if last block
+; destroys : de
+vect_block_size:
+	push	iy
+	ld	iy, os.malloc.start
+	call	vect_block_size_iy
+	pop	iy
+	ret
 
 ; input : hl -> block start (pointer to next), iy -> malloc data
 ; output : de -> block data (hl + 2), hl -> block size, CF set if last block
-vect_block_size:
+; destroys : de
+vect_block_size_iy:
 	ld	d, (hl)
 	inc	hl
 	ld	e, (hl)
@@ -455,7 +404,7 @@ vect_malloc.merge_upd:
 ; Check that the block is large enough
 vect_malloc.allocate:
 	push	hl
-	call	vect_block_size
+	call	vect_block_size_iy
 	or	a
 	sbc	hl, bc
 	jr	nc, $+4
@@ -657,7 +606,7 @@ vect_realloc_iy:
 ; 	scf
 ; 	ret	z
 	
-	call	vect_block_size
+	call	vect_block_size_iy
 	
 	or	a
 	sbc	hl, bc
@@ -721,7 +670,7 @@ vect_realloc_iy.grow:
 	; next block is free : see if merging gives sufficient room
 	
 	push	de
-	call	vect_block_size
+	call	vect_block_size_iy
 	pop	de
 	
 	ex	de, hl

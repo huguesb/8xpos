@@ -501,6 +501,8 @@ zp.malloc_placed_iy:	.export	zp.malloc_placed_iy
 	jp	vect_malloc_placed_iy
 zp.free_iy:				.export	zp.free_iy
 	jp	vect_free_iy
+zp.realloc_iy:			.export	zp.realloc_iy
+	jp	vect_realloc_iy
 
 zp.memswap:				.export	zp.memswap
 	jp	vect_memswap
@@ -763,6 +765,17 @@ zp.fseek:				.export	zp.fseek
 	jp	vect_fseek
 zp.ftell:				.export	zp.ftell
 	jp	vect_ftell
+zp.fresize:				.export	zp.fresize
+	jp	vect_fresize
+zp.fgrow:				.export	zp.fgrow
+	jp	vect_fgrow
+zp.fshrink:				.export	zp.fshrink
+	jp	vect_fshrink
+
+zp.block_size:			.export	zp.block_size
+	jp	vect_block_size
+zp.block_size_iy:		.export	zp.block_size_iy
+	jp	vect_block_size_iy
 
 ;zp.expr_eval:			.export	zp.expr_eval
 ;	jp	vect_expr_eval
