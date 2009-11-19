@@ -40,19 +40,623 @@
 .org	prgm.start - 2
 	.db magic.executable, 0
 	
+
+vat.test:
+	; load VAT
+	ld	hl, vat_dump
+	call	vect_vat_load
 	
-fileio.test:
-	or	a
+	call	dump.vat
+	
+	; do something with that VAT
+	
+	ld	hl, vat.test.dummyappv
+	call	vect_vat_find
+	ld	hl, vat.test.dummyappv
+	ld	bc, $0200
+	call	c, vect_vat_create
+	
+	ld	hl, vat.test.dummyprog
+	call	vect_vat_find
+	ld	hl, vat.test.dummyprog
+	ld	bc, $0200
+	call	c, vect_vat_create
+	
+	call	dump.vat
+	
+	; save it back
+	ld	hl, vat_dump
+	jp	vect_vat_store
+
+
+vat.test.dummyappv:
+	.db tAppvar, "dummyappv", 0
+vat.test.dummyprog:
+	.db tLockedProg, "dummyprog", 0
+
+; VAT dump struct :
+;
+;	* word : number of entries
+;	* list of entries	
+;
+;	entry {
+;		byte : type (as in VAT entry)
+;		word : size of data
+;		size bytes : data
+;		byte : name length
+;		nl bytes : name
+;	}
+
+; brief : fill VAT from a file and copy variable data to heap
+; input : hl -> filename
+; output : CF set if file not found
+; destroys : a, bc, de, hl
+vect_vat_load:
+	push	hl
+	ld	hl, $BFFF
+	ld	(vat_start), hl
+	ld	(vat_end), hl
+	ld	hl, 0
+	ld	(vat_FILE), hl
+	pop	hl
+	
+	call	zp.fopen
+	ld	(vat_FILE), hl
+	ret	c
+	
+	; skip size bytes
+	ld	de, 2
+	call	zp.fseek
+	
+	; get number of entries
+	call	zp.fgetc
+	ld	c, a
+	call	zp.fgetc
+	ld	b, a
+	
+	or	c
 	ret	z
-	dec	a
-	ret	z
+	
+vect_vat_load.loop:
+	call	zp.throw
+	push	bc
+	push	hl
+	
+	; get variable type
+	call	zp.fgetc
+	
+	; start writing VAT entry
+	ld	hl, (vat_end)
+	
+	ld	(hl), a
+	dec	hl
+	xor	a
+	ld	(hl), a
+	dec	hl
+	ld	(hl), a
+	dec	hl
+	
+	ex	(sp), hl
+	
+	; get data size
+	call	zp.fgetc
+	ld	c, a
+	call	zp.fgetc
+	ld	b, a
+	
+	ex	(sp), hl
+	
+	; alloc variable space
+	push	hl
+	call	zp.malloc
+	pop	de
+	ex	de, hl
+	
+	; write data address in VAT entry
+	ld	(hl), e
+	dec	hl
+	ld	(hl), d
+	dec	hl
+	ld	(hl), 0
+	dec	hl
+	
+	ex	(sp), hl
+	
+	; read data and write it into allocated space
+	call	zp.fread
+	
+	; get name length and write it into VAT entry
+	call	zp.fgetc
+	cp	9
+	jr	c, $+4
+	ld	a, 8
+	
+	ld	b, a
+	ex	(sp), hl
+	ld	(hl), a
+	dec	hl
+	ex	(sp), hl
+	
+	; get name and write it into VAT entry
+	call	zp.fgetc
+	ex	(sp), hl
+	ld	(hl), a
+	dec	hl
+	ex	(sp), hl
+	djnz	$-7
+	
+	; update VAT end ptr
+	ex	(sp), hl
+	ld	(vat_end), hl
+	
+	pop	hl
+	pop	bc
+	dec	bc
+	ld	a, b
+	or	c
+	jr	nz, vect_vat_load.loop
+	
+vect_vat_store.cb:
+	ret
+
+; brief : store VAT data into a file and release VAT memory
+; input : hl -> filename
+; output : none
+; destroys : a, bc, de, hl
+vect_vat_store:
+	ld	de, (vat_FILE)
+	ld	a, d
+	or	e
+	jr	nz, vect_vat_store.exists
 	
 	push	hl
 	
-	call	zp.fopen
-	ret	c
-	ld	(fptr), hl
+	; create the file...
+	ld	bc, 16
+	ld	ix, vect_vat_store.cb
+	call	zp.file_create
 	
+	pop	hl
+	
+	; open it
+	call	zp.fopen
+	ld	(vat_FILE), hl
+	
+	; dummy : size
+	xor	a
+	call	zp.fputc
+	xor	a
+	call	zp.fputc
+	
+	; dummy : number of entries
+	xor	a
+	call	zp.fputc
+	xor	a
+	call	zp.fputc
+	
+	jr	$+8
+vect_vat_store.exists:
+	ld	de, 4
+	call	zp.fseek
+	
+	ld	bc, 0
+	ld	hl, (vat_start)
+	
+vect_vat_store.loop:
+	; check for VAT end
+	ld	de, (vat_end)
+	cmp_hlde
+	jr	z, vect_vat_store.end
+	jr	c, vect_vat_store.end
+	
+	;call	zp.throw
+	
+	push	bc
+	
+	; get type
+	ld	b, (hl)
+	dec	hl
+	
+	; skip T2 and Version fields
+	dec	hl
+	dec	hl
+	
+	; get data ptr
+	ld	e, (hl)
+	dec	hl
+	ld	d, (hl)
+	dec	hl
+	
+	; check for archived var
+	ld	a, (hl)
+	dec	hl
+	or	a
+	jr	z, vect_vat_store.noarch
+	
+	; skip archived...
+	ld	b, (hl)
+	dec	hl
+	
+	dec	hl
+	djnz	$-1
+	
+	pop	bc
+	jr	vect_vat_store.loop
+	
+vect_vat_store.noarch:
+	; put FILE ptr into top stack
+	push	hl
+	ld	hl, (vat_FILE)
+	
+	; reserve some space
+; 	push	bc
+; 	push	de
+; 	ld	de, 12
+; 	call	zp.fgrow
+; 	pop	de
+; 	pop	bc
+	
+	; write type
+	ld	a, b
+	push	de
+	call	zp.fputc
+	pop	de
+	ex	(sp), hl
+	
+	; get data size
+	push	hl
+	ex	de, hl
+	dec	hl
+	dec	hl
+	call	zp.block_size
+	ld	b, h
+	ld	c, l
+	pop	hl
+	
+	; write data
+	ex	(sp), hl
+	
+	push	de
+	push	de
+	; write size
+	ld	a, c
+	call	zp.fputc
+	ld	a, b
+	call	zp.fputc
+	
+	pop	de
+	call	zp.fwrite
+	pop	de
+	
+	ex	(sp), hl
+	
+	;call	zp.throw
+	
+	; release variable memory
+	push	hl
+	ex	de, hl
+	call	zp.free
+	pop	hl
+	
+	; get name length
+	ld	a, (hl)
+	dec	hl
+	
+	; bounds checking
+	cp	9
+	jr	c, $+4
+	ld	a, 8
+	
+	; write name length
+	ld	b, a
+	ex	(sp), hl
+	call	zp.fputc
+	ex	(sp), hl
+	
+	; copy name of entry
+	ld	a, (hl)
+	dec	hl
+	ex	(sp), hl
+	call	zp.fputc
+	ex	(sp), hl
+	djnz	$-7
+	
+	; discard FILE ptr for now
+	pop	af
+	
+	pop	bc
+	inc	bc
+	jr	vect_vat_store.loop
+	
+vect_vat_store.end:
+	ld	hl, (vat_FILE)
+	
+	push	bc
+	ld	de, 2
+	call	zp.fseek
+	pop	bc
+	
+	; write number of entries
+	ld	a, c
+	call	zp.fputc
+	ld	a, b
+	call	zp.fputc
+	
+	jp	zp.fclose
+
+; brief : find a variable in VAT
+; input : hl -> variable id (type + name)
+; output : CF set on failure, a -> type | flags, hl -> VAT entry, b:de -> data ptr
+; destroys : a, bc, de, hl
+vect_vat_find:
+	push	ix
+	
+	inc	hl
+	push	hl
+	pop	ix
+	
+	ld	hl, (vat_start)
+	ld	de, (vat_end)
+	ld	bc, -6
+	
+vect_vat_find.loop:
+	; check for VAT end
+	ex	de, hl
+	cmp_hlde
+	ex	de, hl
+	ccf
+	jr	nc, $+5
+	pop	ix
+	ret
+	
+	; check for matching var type
+	ld	a, (ix - 1)
+	cp	(hl)
+	jr	nz, vect_vat_find.invalid
+	
+	push	hl
+	
+	; move to name and get length
+	add	hl, bc
+	ld	b, (hl)
+	
+	push	de
+	
+	; get back variable id
+	push	ix
+	pop	de
+	
+	; check for matching name
+vect_vat_find.cmp:
+	ld	a, (de)
+	inc	de
+	dec	hl
+	cp	(hl)
+	jr	nz, vect_vat_find.skip
+	djnz	vect_vat_find.cmp
+	
+	pop	de
+	pop	hl
+	
+	push hl
+	
+	; get type byte
+	ld	a, (hl)
+	
+	; skip T2 and Version
+	dec	hl
+	dec	hl
+	
+	; get data ptr
+	dec	hl
+	ld	e, (hl)
+	dec	hl
+	ld	d, (hl)
+	dec	hl
+	ld	b, (hl)
+	
+	pop	hl
+	
+	; mask type byte and clear carry
+	and	$1F
+	ret
+	
+vect_vat_find.skip:
+	pop	de
+	pop	hl
+	
+	; restore name offset
+	ld	bc, -6
+	
+	jr	$+3
+	
+vect_vat_find.invalid:
+	add	hl, bc
+	
+	; skip name
+	ld	a, (hl)
+	ld	a, l
+	sub	(hl)
+	ld	l, a
+	jr	nc, vect_vat_find.loop
+	dec	h
+	jr	vect_vat_find.loop
+
+; brief : create a variable in VAT and allocate memory
+; input : hl -> variable id (type + name), bc -> size
+; output : hl -> VAT entry, de -> data ptr
+; destroys : a, bc
+vect_vat_create:
+	ld	de, (vat_end)
+	
+	push	de
+	
+	; write type byte in VAT entry
+	ld	a, (hl)
+	inc	hl
+	ld	(de), a
+	dec	de
+	
+	ex	de, hl
+	
+	; write T2 and Version bytes
+	xor	a
+	ld	(hl), a
+	dec	hl
+	ld	(hl), a
+	dec	hl
+	
+	push	de
+	push	hl
+	
+	; alloc memory
+	inc	bc
+	inc	bc
+	call	zp.malloc
+	
+	; minimalistic error handling
+	call	c, zp.throw_memory
+	
+	; init size bytes
+	dec	bc
+	dec	bc
+	ld	(hl), c
+	inc	hl
+	ld	(hl), b
+	dec	hl
+	
+	ex	de, hl
+	pop	hl
+	
+	; write data address in VAT entry
+	ld	(hl), e
+	dec	hl
+	ld	(hl), d
+	dec	hl
+	ld	(hl), 0
+	dec	hl
+	
+	;pop	de
+	;; ex (sp), de
+	ex	de, hl
+	ex	(sp), hl
+; 	ex	de, hl
+; 	
+; 	ex	de, hl
+	
+	; compute name length
+	call	zp.strlen
+	
+	;write name length
+	ld	a, c
+	
+	; size check
+	cp	9
+	jr	c, $+5
+	ld	a, 8
+	ld	c, a
+	
+	ld	(de), a
+	dec	de
+	
+	ld	b, c
+	
+	; write name to VAT entry
+	ld	a, (hl)
+	inc	hl
+	ld	(de), a
+	dec	de
+	djnz	$-4
+	
+	ld	(vat_end), de
+	
+	; get back outputs
+	pop	de
+	pop	hl
+	ret
+
+; brief : removes a variable from VAT and release related memory
+; input : hl -> VAT entry, b:de -> data ptr
+; output : none
+; destroys : a, bc, de, hl
+vect_vat_del:
+	
+	ret
+
+.echo "\nVAT : "
+.echo $-vect_vat_load
+.echo " bytes.\n"
+
+vat_start:
+	.dw	0
+vat_end:
+	.dw	0
+vat_FILE:
+	.dw	0
+
+vat_dump:
+	.db "compat-vat", 0
+
+dump.vat:
+	ld	hl, (vat_start)
+	
+dump.vat.loop:
+	ld	de, (vat_end)
+	cmp_hlde
+	ret	z
+	ret	c
+	
+	ld	b, 6
+	ld	de, os.scrap
+	
+	call	zp.memdump
+	dec	hl
+	djnz	$-4
+	
+	ld	a, ':'
+	ld	(de), a
+	inc	de
+	
+	ld	b, (hl)
+	dec	hl
+	
+	ld	a, (hl)
+	ld	(de), a
+	inc	de
+	dec	hl
+	djnz	$-4
+	
+	xor	a
+	ld	(de), a
+	
+	push	hl
+	ld	hl, os.scrap
+	call	zp.cputs
+	call	zp.cdisp
+	call	zp.getch
+	pop	hl
+	jr	dump.vat.loop
+
+; fileio.test:
+; 	or	a
+; 	ret	z
+; 	dec	a
+; 	ret	z
+; 	
+; 	push	hl
+; 	
+; 	call	zp.fopen
+; 	ret	c
+; 	ld	(fptr), hl
+; 	
+; 	; 02, 82:84B1, 00, 82:849D, 84:8010
+; 	; 02, 84:84DA, 01, 82:849D, 84:8010
+; 	; 02, 82:84B1, 00, 82:849D, 84:8010
+; 	
+; 	; 02, 82:84B1, 00, 82:849D, 84:800E
+; 	
+; 	call	dump.filehandle
+; 	
 ; 	call	vect_fsize
 ; 	push	hl
 ; 	ld	de, os.scrap
@@ -66,72 +670,84 @@ fileio.test:
 ; 	call	zp.cdisp
 ; 	call	zp.getch
 ; 	pop	hl
+; ; 	
+; ; 	call	dump.filehandle
 ; 	
-; 	call	dump.filehandle
-	
-	ex	(sp), hl
-	
-	call	zp.strnext
-	ld	b, 4
-	ex	de, hl
-	call	zp.atoh
+; 	ex	(sp), hl
+; 	
+; 	call	zp.strnext
+; 	ld	b, 4
+; 	ex	de, hl
+; 	call	zp.atoh
+; ; 	call	dump_hl
+; 	
+; 	ex	de, hl
+; 	pop	hl
+; 	
+; 	call	vect_fseek
+; 	
+; 	;call	dump.filehandle
+; 	
+; ; 	ld	de, 0
+; ; 	call	vect_seek
+; ; 	
+; 	
+; dump.loop:
+; 	call	vect_ftell
+; 	ex	de, hl
 ; 	call	dump_hl
-	
-	ex	de, hl
-	pop	hl
-	
-	call	vect_fseek
-	
-	;call	dump.filehandle
-	
-; 	ld	de, 0
-; 	call	vect_seek
+; 	ex	de, hl
 ; 	
-	
-dump.loop:
-	call	vect_ftell
-	ex	de, hl
-	call	dump_hl
-	ex	de, hl
-	
-; 	call	dump.filehandle
-	
-	ld	de, os.scrap
-	ld	bc, $50
-	call	vect_fread
-	
-	push	hl
-	ld	hl, os.scrap
-	ld	de, os.console
-	ld	b, $50
-	call	zp.memdump
-	inc	hl
-	djnz	$-4
-	call	zp.cdisp
-	call	zp.getch
-	pop	hl
-	
-; 	call	dump.filehandle
-	
-	call	vect_feof
-	jr	nc, dump.loop
-	
-	call	vect_ftell
-	ex	de, hl
-	call	dump_hl
-	ex	de, hl
-	
-; 	ld	a, $99
-; 	call	vect_fputc
-; 	ld	a, $11
-; 	call	vect_fputc
+; ; 	call	dump.filehandle
 ; 	
-	ld	hl, (fptr)
-	call	zp.fclose
-	ret
-
-fptr:
-	.dw	0
+; 	ld	de, os.scrap
+; 	ld	bc, $50
+; 	call	vect_fread
+; 	
+; 	push	hl
+; 	ld	hl, os.scrap
+; 	ld	de, os.console
+; 	ld	b, $50
+; 	call	zp.memdump
+; 	inc	hl
+; 	djnz	$-4
+; 	call	zp.cdisp
+; 	call	zp.getch
+; 	pop	hl
+; 	
+; ; 	call	dump.filehandle
+; 	
+; 	call	vect_feof
+; 	jr	nc, dump.loop
+; 	
+; 	call	vect_ftell
+; 	ex	de, hl
+; 	call	dump_hl
+; 	ex	de, hl
+; 	
+; ; 	call	vect_fsize
+; ; 	inc	bc
+; ; 	inc	bc
+; ; 	call	vect_fresize
+; 	
+; 	ld	de, str
+; 	ld	bc, 11
+; 	call	vect_fwrite
+; 	
+; ; 	ld	a, $99
+; ; 	call	vect_fputc
+; ; 	ld	a, $11
+; ; 	call	vect_fputc
+; ; 	
+; 	ld	hl, (fptr)
+; 	call	zp.fclose
+; 	ret
+; 
+; str:
+; 	.db "successful", 0
+; 
+; fptr:
+; 	.dw	0
 
 ; 	; first test malloc/free/realloc
 ; malloc.test:
@@ -185,108 +801,54 @@ dump_hl:
 	pop	af
 	ret
 
-dump.pool:
-	ld	hl, (os.malloc.mp_start)
-	
-dump.pool.loop:
-	call	zp.cscroll
-	push	hl
-	ld	hl, $0800
-	ld	(os.curpos.col), hl
-	pop	hl
-	
-	ld	d, (hl)
-	inc	hl
-	ld	e, (hl)
-	inc	hl
-	
-	ld	a, $80
-	and	d
-	rlca
-	add	a, '0'
-	set	7, d
-	
-	push	de
-	
-	call	zp.cputch
-	ld	a, ':'
-	call	zp.cputch
-	
-	ex	de, hl
-	or	a
-	sbc	hl, de
-	
-	push	af
-	
-	ld	de, os.scrap
-	call	zp.htoa_word
-	xor	a
-	ld	(de), a
-	ld	hl, os.scrap
-	call	zp.cprint
-	
-	pop	af
-	pop	hl
-	jr	z, $+4
-	jr	nc, dump.pool.loop
-	
-	call zp.cdisp
-	jp	zp.getch
+; dump.pool:
+; 	ld	hl, (os.malloc.mp_start)
+; 	
+; dump.pool.loop:
+; 	call	zp.cscroll
+; 	push	hl
+; 	ld	hl, $0800
+; 	ld	(os.curpos.col), hl
+; 	pop	hl
+; 	
+; 	ld	d, (hl)
+; 	inc	hl
+; 	ld	e, (hl)
+; 	inc	hl
+; 	
+; 	ld	a, $80
+; 	and	d
+; 	rlca
+; 	add	a, '0'
+; 	set	7, d
+; 	
+; 	push	de
+; 	
+; 	call	zp.cputch
+; 	ld	a, ':'
+; 	call	zp.cputch
+; 	
+; 	ex	de, hl
+; 	or	a
+; 	sbc	hl, de
+; 	
+; 	push	af
+; 	
+; 	ld	de, os.scrap
+; 	call	zp.htoa_word
+; 	xor	a
+; 	ld	(de), a
+; 	ld	hl, os.scrap
+; 	call	zp.cprint
+; 	
+; 	pop	af
+; 	pop	hl
+; 	jr	z, $+4
+; 	jr	nc, dump.pool.loop
+; 	
+; 	call zp.cdisp
+; 	jp	zp.getch
 
-vat.test:
-	call	load
-	ret	c
-	call	vect_fsize
-	push	hl
-	call	zp.malloc
-	ld	(vat_loc), hl
-	ex	de, hl
-	pop	hl
-	call	vect_fread
-	
-	; do something with that VAT
-	
-	
-	; save it back to file...
-	ld	bc, 
-	push	bc
-	call	vect_fresize
-	ld	de, 0
-	call	vect_fseek
-	ld	de, (vat_loc)
-	pop	bc
-	call	vect_fwrite
-	jp	save
-
-load:
-	ld	hl, vat_dump
-	call	zp.fopen
-	ld	(vat_FILE), hl
-	ret	nc
-	ld	hl, vat_dump
-	ld	bc, 
-	call	zp.file_create
-	jr	nc, load
-	ret
-
-save:
-	ld	hl, (vat_FILE)
-	ld	bc, 
-	call	vect_fresize
-	
-	ld	de, 
-	call	vect_fwrite
-	jp	zp.fclose
-
-vat_loc:
-	.dw 0
-
-vat_FILE:
-	.dw	0
-
-vat_dump:
-	.db "compat-vat", 0
-
-#include "lib/stdfileio.z80"
+;#include "lib/stdfileio.z80"
 
 .end
