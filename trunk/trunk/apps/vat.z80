@@ -118,7 +118,7 @@ vect_vat_load:
 	ret	z
 	
 vect_vat_load.loop:
-	call	zp.throw
+	;call	zp.throw
 	push	bc
 	push	hl
 	
@@ -175,18 +175,16 @@ vect_vat_load.loop:
 	ex	(sp), hl
 	ld	(hl), a
 	dec	hl
-	ex	(sp), hl
 	
 	; get name and write it into VAT entry
+	ex	(sp), hl
 	call	zp.fgetc
 	ex	(sp), hl
 	ld	(hl), a
 	dec	hl
-	ex	(sp), hl
 	djnz	$-7
 	
 	; update VAT end ptr
-	ex	(sp), hl
 	ld	(vat_end), hl
 	
 	pop	hl
@@ -200,7 +198,7 @@ vect_vat_store.cb:
 	ret
 
 ; brief : store VAT data into a file and release VAT memory
-; input : hl -> filename
+; input : hl -> filename to use if no VAT file open
 ; output : none
 ; destroys : a, bc, de, hl
 vect_vat_store:
@@ -234,11 +232,14 @@ vect_vat_store:
 	xor	a
 	call	zp.fputc
 	
-	jr	$+8
+	jr	vect_vat_store.open
+	
 vect_vat_store.exists:
+	ex	de, hl
 	ld	de, 4
 	call	zp.fseek
 	
+vect_vat_store.open:
 	ld	bc, 0
 	ld	hl, (vat_start)
 	
@@ -313,7 +314,6 @@ vect_vat_store.noarch:
 	ld	c, l
 	pop	hl
 	
-	; write data
 	ex	(sp), hl
 	
 	push	de
@@ -324,6 +324,7 @@ vect_vat_store.noarch:
 	ld	a, b
 	call	zp.fputc
 	
+	; write data
 	pop	de
 	call	zp.fwrite
 	pop	de
@@ -382,6 +383,10 @@ vect_vat_store.end:
 	ld	a, b
 	call	zp.fputc
 	
+	; clear variable
+	ld	de, 0
+	ld	(vat_FILE), de
+	
 	jp	zp.fclose
 
 ; brief : find a variable in VAT
@@ -389,11 +394,9 @@ vect_vat_store.end:
 ; output : CF set on failure, a -> type | flags, hl -> VAT entry, b:de -> data ptr
 ; destroys : a, bc, de, hl
 vect_vat_find:
-	push	ix
-	
-	inc	hl
+	; save ix and load hl into ix
 	push	hl
-	pop	ix
+	ex	(sp), ix
 	
 	ld	hl, (vat_start)
 	ld	de, (vat_end)
@@ -401,16 +404,17 @@ vect_vat_find:
 	
 vect_vat_find.loop:
 	; check for VAT end
-	ex	de, hl
 	cmp_hlde
-	ex	de, hl
-	ccf
-	jr	nc, $+5
+	jr	z, $+4
+	jr	nc, $+6
 	pop	ix
+	scf
 	ret
 	
+	;call	zp.throw
+	
 	; check for matching var type
-	ld	a, (ix - 1)
+	ld	a, (ix)
 	cp	(hl)
 	jr	nz, vect_vat_find.invalid
 	
@@ -425,6 +429,7 @@ vect_vat_find.loop:
 	; get back variable id
 	push	ix
 	pop	de
+	inc	de
 	
 	; check for matching name
 vect_vat_find.cmp:
@@ -442,6 +447,8 @@ vect_vat_find.cmp:
 	
 	; get type byte
 	ld	a, (hl)
+	; mask type byte and clear carry
+	and	$1F
 	
 	; skip T2 and Version
 	dec	hl
@@ -457,26 +464,34 @@ vect_vat_find.cmp:
 	
 	pop	hl
 	
-	; mask type byte and clear carry
-	and	$1F
+	;call	zp.throw
+	pop	ix
+	;or	a
 	ret
 	
 vect_vat_find.skip:
+	;call	zp.throw
 	pop	de
 	pop	hl
 	
 	; restore name offset
 	ld	bc, -6
 	
-	jr	$+3
+	;jr	vect_vat_find.next
 	
 vect_vat_find.invalid:
 	add	hl, bc
-	
+vect_vat_find.next:
 	; skip name
-	ld	a, (hl)
+; 	ld	b, (hl)
+; 	dec	hl
+; 	
+; 	dec	hl
+; 	djnz	$-1
+; 	call	zp.throw
+	scf
 	ld	a, l
-	sub	(hl)
+	sbc	a, (hl)
 	ld	l, a
 	jr	nc, vect_vat_find.loop
 	dec	h
@@ -487,6 +502,7 @@ vect_vat_find.invalid:
 ; output : hl -> VAT entry, de -> data ptr
 ; destroys : a, bc
 vect_vat_create:
+	;call	zp.throw
 	ld	de, (vat_end)
 	
 	push	de
@@ -554,12 +570,11 @@ vect_vat_create:
 	cp	9
 	jr	c, $+5
 	ld	a, 8
-	ld	c, a
 	
 	ld	(de), a
 	dec	de
 	
-	ld	b, c
+	ld	b, a
 	
 	; write name to VAT entry
 	ld	a, (hl)
