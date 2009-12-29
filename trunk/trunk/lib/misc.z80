@@ -156,7 +156,7 @@ vect_os_str:
 	ld	hl, os.version
 	jp	zp.strcpy
 
-; brief determines the battery level
+; brief : determines the battery level
 ; input : none
 ; output : a -> battery level (0 : good, 1 : low)
 ; destroys : none
@@ -164,6 +164,61 @@ vect_battery_level:
 	in	a, (hw_port)
 	and	1
 	xor	1
+	ret
+
+; brief : determines whether a RAM page is available
+; input : a page
+; output : C set if unavailable
+; destroyed : none
+vect_ram_page_available:
+	push	af
+	
+	push	bc
+	
+	; bounds a (in 0-7)
+	and	7
+	
+	; compute 2^a
+	ld	b, a
+	ld	a, 1
+	jr	z, $+5
+	add	a, a
+	djnz	$-1
+	
+	; bitmask test
+	ld	c, a
+	ld	a, (os.rampages)
+	and	c
+	
+	pop	bc
+	
+	jr	z, vect_ram_page_available.fail
+	
+	; success
+	pop	af
+	or	a
+	ret
+
+vect_ram_page_available.fail:
+	; failure
+	pop	af
+	scf
+	ret
+
+; brief : return number of available ram pages
+vect_ram_page_count:
+	push	bc
+	ld	a, (os.rampages)
+	
+	ld	bc, $0800
+	
+	rlca
+	jr	nc, $+3
+	inc	c
+	djnz	$-4
+	
+	ld	a, c
+	pop	bc
 	ret
 
 ; brief : dump memory into hex string

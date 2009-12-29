@@ -1,4 +1,6 @@
 os.version       .EQU  $0064
+os.firstboot     .EQU  $0077
+os.rampages      .EQU  $0078
 zp.deref_hl_alt  .EQU  $0003
 zp.call_ix       .EQU  $0016
 zp.call_hl       .EQU  $001f
@@ -221,4 +223,6 @@ zp.fgrow         .EQU  $0760
 zp.fshrink       .EQU  $0763
 zp.block_size    .EQU  $0766
 zp.block_size_iy .EQU  $0769
-zp.end           .EQU  $076c
+zp.ram_page_count .EQU  $076c
+zp.ram_page_available .EQU  $076f
+zp.end           .EQU  $0772

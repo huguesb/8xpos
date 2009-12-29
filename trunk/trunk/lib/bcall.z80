@@ -306,7 +306,7 @@ vect_flashpage_adjust:
 	ret
 
 ; hl address of method on restricted page
-restricted_syscall:
+protsyscall:
 	; make room to save page
 	push	hl
 	
@@ -351,7 +351,7 @@ restricted_syscall:
 	
 	ret
 
-restricted_syscall_raw:
+protsyscall_raw:
 	; switch to page 1C (which may be 3C or 7C depending on model...)
 	; hence the need for a proxy method
 	push	af
@@ -362,4 +362,23 @@ restricted_syscall_raw:
 	pop	af
 	
 	jp	(hl)
+
+
+
+; brief : write a single byte to flash
+; input : ahl -> destination, d -> byte
+; output : none
+; destorys : a, bc, de, hl
+vect_flash_write_byte:
+	ld	(os.flashwrite.dest), hl
+	ld	(os.flashwrite.dest + 2), a
+	xor	a
+	ld	(os.flashwrite.source + 2), a
+	inc	a
+	ld	(os.flashwrite.size), a
+	; store data in very last byte of os.scrap (begin is occupied by flashwrite code backup)
+	ld	hl, os.scrap + 255
+	ld	(hl), d
+	ld	(os.flashwrite.source), hl
+	jp	vect_flashwrite
 

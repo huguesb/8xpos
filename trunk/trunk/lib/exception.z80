@@ -203,32 +203,11 @@ _throw:
 	pop	af
 	
 	push	af
-	push	bc
-	push	de
-	push	hl
 	
-	; dump some memory that is about to be used to page 5 to restore it
-	; if user chosses to resume program execution
-	in	a, (map_bankA_port)
-	push	af
-	ld	a, $85
-	out	(map_bankA_port), a
+	ld	a, (os.rampages)
+	inc	a
+	call	z, _throw.save
 	
-	ld	hl, os.sysram
-	ld	de, $4000
-	ld	bc, os.command - os.sysram
-	ldir
-	
-	; oh and take a screenshot as well to restore it...
-	ex	de, hl
-	call	zp.screenshot
-	
-	pop	af
-	out	(map_bankA_port), a
-	
-	pop	hl
-	pop	de
-	pop	bc
 	pop	af
 	
 	; display regdump
@@ -407,8 +386,6 @@ _throw_disp:
 	ld	c, 24
 	call	zp.div_hl_c
 	
-	;add	a, a
-	;add	a, a
 	ld	c, a
 	
 	ld	a, l
@@ -434,37 +411,9 @@ _throw_return:
 	;ld	a, $FF
 	;out	(key_port), a
 	
-	; todo : save/restore screen? console? ... [using page 5 presumably]
-	
-	in	a, (map_bankA_port)
-	push	af
-	ld	a, $85
-	out	(map_bankA_port), a
-	
-	; restore previously saved sysram
-	ld	hl, $4000
-	ld	de, os.sysram
-	ld	bc, os.command - os.sysram
-	ldir
-	
-	ex	de, hl
-	; restore LCD memory from screenshot
-	; save vbuf addr
-	ld	hl, (os.vbuf_addr)
-	
-	; pretend our screenshot is vbuf
-	ex	de, hl
-	ld	(os.vbuf_addr), hl
-	
-	; restore LCD memory
-	call	zp.vbufdisp
-	
-	; restore vbuf addr
-	ex	de, hl
-	ld	(os.vbuf_addr), hl
-	
-	pop	af
-	out	(map_bankA_port), a
+	ld	a, (os.rampages)
+	inc	a
+	call	z, _throw.restore
 	
 	; restore regs
 	pop	hl
@@ -534,6 +483,66 @@ _throw_hexedit:
 	di
 	call	zp.cdisp
 	jp	_throw_update
+
+_throw.save:
+	push	bc
+	push	de
+	push	hl
+	; dump some memory that is about to be used to page 5 to restore it
+	; if user chosses to resume program execution
+	in	a, (map_bankA_port)
+	push	af
+	ld	a, $85
+	out	(map_bankA_port), a
+	
+	ld	hl, os.sysram
+	ld	de, $4000
+	ld	bc, os.command - os.sysram
+	ldir
+	
+	; oh and take a screenshot as well to restore it...
+	ex	de, hl
+	call	zp.screenshot
+	
+	pop	af
+	out	(map_bankA_port), a
+	
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+_throw.restore:
+	in	a, (map_bankA_port)
+	push	af
+	ld	a, $85
+	out	(map_bankA_port), a
+	
+	; restore previously saved sysram
+	ld	hl, $4000
+	ld	de, os.sysram
+	ld	bc, os.command - os.sysram
+	ldir
+	
+	ex	de, hl
+	; restore LCD memory from screenshot
+	; save vbuf addr
+	ld	hl, (os.vbuf_addr)
+	
+	; pretend our screenshot is vbuf
+	ex	de, hl
+	ld	(os.vbuf_addr), hl
+	
+	; restore LCD memory
+	call	zp.vbufdisp
+	
+	; restore vbuf addr
+	ex	de, hl
+	ld	(os.vbuf_addr), hl
+	
+	pop	af
+	out	(map_bankA_port), a
+	ret
 
 err_strings:
 	.dw	str_ecreate

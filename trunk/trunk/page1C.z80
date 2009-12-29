@@ -31,7 +31,29 @@ PAGE = $1C
 
 .org $4000
 
-vect_console_core:	.export	vect_console_core
+zp.protsyscalls:
+
+zp.console_core:		.export	zp.console_core
+	jp	vect_console_core
+
+zp.flash_unlock:		.export	zp.flash_unlock
+	jp	vect_flash_unlock
+zp.flash_lock:			.export	zp.flash_lock
+	jp	vect_flash_lock
+
+zp.flash_exec_init_be:	.export	zp.flash_exec_init_be
+	jp	vect_flash_exec_init_be
+zp.flash_exec_init_se:	.export	zp.flash_exec_init_se
+	jp	vect_flash_exec_init_se
+
+zp.flash_put:			.export	zp.flash_put
+	jp	vect_flash_put
+zp.flash_write:			.export	zp.flash_write
+	jp	vect_flashwrite
+zp.flash_erase:			.export	zp.flash_erase
+	jp	vect_flasherase
+
+vect_console_core:
 	; slow speed
 	xor	a
 	out	(cpu_speed_port), a

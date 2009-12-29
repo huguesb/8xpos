@@ -34,7 +34,10 @@
 ; hooks : 56 T-states overhead, 6 bytes
 #define add_hook(label) push	hl \ ld	hl, (label) \ ex	(sp), hl \ ret
 
-#define VERSION "OSX 0.01"
+; beware when changing this (max length : 9)
+#define VERSION "XOS 0.91"
+
+; do NOT alter this unless you change related syscalls accordingly and keep length small
 #define MODEL   "TI-8x+ xE"
 
 PAGE = $00
@@ -200,6 +203,27 @@ os.version:	.export os.version
 .db	VERSION, 0
 os.calcmodel:
 .db	MODEL, 0
+
+#if $ > $0078
+!!!
+.echo	"OH NOES!!!111\n\n"
+#endif
+
+; Write once data (first boot) : 8 bytes
+
+; $FF upon first boot (after flashing) -> set to $00 during first boot process
+os.firstboot:	.export	os.firstboot
+.db	$FF
+; bitmap of available RAM pages : n-th bit set to 1 iff RAM page n exists as a *unique* page
+os.rampages:	.export	os.rampages
+.db	$FF
+
+.db	$FF
+.db	$FF
+.db	$FF
+.db	$FF
+.db	$FF
+.db	$FF
 
 ; probably not necessary but interesting for binary compat
 #if $ > $0080
@@ -776,6 +800,11 @@ zp.block_size:			.export	zp.block_size
 	jp	vect_block_size
 zp.block_size_iy:		.export	zp.block_size_iy
 	jp	vect_block_size_iy
+
+zp.ram_page_count:		.export	zp.ram_page_count
+	jp	vect_ram_page_count
+zp.ram_page_available:	.export	zp.ram_page_available
+	jp	vect_ram_page_available
 
 ;zp.expr_eval:			.export	zp.expr_eval
 ;	jp	vect_expr_eval

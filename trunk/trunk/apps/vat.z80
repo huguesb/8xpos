@@ -96,12 +96,9 @@ vect_vat_load:
 	ld	hl, $BFFF
 	ld	(vat_start), hl
 	ld	(vat_end), hl
-	ld	hl, 0
-	ld	(vat_FILE), hl
 	pop	hl
 	
 	call	zp.fopen
-	ld	(vat_FILE), hl
 	ret	c
 	
 	; skip size bytes
@@ -115,10 +112,9 @@ vect_vat_load:
 	ld	b, a
 	
 	or	c
-	ret	z
+	jr	z, vect_vat_load.end
 	
 vect_vat_load.loop:
-	;call	zp.throw
 	push	bc
 	push	hl
 	
@@ -194,25 +190,34 @@ vect_vat_load.loop:
 	or	c
 	jr	nz, vect_vat_load.loop
 	
+vect_vat_load.end:
+	; close VAT file
+	call	zp.fclose
+	
 vect_vat_store.cb:
 	ret
 
 ; brief : store VAT data into a file and release VAT memory
-; input : hl -> filename to use if no VAT file open
+; input : hl -> filename to use
 ; output : none
 ; destroys : a, bc, de, hl
 vect_vat_store:
-	ld	de, (vat_FILE)
-	ld	a, d
-	or	e
-	jr	nz, vect_vat_store.exists
-	
+	; try open file
+	push	hl
+	call	zp.fopen
+	pop	de
+	jr	nc, vect_vat_store.exists
+	ex	de, hl
 	push	hl
 	
-	; create the file...
+	; create the file if it does not exist...
+	; todo : figure out a proper size beforehand
 	ld	bc, 16
 	ld	ix, vect_vat_store.cb
 	call	zp.file_create
+	
+	; primitive error handling
+	call	c, zp.throw_memory
 	
 	pop	hl
 	
@@ -235,7 +240,7 @@ vect_vat_store:
 	jr	vect_vat_store.open
 	
 vect_vat_store.exists:
-	ex	de, hl
+	; move to content
 	ld	de, 4
 	call	zp.fseek
 	
@@ -249,8 +254,6 @@ vect_vat_store.loop:
 	cmp_hlde
 	jr	z, vect_vat_store.end
 	jr	c, vect_vat_store.end
-	
-	;call	zp.throw
 	
 	push	bc
 	
@@ -289,14 +292,6 @@ vect_vat_store.noarch:
 	push	hl
 	ld	hl, (vat_FILE)
 	
-	; reserve some space
-; 	push	bc
-; 	push	de
-; 	ld	de, 12
-; 	call	zp.fgrow
-; 	pop	de
-; 	pop	bc
-	
 	; write type
 	ld	a, b
 	push	de
@@ -316,6 +311,17 @@ vect_vat_store.noarch:
 	
 	ex	(sp), hl
 	
+	; reserve some space
+; 	push	bc
+; 	push	de
+; 	ld	de, 12
+;	ex	de, hl
+;	add	hl, bc
+;	ex	de, hl
+; 	call	zp.fgrow
+; 	pop	de
+; 	pop	bc
+	
 	push	de
 	push	de
 	; write size
@@ -330,8 +336,6 @@ vect_vat_store.noarch:
 	pop	de
 	
 	ex	(sp), hl
-	
-	;call	zp.throw
 	
 	; release variable memory
 	push	hl
@@ -411,8 +415,6 @@ vect_vat_find.loop:
 	scf
 	ret
 	
-	;call	zp.throw
-	
 	; check for matching var type
 	ld	a, (ix)
 	cp	(hl)
@@ -464,31 +466,21 @@ vect_vat_find.cmp:
 	
 	pop	hl
 	
-	;call	zp.throw
 	pop	ix
 	;or	a
 	ret
 	
 vect_vat_find.skip:
-	;call	zp.throw
 	pop	de
 	pop	hl
 	
 	; restore name offset
 	ld	bc, -6
 	
-	;jr	vect_vat_find.next
-	
 vect_vat_find.invalid:
 	add	hl, bc
-vect_vat_find.next:
+	
 	; skip name
-; 	ld	b, (hl)
-; 	dec	hl
-; 	
-; 	dec	hl
-; 	djnz	$-1
-; 	call	zp.throw
 	scf
 	ld	a, l
 	sbc	a, (hl)
@@ -502,7 +494,6 @@ vect_vat_find.next:
 ; output : hl -> VAT entry, de -> data ptr
 ; destroys : a, bc
 vect_vat_create:
-	;call	zp.throw
 	ld	de, (vat_end)
 	
 	push	de
@@ -595,7 +586,218 @@ vect_vat_create:
 ; output : none
 ; destroys : a, bc, de, hl
 vect_vat_del:
+	; check for archive
+	ld	a, b
+	or	a
+	ret	nz
 	
+	; release data
+	push	hl
+	ex	de, hl
+	call	zp.free
+	pop	hl
+	
+	; now update VAT (fill the gap in entries)
+	
+	push	hl
+	
+	; move to name length
+	ld	bc, -6
+	add	hl, bc
+	
+	; move to next entry : negative offset_hl (with carry)
+	scf
+	ld	a, l
+	sbc	a, (hl)
+	jr	nc, $+3
+	dec	h
+	
+	; determine size of data to move
+	push	hl
+	ld	de, (vat_end)
+	or	a
+	sbc	hl, de
+	ld	b, h
+	ld	c, l
+	pop	hl
+	
+	pop	de
+	
+	; removed entry is last : nothing to copy
+	jr	z, $+4
+	
+	; move data
+	ldir
+	
+	; update VAT end ptr
+	ld	(vat_end), hl
+	ret
+
+; brief : insert memory in an existing variable's data
+; input : hl -> size, de -> address within var data
+; output : none
+; destroys : a, bc, hl
+vect_vat_insmem:
+	; 1st : figure out where data start to realloc it...
+	push	hl
+	call	vect_find_chunk
+	pop	bc
+	call	c, zp.throw_memory
+	
+	; turn insertion address into offset
+	ex	de, hl
+	or	a
+	sbc	hl, de
+	ex	de, hl
+	
+	push	bc
+	push	de
+	
+	; get block info
+	push	bc
+	dec	hl
+	dec	hl
+	call	zp.block_size
+	pop	bc
+	
+	push	hl
+	
+	; compute new size
+	add	hl, bc
+	ld	b, h
+	ld	c, l
+	
+	ex	de, hl
+	
+	; realloc memory
+	call	zp.realloc
+	
+	call	c, zp.throw_memory
+	
+	; move data (de -> de + bc)
+	
+	; get back copy parameters
+	pop	af
+	pop	de
+	pop	bc
+	push	af
+	
+	ex	(sp), hl
+	; compute number of bytes to displace
+	or	a
+	sbc	hl, de
+	ex	(sp), hl
+	
+	; compute displacement pointers (src/dest)
+	add	hl, de
+	ld	d, h
+	ld	e, l
+	add	hl, bc
+	ex	de, hl
+	
+	pop	bc
+	
+	; copy data
+	ldir
+	
+	ret
+
+; brief : removes memory from an existing variable's data
+; input : hl -> address whithin var data, de -> amount to delete
+; output : bc -> amount deleted
+; destroys : a, hl
+vect_vat_delmem:
+	; 1st : figure out where data start to realloc it...
+	push	de
+	push	hl
+	ex	de, hl
+	call	vect_find_chunk
+	call c, zp.throw
+	
+; 	; get block info
+; 	dec	hl
+; 	dec	hl
+; 	call	zp.block_size
+; 	
+; 	; hl -> size
+; 	; de -> content
+; 	
+; 	ld	b, h
+; 	ld	c, l
+; 	add	hl, de
+; 	ex	de, hl
+; 	
+; 	ex	(sp), hl
+; 	
+; 	; bc -> size
+; 	; de -> end
+; 	; hl -> move dest (start)
+; 	
+; 	; move data
+; 	
+; 	pop	de
+; 	pop	bc
+; 	
+; 	; compute new size
+; 	or	a
+; 	sbc	hl, bc
+; 	ld	b, h
+; 	ld	c, l
+; 	
+; 	ex	de, hl
+; 	
+; 	; realloc memory
+; 	call	zp.realloc
+; 	
+; 	call	c, zp.throw_memory
+	
+	ret
+
+; brief : find start of a memory chunk (in heap)
+; input : de -> address within chunk
+; output : CF set on failure, hl -> chunk start (realloc/free suitable)
+; destroys : a, bc
+vect_find_chunk:
+	ld	hl, (os.malloc.start)
+	
+vect_find_chunk.loop:
+	push	de
+	call	zp.block_size
+	ld	b, h
+	ld	c, l
+	pop	hl
+	
+	push	af
+	; check for input_addr >= chunk_start
+	cmp_hlde
+	jr	c, vect_find_chunk.fail
+	
+	; check for input_addr < chunk_start + chunk_size
+	ex	de, hl
+	add	hl, bc
+	ex	de, hl
+	cmp_hlde
+	jr	c, vect_find_chunk.ok
+	
+	pop	af
+	
+	ex	de, hl
+	; loop if not at end
+	jr	nc, vect_find_chunk.loop
+
+vect_find_chunk.fail:
+	pop	af
+	scf
+	ret
+
+vect_find_chunk.ok:
+	; adjust output
+	ex	de, hl
+	or	a
+	sbc	hl, bc
+	
+	pop	af
+	or	a
 	ret
 
 .echo "\nVAT : "

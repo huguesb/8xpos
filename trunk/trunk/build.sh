@@ -68,7 +68,7 @@ tools/packxxu -v 0.1 -h 255 build/xos.hex -t 83p -q 0A -o build/xos.8xu &> /dev/
 rabbitsign -t 8xu -k tools/0A.key build/xos.8xu -o xos.8xu &> /dev/null
 
 # create rom dump
-#tools/rom8x 84PBE -1 tools/D84PBE1.8xv -2 tools/D84PBE2.8xv -u xos.8xu
+tools/rom8x 84PBE -1 tools/D84PBE1.8xv -2 tools/D84PBE2.8xv -u xos.8xu
 
 # build apps
 
