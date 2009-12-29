@@ -297,9 +297,6 @@ vect_flashwrite_code.entry = vect_flashwrite_code - vect_flashwrite_code.start
 ; flashwrite code "tuned" for SE calculators (flash chips with fast mode)
 ;
 vect_flashwrite_code_se.start
-	; save memory page
-	in	a, (map_bankA_port)
-	push	af
 	
 vect_flashwrite_code_se.done:
 	or	a
@@ -307,14 +304,18 @@ vect_flashwrite_code_se.done:
 	
 vect_flashwrite_code_se.RAM:
 	; ensure we fetch the proper input byte
-	ld	de, $8000 + vect_flashwrite_code.size
+	ld	de, $8000 + vect_flashwrite_code_se.size
 	cmp_hlde
-	jr	nc, vect_flashwrite_code.noswap
+	jr	nc, vect_flashwrite_code_se.noswap
 	ld	de, os.scrap - $8000
 	add	hl, de
-	jr	vect_flashwrite_code.noswap
+	jr	vect_flashwrite_code_se.noswap
 	
 vect_flashwrite_code_se:
+	; save memory page
+	in	a, (map_bankA_port)
+	push	af
+	
 	; bc -> size of data to be copied
 	; os.flashwrite.* -> source and destination (two 3 bytes addresses : logical 16 bit address + 8 bit page 
 	
@@ -411,14 +412,14 @@ vect_flashwrite_code_se.error:
 	scf
 vect_flashwrite_code_se.exit:
 	; exit fast mode
-	; {A0}
-	ld	a, $A0
+	; {90}
+	ld	a, $90
 	ld	($0000), a
 	; {F0}
 	ld	a, $F0
 	ld	($0000), a
 	
-	; reset flash chip (may be unnecesary after fast mode exit)
+	; reset flash chip (may be unnecesary after fast mode exit but better be safe...)
 	; {F0}
 	ld	a, $F0
 	ld	($0000), a
@@ -549,17 +550,16 @@ vect_flashwrite:
 	call	nz, vect_flashwrite.backup
 	
 	; select code based on calc model
+	ld	hl, 0
+	
 	in	a, (hw_port)
 	and	$80
 	jr	z, vect_flashwrite_be
 	; note use of fast mode disabled (not supported by emulators)
-; 	; all SE equally treated
-; 	; 3 words per table "entry"
-; 	ld	a, 1 * 6
-	xor	a
+	; all SE equally treated
+	; 3 words per table "entry"
+	ld	l, 1 * 6
 vect_flashwrite_be:
-	ld	h, 0
-	ld	l, a
 	ld	de, vect_flashwrite_code.table
 	add	hl, de
 	
