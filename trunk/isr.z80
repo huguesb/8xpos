@@ -31,9 +31,11 @@ isr.continue:
 	
 	set	calc_on, (hl)
 	pop	af
-
+	
+	push	hl
 	ld	hl, default.aps_time
 	ld	(os.aps.timer), hl
+	pop	hl
 	
 	; turn on LCD
 	lcd_busy
@@ -67,8 +69,16 @@ isr.on_raised:
 	ld	a, h
 	or	l
 	ld	(os.aps.timer), hl
-
-	call	z, isr.force_off
+	
+	ld	hl, os.flags
+	jr	nz, isr.timer_end
+	
+	; prepare for shutdown
+	res	calc_on, (hl)
+	
+	push	hl
+	ld	hl, isr.shut_down
+	ex	(sp), hl
 	
 isr.timer_end:
 ; look for link port interrupt
@@ -105,7 +115,7 @@ isr.linkassist_error:
 	
 isr.linkassist_end:
 ; call user-supplied (program supplied actually) ISR, if any
-	ld	a, (os.flags)
+	ld	a, (hl)
 	and	bitmask(prgm_running)
 	jr	z, isr.end
 
@@ -140,15 +150,12 @@ isr.power_on:
 	rowread
 	cp	invmask(kb_2nd)
 	jr	nz, isr.2nd_raised
-
+	
 	res	calc_on, (hl)
 	ld	hl, isr.shut_down
 	push	hl
 	jp	isr.wait_on
 
-isr.force_off:
-	ld	hl, os.flags
-	res	calc_on, (hl)
 isr.shut_down:
 	di
 	push	af
@@ -162,6 +169,7 @@ isr.off_loop:
 	push	af
 	ld	a, $36
 	out	(irq_stat_port), a
+	; only allow on key interrupts
 	ld	a, $01
 	out	(irq_mask_port), a
 	pop	af
@@ -174,7 +182,7 @@ isr.2nd_raised:
 	ld	a, kg_func
 	rowread
 	cp	invmask(kb_del)
-	jr	nz, isr.mode_raised
+	jr	nz, isr.del_raised
 	
 	; throw exception (will return to console automatically)
 	ld	hl, zp.throw
@@ -182,7 +190,7 @@ isr.2nd_raised:
 	
 	jr	isr.end
 	
-isr.mode_raised:
+isr.del_raised:
 	; check for contrast keys
 	ld	hl, os.contrast
 	ld	a, kg_arrows

@@ -47,4 +47,4 @@ vect_console:
 	ld	a, $1C
 	call	zp.setflashpage
 	
-	jp	vect_console_core
+	jp	zp.console_core

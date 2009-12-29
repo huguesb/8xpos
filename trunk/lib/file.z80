@@ -88,6 +88,7 @@ vect_file_initfs:
 	in	a, (map_bankB_port)
 	push	af
 	
+	; up to 4 page of file storage -> 64kbytes
 	ld	a, 4
 	ld	hl, vect_file_pages
 vect_file_initfs.loop:
@@ -95,6 +96,10 @@ vect_file_initfs.loop:
 	
 	ld	a, (hl)
 	inc	hl
+	
+	call	zp.ram_page_available
+	jr	c, vect_file_initfs.skip
+	
 	or	$80
 	out	(map_bankB_port), a
 	
@@ -115,6 +120,7 @@ vect_file_initfs.loop:
 	
 	pop	hl
 	
+vect_file_initfs.skip:
 	pop	af
 	dec	a
 	jr	nz,	vect_file_initfs.loop
@@ -320,6 +326,9 @@ vect_file_list.loop:
 	ld	a, (hl)
 	inc	hl
 	
+	call	zp.ram_page_available
+	jr	c, vect_file_list.skip
+	
 	or	$80
 	out	(map_bankB_port), a
 	
@@ -337,6 +346,7 @@ vect_file_list.loop:
 	
 	offset_de
 	
+vect_file_list.skip:
 	djnz	vect_file_list.loop
 	
 	; done iterating...
@@ -358,7 +368,8 @@ vect_file_list.forcedexit:
 	scf
 	ret
 
-; pages used by the filesystem (by lookup order) [exactly 4 of them required, unless you alter file_list...]
+; pages used by the filesystem (if available) (by lookup order)
+; [exactly 4 of them required, unless you alter file_list...]
 vect_file_pages:
 	.db 2, 4, 6, 7
 

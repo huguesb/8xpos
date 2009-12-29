@@ -72,7 +72,7 @@ init.83pBE:
 	out	(map_bankB_port), a
 	
 	; initialization of protected ports (flash exec boundary...)
-	call vect_flash_exec_init_be
+	call zp.flash_exec_init_be
 	
 	jr	init.common
 
@@ -155,7 +155,7 @@ init.SEcommon:
 	out	(lcd_wait_port), a
 	
 	; initialization of protected ports (flash exec boundary...)
-	call	vect_flash_exec_init_se
+	call	zp.flash_exec_init_se
 	
 ; all models
 init.common:
@@ -180,11 +180,15 @@ init.lcd_loop:
 	; reset RAM
 	
 	; clear sys RAM
-	ld	hl, $C000
+	ld	hl, $8000
 	ld	de, $C001
-	ld	bc, $4000 - 1
+	ld	bc, $8000 - 1
 	ld	(hl), 0
 	ldir
+	
+	ld	a, (os.firstboot)
+	or	a
+	call	nz, init.firstboot
 	
 	; init filesystem
 	call	zp.file_initfs
@@ -249,8 +253,12 @@ init.lcd_loop:
 	in	a, (irq_stat_port)
 	and	$08
 	jr	nz, $-4
-
-	call	isr.force_off
+	
+	ld	hl, os.flags
+	res	calc_on, (hl)
+	call	isr.shut_down
+	
+	;call	isr.force_off
 	
 	; boot screen (mem cleared)
 	call	zp.cclear
@@ -260,3 +268,93 @@ init.lcd_loop:
 	call	zp.cputs
 	call	zp.cdisp
 	
+	jp	zp.console
+
+init.firstboot:
+	cp	$FF
+	call	nz, zp.throw
+	
+	di
+	
+	call	zp.flash_unlock
+	
+	in	a, (hw_port)
+	rlca
+	jr	nc, init.firstboot.BE
+
+init.firstboot.SE
+	; SE only : check for screwed RAM
+	
+	; save
+	in	a, (map_bankB_port)
+	push	af
+	
+	; check RAM pages
+	
+	ld	a, $80
+	ld	b, 8
+	ld	hl, $8000
+	
+w_loop:
+	out	(map_bankB_port), a
+	ld	(hl), a
+	inc	a
+	djnz	w_loop
+	
+	ld	de, $FFFE
+	ld	b, 8
+	ld	a, $80
+b_loop:
+	out	(map_bankB_port), a
+	cp	(hl)
+	
+	jr	z, $+7
+	
+	ld	c, a
+	ld	a, d
+	and	e
+	ld	d, a
+	ld	a, c
+	
+	rlc	e
+	djnz	b_loop
+	
+	; write RAM config
+	xor	a
+	ld	b, d
+	
+	ld	hl, os.rampages
+	call	zp.flash_put
+	;ld	de, os.rampages
+	; WriteAByte
+	;bcall($8021)
+	
+	; restore
+	pop	af
+	out	(map_bankB_port), a
+	
+	jr	init.firstbootend
+	
+init.firstboot.BE:
+	; not much choice of RAM availability here
+	xor	a
+	ld	b, %00000011
+	ld	hl, os.rampages
+	call	zp.flash_put
+	;ld	de, os.rampages
+	; WriteAByte
+	;bcall($8021)
+
+init.firstbootend:
+	; mark first boot done
+	xor	a
+	ld	hl, os.firstboot
+	ld	b, a
+	call	zp.flash_put
+	;ld	de, os.firstboot
+	; WriteAByte
+	;bcall($8021)
+	
+	call	zp.flash_lock
+	
+	ret

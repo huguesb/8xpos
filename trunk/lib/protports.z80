@@ -32,7 +32,7 @@
 #defcont			 \ di
 #defcont			 \ out	(port), a
 
-vect_flash_unlock:	.export vect_flash_unlock
+vect_flash_unlock:
 	; bit of magic here to reenable interrupts only if they were disabled
 	; ld a, i (and ld a,r) cause P/V to be set to IFF
 	ld	a,i
@@ -50,7 +50,7 @@ vect_flash_unlock:	.export vect_flash_unlock
 	ei
 	ret
 
-vect_flash_lock:	.export vect_flash_lock
+vect_flash_lock:
 	ld	a, i
 	push	af
 	
@@ -67,7 +67,7 @@ vect_flash_lock:	.export vect_flash_lock
 
 ;protected ports are 14,16,22, and 23 - all Flash write/execution protection
 ;we allow execution on all Flash pages, then relock Flash
-vect_flash_exec_init_se: .export vect_flash_exec_init_se
+vect_flash_exec_init_se:
 	di
 	call	vect_flash_unlock
 	
@@ -84,7 +84,7 @@ vect_flash_exec_init_se: .export vect_flash_exec_init_se
 	
 	jp	vect_flash_lock
 	
-vect_flash_exec_init_be: .export vect_flash_exec_init_be
+vect_flash_exec_init_be:
 	di
 	
 	call	vect_flash_unlock
