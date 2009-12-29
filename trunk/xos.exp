@@ -1,6 +1,6 @@
 os.version       .EQU  $0064
-os.firstboot     .EQU  $0077
-os.rampages      .EQU  $0078
+os.firstboot     .EQU  $0078
+os.rampages      .EQU  $0079
 zp.deref_hl_alt  .EQU  $0003
 zp.call_ix       .EQU  $0016
 zp.call_hl       .EQU  $001f
