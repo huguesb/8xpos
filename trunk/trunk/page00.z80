@@ -594,6 +594,8 @@ zp.send_byte:			.export	zp.send_byte
 	jp	vect_send_byte
 zp.send_command_nodata:.export	zp.send_command_nodata
 	jp	vect_send_command_nodata
+zp.send_command_header:.export	zp.send_command_header
+	jp	vect_send_command_header
 zp.send_command_2bytes:	.export	zp.send_command_2bytes
 	jp	vect_send_command_2bytes
 zp.send_command:		.export	zp.send_command
