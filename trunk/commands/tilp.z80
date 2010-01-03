@@ -104,6 +104,7 @@ zp.tilp.cid:
 	.db link_DEL	; Delete variable
 	.db link_REQ	; Request variable
 	.db link_RTS	; Request to send variable (silent-link)
+	.db link_VAR	; Flash transfers (OS/app)
 	.db	0
 
 zp.tilp.cmd:
@@ -113,6 +114,7 @@ zp.tilp.cmd:
 	.dw tilp.DEL	; Delete variable
 	.dw tilp.REQ	; Request variable
 	.dw tilp.RTS	; Request to send variable (silent-link)
+	.dw tilp.VAR	; Flash transfers (OS/app)
 
 
 ; brief : for the sake of size optimization...
@@ -579,18 +581,9 @@ tilp.sendProg.cb.split:
 	add	a, 2
 	offset_hl
 	
-	; send packet header
-	ld	a, link_83P
-	call	zp.send_byte
-	ld	a, link_DATA
-	call	zp.send_byte
-	
-	; send data size
-	ld	a, (hl)
-	call	zp.send_byte
-	inc	hl
-	ld	a, (hl)
-	call	zp.send_byte
+	ld	d, link_DATA
+	deref_hl
+	call	zp.send_command_header
 	
 	pop	hl
 	
@@ -785,7 +778,7 @@ tilp.RTS:
 	jr	z, tilp.RTS.ok
 	
 	cp	tApp
-	jr	z, tilp.recvApp
+	jp	z, tilp.recvApp
 	
 	cp	tOS
 	jp	z, tilp.recvOS
@@ -829,9 +822,6 @@ tilp.RTS.ok:
 	; free VAR HEADER
 	call	zp.free
 	
-	ret
-
-tilp.recvApp:
 	ret
 
 tilp.RTS.callback:
@@ -989,9 +979,85 @@ tilp.RTS.cb.checksum:
 	or	a
 	ret
 
+tilp.preVAR:
+	; get VAR header
+	ld	a, b
+	or	c
+	call	nz, zp.get_data
+	call	c, zp.throw_link
+	
+	; acknowledge VAR header
+	ld	d, link_ACK
+	call	zp.send_command_nodata
+	
+tilp.VAR:
+	; determine where to store the app
+	; garbage collect if needed
+	push	hl
+	
+	pop	hl
+	; free var header
+	call	zp.free
+	
+	
+tilp.VAR.CTS:
+	;
+	; BEHOLD the shit : linking proto expects
+	; a CTS with a size field set to 10 (0A00)
+	; but without nay data (i.e a boggus pakcet)
+	;
+	
+	; allow transfer to start
+	ld	d, link_CTS
+	ld	hl, $000A
+	call	zp.send_command_header
+	
+	; wait for acknowledgement
+	call	zp.get_command
+	cp	link_ACK
+	call	nz, zp.throw_link
+	
+	; wait for data packet
+	call	zp.get_command
+	cp	link_DATA
+	call	nz, zp.throw_link
+	
+	; store packet data
+	call	zp.get_data
+	call	zp.free
+	
+	; acknowledge data packet
+	ld	d, link_ACK
+	call	zp.send_command_nodata
+	
+	; move on : either new VAR packet or EOT
+	call	zp.get_command
+	cp	link_VAR
+	jr	z, tilp.preVAR
+	cp	link_EOT
+	call	nz, zp.throw_link
+	
+	; acknowledge end of transmission
+	ld	d, link_ACK
+	call	zp.send_command_nodata
+	
+	ret
+	
+tilp.recvApp:
+	call	zp.throw_link
+; 	ld	hl, _str_app
+; 	call	zp.cputs
+; 	call	zp.cdisp
+	
+	ret
+
+
 ; fixme : this does not seem to work, probably because of improper packet storage
 tilp.recvOS:
-	
+	call	zp.throw_link
+; 	ld	hl, _str_os
+; 	call	zp.cputs
+; 	call	zp.cdisp
 ; 	push	hl
 ; 	; load packet content into ioData (need command bytes???)
 ; 	ld	de, $867D
@@ -1039,8 +1105,12 @@ tilp.recvOS:
 ; 	; ReceiveOS : we should never ever return from this
 ; 	bcall($8072)
 ; 	
-; 	ret
+ 	ret
 
 __str_recv: .db "recv...", 0
 __str_fail: .db "fail.", 0
 __str_done: .db "done.", 0
+
+_str_var: .db "var", 0
+_str_app: .db "app", 0
+_str_os: .db "os", 0

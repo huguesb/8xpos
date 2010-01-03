@@ -451,8 +451,24 @@ vect_send_command_nodata:
 	call	vect_send_byte
 	xor	a
 	call	vect_send_byte
+	jp	vect_send_byte
+
+; brief : send a command header
+; input : d -> command id, hl -> data size
+; output : none
+; destroys : a
+vect_send_command_header:
+; Send a packet of the form 73 d l h
+	ld	a, link_83P
 	call	vect_send_byte
-	ret
+	ld	a, d
+	call	vect_send_byte
+	
+	; send data size
+	ld	a, l
+	call	vect_send_byte
+	ld	a, h
+	jp	vect_send_byte
 
 ; brief : send an error command
 ; input : d -> error id
@@ -477,8 +493,7 @@ vect_send_error:
 	ld	a, d
 	call	vect_send_byte
 	xor	a
-	call	vect_send_byte
-	ret
+	jp	vect_send_byte
 
 ; brief : send a command with two bytes of attached data
 ; input : d -> command id, bc -> command data (sent in little endian)
@@ -486,17 +501,9 @@ vect_send_error:
 ; destroys : a, hl
 vect_send_command_2bytes:
 ; Send a packet of the form 73 d 02 00 : c b : cs cs
-	; send packet header
-	ld	a, link_83P
-	call	vect_send_byte
-	ld	a, d
-	call	vect_send_byte
-	
-	; send packet size
-	ld	a, $02
-	call	vect_send_byte
-	xor	a
-	call	vect_send_byte
+	; send header
+	ld	hl, 2
+	call	vect_send_command_header
 	
 	; send data
 	ld	a, c
@@ -514,8 +521,7 @@ vect_send_command_2bytes:
 	ld	a, l
 	call	vect_send_byte
 	ld	a, h
-	call	vect_send_byte
-	ret
+	jp	vect_send_byte
 
 ; brief : send a command and attached data
 ; input : 
@@ -526,16 +532,12 @@ vect_send_command_2bytes:
 ; destroys : a, hl, bc, de
 vect_send_command:
 ; Send a packet of the form 73 d c b : stuff ... stuff : cs cs
-	ld	a, link_83P
-	call	vect_send_byte
-	ld	a, d
-	call	vect_send_byte
-	
-	; send data size
-	ld	a, c
-	call	vect_send_byte
-	ld	a, b
-	call	vect_send_byte
+	; send header
+	push	hl
+	ld	h, b
+	ld	l, c
+	call	vect_send_command_header
+	pop	hl
 	
 	ld	de, 0
 	
@@ -559,9 +561,7 @@ vect_send_checksum:
 	ld	a, e
 	call	vect_send_byte
 	ld	a, d
-	call	vect_send_byte
-	
-	ret
+	jp	vect_send_byte
 
 vect_silent_host:
 	push	af
@@ -577,20 +577,6 @@ vect_silent_host:
 	call	zp.get_command
 	
 	jr	vect_silent_host.ok
-	
-; 	; presently only allow screenshots through silent link...
-; 	cp	link_SCR
-; 	jr	z, vect_silent_host.ok
-; 	
-; vect_silent_host.reject:
-; 	; reject to avoid lockup of linking software
-; 	ld	d, link_REJ
-; 	call	zp.send_error
-; 	
-; 	; wait for rejection acknowledgement
-; 	call	zp.get_command
-; 	;cp	link_ACK
-; 	; call	z, zp.throw_link
 	
 vect_silent_host.exit:
 	pop	hl
