@@ -63,22 +63,26 @@ isr.on_raised:
 
 	bit	aps_on, (hl)
 	jr	z, isr.timer_end
-
-	ld	hl, (os.aps.timer)
-	dec	hl
-	ld	a, h
-	or	l
-	ld	(os.aps.timer), hl
-	
-	ld	hl, os.flags
-	jr	nz, isr.timer_end
-	
-	; prepare for shutdown
-	res	calc_on, (hl)
 	
 	push	hl
-	ld	hl, isr.shut_down
-	ex	(sp), hl
+	ld	hl, (os.aps.timer)
+	dec	hl
+	ld	(os.aps.timer), hl
+	ld	a, h
+	or	l
+	
+	pop	hl
+	
+	;jr	nz, isr.timer_end
+	
+	call	z, isr.force_off
+	
+; 	; prepare for shutdown
+; 	res	calc_on, (hl)
+; 	
+; 	push	hl
+; 	ld	hl, isr.shut_down
+; 	ex	(sp), hl
 	
 isr.timer_end:
 ; look for link port interrupt
@@ -155,6 +159,10 @@ isr.power_on:
 	ld	hl, isr.shut_down
 	push	hl
 	jp	isr.wait_on
+	
+isr.force_off:
+	ld      hl, os.flags
+	res     calc_on, (hl)
 
 isr.shut_down:
 	di
