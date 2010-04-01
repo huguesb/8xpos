@@ -95,35 +95,29 @@ vect_getch._reset:
 vect_getkey:
 	push	bc
 	push	de
-	;ld	a, i
-	;push	af
-	;di
 	
 	; check for link activity
-	call	zp.can_read
-	call	nz, zp.silent_host
+	call	zp.silent_host
 	
 	ld	a, $FF
 	out	(key_port), a
 	ld	c, 1
 	ld	d, kg_arrows
-vect_getch._loop1:
+vect_getkey._loop1:
 	ld	a, d
 	rowread
 	ld	b, 8
-vect_getch._loop2:
+vect_getkey._loop2:
 	rra
-	jr	nc, vect_getch._found
+	jr	nc, vect_getkey._found
 	inc	c
-	djnz	vect_getch._loop2
+	djnz	vect_getkey._loop2
 	rlc	d
 	bit	7, d
-	jr	nz, vect_getch._loop1
+	jr	nz, vect_getkey._loop1
 	ld	c, sk_null
-vect_getch._found:
-	;pop	af
-	;jp	po, $+4
-	;ei
+	
+vect_getkey._found:
 	ld	a, c
 	pop	de
 	pop	bc

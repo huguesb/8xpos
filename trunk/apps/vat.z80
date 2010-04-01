@@ -46,9 +46,10 @@ vat.test:
 	ld	hl, vat_dump
 	call	vect_vat_load
 	
-	call	dump.vat
+	; dump if exists
+	call	nc, dump.vat
 	
-	; do something with that VAT
+	; fill if needed
 	
 	ld	hl, vat.test.dummyappv
 	call	vect_vat_find
@@ -59,10 +60,35 @@ vat.test:
 	ld	hl, vat.test.dummyprog
 	call	vect_vat_find
 	ld	hl, vat.test.dummyprog
-	ld	bc, $0200
+	ld	bc, $0300
 	call	c, vect_vat_create
 	
+	; dump
 	call	dump.vat
+	
+	; grow/shrink tests
+	
+	ld	hl, vat.test.dummyappv
+	call	vect_vat_find
+	call	c, zp.throw
+	
+	ld	hl, $0100
+	ex	de, hl
+	add	hl, de
+	ex	de, hl
+	call	vect_vat_insmem
+	
+	ld	hl, vat.test.dummyprog
+	call	vect_vat_find
+	call	c, zp.throw
+	
+	ex	de, hl
+	ld	de, $0100
+	add	hl, de
+	call	vect_vat_delmem
+	
+	call	dump.vat
+	
 	
 	; save it back
 	ld	hl, vat_dump
@@ -70,9 +96,9 @@ vat.test:
 
 
 vat.test.dummyappv:
-	.db tAppvar, "dummyappv", 0
+	.db tAppvar, "dummyav", 0
 vat.test.dummyprog:
-	.db tLockedProg, "dummyprog", 0
+	.db tLockedProg, "dummyprg", 0
 
 ; VAT dump struct :
 ;
@@ -501,10 +527,9 @@ vect_vat_create:
 	; write type byte in VAT entry
 	ld	a, (hl)
 	inc	hl
-	ld	(de), a
-	dec	de
-	
 	ex	de, hl
+	ld	(hl), a
+	dec	hl
 	
 	; write T2 and Version bytes
 	xor	a
@@ -543,7 +568,6 @@ vect_vat_create:
 	ld	(hl), 0
 	dec	hl
 	
-	;pop	de
 	;; ex (sp), de
 	ex	de, hl
 	ex	(sp), hl
@@ -559,7 +583,7 @@ vect_vat_create:
 	
 	; size check
 	cp	9
-	jr	c, $+5
+	jr	c, $+4
 	ld	a, 8
 	
 	ld	(de), a
@@ -641,8 +665,13 @@ vect_vat_insmem:
 	; 1st : figure out where data start to realloc it...
 	push	hl
 	call	vect_find_chunk
-	pop	bc
+	
 	call	c, zp.throw_memory
+	
+	; stack top -> insertion size
+	; bc -> size of block
+	; de -> point of insertion
+	; hl -> start of target chunk
 	
 	; turn insertion address into offset
 	ex	de, hl
@@ -650,55 +679,61 @@ vect_vat_insmem:
 	sbc	hl, de
 	ex	de, hl
 	
+	; construct proper stack frame and compute new block size
+	pop	af
 	push	bc
+	push	af
 	push	de
-	
-	; get block info
-	push	bc
-	dec	hl
-	dec	hl
-	call	zp.block_size
-	pop	bc
-	
-	push	hl
-	
-	; compute new size
+	push	af
+	ex	(sp), hl
 	add	hl, bc
 	ld	b, h
 	ld	c, l
+	pop	hl
 	
-	ex	de, hl
+	; stack : ... | blk_sz | ins_sz | ins_off 
+	; hl -> start of chunk
+	; bc -> new size
 	
 	; realloc memory
 	call	zp.realloc
 	
 	call	c, zp.throw_memory
 	
+	; todo : update related VAT entry
+	
 	; move data (de -> de + bc)
 	
 	; get back copy parameters
-	pop	af
 	pop	de
 	pop	bc
-	push	af
 	
+	; number of bytes to displace = old size - insertion offset
 	ex	(sp), hl
-	; compute number of bytes to displace
 	or	a
 	sbc	hl, de
 	ex	(sp), hl
 	
-	; compute displacement pointers (src/dest)
+	; src = start of chunk + insertion offset
 	add	hl, de
 	ld	d, h
 	ld	e, l
+	
+	; dst = src + insertion size
 	add	hl, bc
 	ex	de, hl
 	
+	; get back number of bytes to displace
 	pop	bc
+	
+	; save point of insertion
+	push	hl
 	
 	; copy data
 	ldir
+	
+	; get back point of insertion
+	pop	de
 	
 	ret
 
@@ -708,57 +743,82 @@ vect_vat_insmem:
 ; destroys : a, hl
 vect_vat_delmem:
 	; 1st : figure out where data start to realloc it...
-	push	de
-	push	hl
 	ex	de, hl
+	push	hl
 	call	vect_find_chunk
-	call c, zp.throw
 	
-; 	; get block info
-; 	dec	hl
-; 	dec	hl
-; 	call	zp.block_size
-; 	
-; 	; hl -> size
-; 	; de -> content
-; 	
-; 	ld	b, h
-; 	ld	c, l
-; 	add	hl, de
-; 	ex	de, hl
-; 	
-; 	ex	(sp), hl
-; 	
-; 	; bc -> size
-; 	; de -> end
-; 	; hl -> move dest (start)
-; 	
-; 	; move data
-; 	
-; 	pop	de
-; 	pop	bc
-; 	
-; 	; compute new size
-; 	or	a
-; 	sbc	hl, bc
-; 	ld	b, h
-; 	ld	c, l
-; 	
-; 	ex	de, hl
-; 	
-; 	; realloc memory
-; 	call	zp.realloc
-; 	
-; 	call	c, zp.throw_memory
+	call c, zp.throw_memory
+	
+	; stack top -> size of insertion
+	; bc -> size of chunk
+	; de -> point of removal
+	; hl -> start of target chunk
+	
+	; turn removal address into offset
+	ex	de, hl
+	or	a
+	sbc	hl, de
+	ex	de, hl
+	
+	; construct proper stack frame and compute new block size
+	pop	af
+	push	bc
+	push	af
+	push	de
+	push	af
+	ex	(sp), hl
+	add	hl, bc
+	ld	b, h
+	ld	c, l
+	pop	hl
+	
+	; stack : ... | blk_sz | ins_sz | ins_off 
+	; hl -> start of chunk
+	; bc -> new size
+	
+	; realloc memory
+	call	zp.realloc
+	
+	call	c, zp.throw_memory
+	
+	; todo : update related VAT entry
+	
+	; move data (de + bc -> de)
+	
+	; get back copy parameters
+	pop	de
+	pop	bc
+	
+	; number of bytes to displace = old size - insertion offset - size to remove
+	ex	(sp), hl
+	or	a
+	sbc	hl, de
+	or	a
+	sbc	hl, bc
+	ex	(sp), hl
+	
+	; dst = start of chunk + insertion offset
+	add	hl, de
+	ld	d, h
+	ld	e, l
+	
+	; src = dst + removal size
+	add	hl, bc
+	
+	; get back number of bytes to displace
+	pop	bc
+	
+	; copy data
+	ldir
 	
 	ret
 
 ; brief : find start of a memory chunk (in heap)
 ; input : de -> address within chunk
-; output : CF set on failure, hl -> chunk start (realloc/free suitable)
-; destroys : a, bc
+; output : CF set on failure, hl -> chunk start (realloc/free suitable), bc -> chunk size
+; destroys : a
 vect_find_chunk:
-	ld	hl, (os.malloc.start)
+	ld	hl, (os.malloc.mp_start)
 	
 vect_find_chunk.loop:
 	push	de
@@ -766,6 +826,10 @@ vect_find_chunk.loop:
 	ld	b, h
 	ld	c, l
 	pop	hl
+	
+	; hl -> expected
+	; de -> chunk start
+	; bc -> chunk size
 	
 	push	af
 	; check for input_addr >= chunk_start
@@ -775,16 +839,15 @@ vect_find_chunk.loop:
 	; check for input_addr < chunk_start + chunk_size
 	ex	de, hl
 	add	hl, bc
-	ex	de, hl
 	cmp_hlde
-	jr	c, vect_find_chunk.ok
+	jr	nc, vect_find_chunk.ok
 	
 	pop	af
 	
-	ex	de, hl
 	; loop if not at end
 	jr	nc, vect_find_chunk.loop
-
+	ret
+	
 vect_find_chunk.fail:
 	pop	af
 	scf
@@ -792,7 +855,6 @@ vect_find_chunk.fail:
 
 vect_find_chunk.ok:
 	; adjust output
-	ex	de, hl
 	or	a
 	sbc	hl, bc
 	
@@ -814,15 +876,28 @@ vat_FILE:
 vat_dump:
 	.db "compat-vat", 0
 
+str_vat_begin:	.db "- BEGIN VAT -", 0
+str_vat_end:	.db "-- END VAT --", 0
+
 dump.vat:
+	ld	hl, str_vat_begin
+	call	zp.cputs
+	
 	ld	hl, (vat_start)
 	
 dump.vat.loop:
 	ld	de, (vat_end)
 	cmp_hlde
-	ret	z
-	ret	c
+	jr	z, dump.vat.end
+	jr	nc, dump.vat.cont
 	
+dump.vat.end:
+	ld	hl, str_vat_end
+	call	zp.cputs
+	call	zp.cdisp
+	jp	zp.getch
+	
+dump.vat.cont:
 	ld	b, 6
 	ld	de, os.scrap
 	
@@ -849,8 +924,6 @@ dump.vat.loop:
 	push	hl
 	ld	hl, os.scrap
 	call	zp.cputs
-	call	zp.cdisp
-	call	zp.getch
 	pop	hl
 	jr	dump.vat.loop
 

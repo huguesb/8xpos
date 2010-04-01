@@ -281,6 +281,9 @@ cmd_RUN.cb.tios_exec:
 	ld	hl, zp.compat_stop
 	push	hl
 	
+	ld	a, $01
+	out	(map_bankB_port), a
+	
 	; swap proper RAM page in bank B
 	ld	a, $81
 	out	(map_bankB_port), a

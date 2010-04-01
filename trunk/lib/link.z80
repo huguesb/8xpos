@@ -342,7 +342,7 @@ vect_get_byte.error:
 	jr	nz, vect_get_byte.loop
 	
 	pop	bc
-	jp	zp.throw_link
+	call	zp.throw_link
 
 
 ; brief : send a byte
@@ -556,6 +556,12 @@ vect_send_command.loop:
 	or	c
 	jr	nz, vect_send_command.loop
 	
+	; fall through
+
+; brief : send two byte (normally a data checksum)
+; input : de -> 16bit checksum, send in little endian
+; output : none
+; destroys : a
 vect_send_checksum:
 	; send checksum
 	ld	a, e
@@ -563,44 +569,51 @@ vect_send_checksum:
 	ld	a, d
 	jp	vect_send_byte
 
+; brief : checks for silent link activity and call link proto code if necessary
+; input : none
+; output : none
+; destorys : none
 vect_silent_host:
 	push	af
-	push	bc
-	push	de
-	push	hl
 	
 	; check whether silent linking is enabled
 	ld	a, (os.flags + osf.silentlink)
 	rrca
 	jr	nc, vect_silent_host.exit
 	
-	call	zp.get_command
+	; check for a byte to read
+	call	zp.can_read
+	jr	z, vect_silent_host.exit
 	
-	jr	vect_silent_host.ok
-	
-vect_silent_host.exit:
-	pop	hl
-	pop	de
-	pop	bc
-	pop	af
-	ret
-	
-vect_silent_host.ok:
+	; preserve registers during link exchange
+	push	bc
+	push	de
+	push	hl
 	push	iy
 	push	ix
 	
-	ld	l, a
+	; save page
 	in	a, (map_bankA_port)
 	push	af
+	
+	; swap-in page where TILP code resides
 	ld	a, $1C
 	call	zp.setflashpage
-	ld	a, l
 	
-	call	zp.tilp.silent_entry
+	; link proto entry point
+	call	zp.tilp
 	
+	; restore page
 	pop	af
 	out	(map_bankA_port), a
 	
+	; restore registers
 	pop	ix
 	pop	iy
-	jr	vect_silent_host.exit
+	pop	hl
+	pop	de
+	pop	bc
+	
+vect_silent_host.exit:
+	pop	af
+	ret

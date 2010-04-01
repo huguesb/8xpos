@@ -812,14 +812,6 @@ zp.ram_page_available:	.export	zp.ram_page_available
 ;zp.expr_eval:			.export	zp.expr_eval
 ;	jp	vect_expr_eval
 
-; only here for internal use...
-; call table past that point is private and no assumption
-; should be made on its content in userspace...
-zp.end:					.export	zp.end
-	jp	compat.mkvat
-
-#define	xos_bcall(n) rst 28h \ .dw $5600 + (3*n) \ ret
-; required for call redirection together with binary compat
 
 .echo	"Syscall table : "
 .echo	$-zp.syscalls

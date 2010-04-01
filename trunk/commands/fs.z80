@@ -222,8 +222,7 @@ cmd_MEM:
 	call	zp.htoa_word
 	pop	hl
 	
-	; TASM does not support line feed as char literal...
-	ld	a, 10
+	ld	a, 10 ; '\n'
 	ld	(de), a
 	inc	de
 	
@@ -236,7 +235,7 @@ cmd_MEM:
 	call	zp.htoa_word
 	pop	hl
 	
-	ld	a, 10
+	ld	a, 10 ; '\n'
 	ld	(de), a
 	inc	de
 	
@@ -251,7 +250,7 @@ cmd_MEM:
 	call	zp.htoa_word
 	pop	hl
 	
-	ld	a, 10
+	ld	a, 10 ; '\n'
 	ld	(de), a
 	inc	de
 	
@@ -279,3 +278,332 @@ cmd_MEM.strings:
 	.db "  - free : ", 0
 	.db "  - occupied : ", 0
 
+vat_end		= $982E
+vat_start	= $9830
+
+cmd_XVAT:
+	ld	hl, $BFFF
+	ld	(vat_start), hl
+	ld	(vat_end), hl
+	
+	ld	hl, (vat_start)
+	
+cmd_XVAT.refresh:
+	push	hl
+	
+	push	hl
+	call	zp.credraw
+	
+	ld	hl, str_xvat_hdr
+	ld	bc, $0006
+	call	zp.puts_con
+	ld	a, 0
+	call	zp.invline
+	pop	hl
+	
+	ld	b, $06
+	
+cmd_XVAT.refresh.loop:
+	ld	de, (vat_end)
+	ex	de, hl
+	cmp_hlde
+	ex	de, hl
+	jr	nc, cmd_XVAT.refresh.end
+	
+	ld	de, -3
+	add	hl, de
+	
+	ld	e, (hl)
+	dec	hl
+	ld	d, (hl)
+	dec	hl
+	ld	a, (hl)
+	dec	hl
+	
+	push	hl
+	ex	de, hl
+	dec	hl
+	dec	hl
+	ld	de, os.scrap
+	call	zp.htoa_word
+	ld	a, ':'
+	ld	(de), a
+	inc	de
+	push	de
+	call	zp.block_size
+	ex	de, hl
+	ex	(sp), hl
+	ex	de, hl
+	call	zp.htoa_word
+	ld	a, ':'
+	ld	(de), a
+	inc	de
+	pop	hl
+	deref_hl
+	call	zp.htoa_word
+	xor	a
+	ld	(de), a
+	ld	c, a
+	ld	hl, os.scrap
+	call	zp.puts_con
+	pop	hl
+	
+	ld	d, (hl)
+	dec	hl
+	
+	inc	c
+	
+cmd_XVAT.nloop:
+	ld	a, (hl)
+	dec	hl
+	call	zp.putch_con
+	inc	c
+	dec	d
+	jr	nz, cmd_XVAT.nloop
+	
+	; increment row
+	ld	a, 6
+	add	a, b
+	ld	b, a
+	
+	; check for end
+	cp	MSG_PANE + 1
+	jr	c,	cmd_XVAT.refresh.loop
+	
+cmd_XVAT.refresh.end:
+	call	zp.vbufdisp
+	pop	hl
+	
+cmd_XVAT.poll:
+	ei
+	halt
+	call	zp.getkey
+	or	a
+	jr	z, cmd_XVAT.poll
+	cp	sk_mode
+	jr	z, cmd_XVAT.exit
+	cp	sk_up
+	jr	z, cmd_XVAT.up
+	cp	sk_down
+	jr	z, cmd_XVAT.down
+	cp	sk_f1
+	jp	z, cmd_XVAT.new
+	cp	sk_f2
+	jp	z, cmd_XVAT.delete
+	cp	sk_f3
+	jp	z, cmd_XVAT.insmem
+	cp	sk_f4
+	jp	z, cmd_XVAT.delmem
+	cp	sk_stat
+	jp	z, cmd_XVAT.save
+	cp	sk_xt0n
+	jp	z, cmd_XVAT.load
+	jr	cmd_XVAT.poll
+
+cmd_XVAT.exit
+	bcall($5606) ; XOS : VATClean
+	ret
+
+cmd_XVAT.up:
+	ld	de, (vat_start)
+	cmp_hlde
+	jp	z, cmd_XVAT.refresh
+	jp	cmd_XVAT.refresh
+	
+cmd_XVAT.down:
+	push	hl
+	ld	de, -6
+	add	hl, de
+	ld	a, (hl)
+	neg
+	ld	e, a
+	add	hl, de
+	ld	de, (vat_end)
+	cmp_hlde
+	pop	de
+	ex	de, hl
+	jp	z, cmd_XVAT.refresh
+	ex	de, hl
+	jp	cmd_XVAT.refresh
+
+cmd_XVAT.new:
+	push	hl
+	
+	call	get_filename
+	call	get_size
+	
+	bcall($4E6A) ; CreateAppVar
+	
+	pop	hl
+	jp	cmd_XVAT.refresh
+	
+cmd_XVAT.delete:
+	push	hl
+	
+	call	get_filename
+	bcall($42F1) ; ChkFindSym
+	jr	c, $+5
+	bcall($4351) ; DelVar
+	
+	pop	hl
+	jp	cmd_XVAT.refresh
+
+cmd_XVAT.insmem:
+	push	hl
+	
+	call	get_filename
+	call	get_size
+	push	hl
+	
+	bcall($42F1) ; ChkFindSym
+	pop	hl
+	jr	nc, $+6
+	pop	hl
+	jp	cmd_XVAT.poll
+	
+	; save params
+	push	hl
+	
+	inc	de
+	inc	de
+	
+	bcall($42F7) ; insmem
+	
+	; get back params
+	ex	de, hl
+	dec	hl
+	dec	hl
+	pop	bc
+	
+	; update size field
+	ld	a, (hl)
+	add	a, c
+	ld	(hl), a
+	inc	hl
+	ld	a, (hl)
+	adc	a, b
+	ld	(hl), a
+	
+	pop	hl
+	jp	cmd_XVAT.refresh
+	
+cmd_XVAT.delmem:
+	push	hl
+	
+	call	get_filename
+	call	get_size
+	push	hl
+	
+	bcall($42F1) ; ChkFindSym
+	pop	hl
+	jr	nc, $+6
+	pop	hl
+	jp	cmd_XVAT.poll
+	
+	; save params
+	push	hl
+	push	de
+	
+	inc	de
+	inc	de
+	ex	de, hl
+	
+	bcall($4357) ; delmem
+	
+	; get back params
+	pop	hl
+	pop	bc
+	
+	; update size field
+	ld	a, (hl)
+	sub	c
+	ld	(hl), a
+	inc	hl
+	ld	a, (hl)
+	sbc	a, b
+	ld	(hl), a
+	
+	pop	hl
+	jp	cmd_XVAT.refresh
+	
+cmd_XVAT.load:
+	push	hl
+	
+	bcall($5606) ; XOS : VATClean
+	
+	ld	hl, compat.vatdump
+	ld	de, os.scrap
+	ld	bc, 9
+	ldir
+	ld	hl, os.scrap
+	bcall($5600) ; XOS : VATLoad
+	
+	pop	hl
+	jp	cmd_XVAT.refresh
+	
+cmd_XVAT.save:
+	push	hl
+	
+	ld	hl, compat.vatdump
+	ld	de, os.scrap
+	ld	bc, 9
+	ldir
+	ld	hl, os.scrap
+	bcall($5603) ; XOS : VATSave
+	
+	pop	hl
+	jp	cmd_XVAT.poll
+
+get_filename:
+	ld	ix, 0
+	ld	hl, str_entry_name
+	call	vect_cmd_cgets.default
+	
+	ld	a, tAppvar
+	ld	($8478), a
+	
+	ld	hl, os.command
+	ld	de, $8478 + 1
+	ld	bc, 8
+	ldir
+	ret
+
+get_size:
+	ld	hl, str_entry_size
+	call	vect_cmd_cgets.default
+	
+	ld	de, os.command
+	ld	b, 4
+	jp	zp.atoh
+
+str_xvat_hdr:	.db "VAT Explorer", 0
+str_entry_name:	.db "Entry name?", 0
+str_entry_size:	.db "Size?", 0
+
+
+vat.test.dummyappv:
+	.db tAppvar, "dummyav", 0
+vat.test.dummyprog:
+	.db tLockedProg, "dummyprg", 0
+
+; brief : displays a string in the message pane and accepts user input in command pane
+; input : hl -> string to display, (de -> command buffer, a -> command buffer size), ix -> cgets callback
+; output : 
+; destroys : a, bc, de, hl, ix
+vect_cmd_cgets.default:
+	ld	a, 128
+	ld	de, os.command
+vect_cmd_cgets:
+	ld	(os.command_buf), de
+	ld	(os.command_buf + 2), a
+vect_cmd_cgets.custom:
+	ld	a, MSG_PANE		; Display function name
+	call	zp.clrline
+	ld	bc, MSG_PANE*256
+	call	zp.puts_con
+	ld	a, MSG_PANE
+	call	zp.invline
+	ld	a, MSG_PANE
+	call	zp.displine
+	
+	jp	zp.cgets

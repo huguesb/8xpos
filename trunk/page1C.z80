@@ -434,6 +434,7 @@ command_mnemonics:
 	.db "hex", 0
 	.db "chronos", 0
 	.db "touch", 0
+	.db "xvat", 0
 	.db 0
 
 command_pointers:
@@ -449,6 +450,7 @@ command_pointers:
 	.dw zp.hexedit
 	.dw cmd_CHRONOS
 	.dw cmd_TOUCH
+	.dw cmd_XVAT
 
 ; console is 24 char wide : occupy it all
 str_exception:	.export	str_exception

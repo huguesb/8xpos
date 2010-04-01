@@ -27,32 +27,24 @@
 .list
 
 vect_compat_start:
-	in	a, (map_bankA_port)
+	in	a, (map_bankB_port)
 	push	af
 	
 	; load ram page in bank A for it to be available from file_list callback
 	ld	a, $81
-	out	(map_bankA_port), a
+	out	(map_bankB_port), a
 	
 	; RAM setup
 	
 	; start of by clearing everything... (well everything but program space)
-	ld	hl, $4000
-	ld	de, $4001
+	ld	hl, $8000
+	ld	de, $8001
 	ld	bc, $1D94
 	ld	(hl), 0
 	ldir
 	
-	; fake VAT : start from end of bank B
-	ld	hl, $BFFF
-	; set progPtr (start of relevant part (progs/appvars) of VAT)
-	ld	(progPtr - $4000), hl
-	; set PTemp (end of VAT)
-	ld	(pTemp - $4000), hl
-	
-; 	ld	ix, compat.mkvat_cb
-; 	ld	c, fmask( bitmask(list_alloc) )
-; 	call	zp.file_list
+	ld	hl, compat.vatdump
+	bcall($5600) ; XOS : VATLoad
 	
 	; rst setup
 	ld	hl, compat.tios.rst08
@@ -65,8 +57,6 @@ vect_compat_start:
 	ld	(os.hook.rst20), hl
 	ld	hl, compat.tios.rst30
 	ld	(os.hook.rst30), hl
-	
-	;ld	hl, (os.vbuf_addr)
 	
 	; set plotsscreen as vbuf for consistency
 	ld	hl, plotSScreen
@@ -83,12 +73,12 @@ vect_compat_start:
 	inc	hl
 	ld	b, (hl)
 	inc	hl
-	ld	(penCol - $4000), bc
+	ld	(penCol), bc
 	ld	b, (hl)
 	inc	hl
 	ld	c, (hl)
 	inc	hl
-	ld	(curRow - $4000), bc
+	ld	(curRow), bc
 	
 	; init fp stack
 	ld	hl, 0
@@ -97,14 +87,8 @@ vect_compat_start:
 	; flags...
 	ld	iy, flags
 	
-	ld	hl, flags
-	ld	de, flags + 1
-	ld	(hl), 0
-	ld	bc, 60
-	ldir
-	
 	pop	af
-	out	(map_bankA_port), a
+	out	(map_bankB_port), a
 	
 	; SE-specific compat
 	in	a, (hw_port)
@@ -130,6 +114,9 @@ vect_compat_start:
 	ret
 
 vect_compat_stop:
+	ld	hl, compat.vatdump
+	bcall($5603) ; XOS : VATStore
+	
 	; notify sys routines so that they may adapt somehow
 	ld	hl, os.flags + osf.general
 	res	tios_emulation, (hl)
@@ -171,108 +158,8 @@ vect_compat_stop:
 	
 	ret
 
-; we assume here that bank B is occupied by fs page
-compat.mkvat:
-	in	a, (map_bankA_port)
-	push	af
-	
-	; load compat RAM into bank A
-	ld	a, $81
-	out	(map_bankA_port), a
-	
-	; perform VAT entry creation
-	call	compat.mkvat_cb
-	
-	pop	af
-	out	(map_bankA_port), a
-	ret
-
-compat.mkvat_cb:
-	; hl -> address
-	; de -> size
-	
-	; todo : handle split files?
-	
-	; find NAME field, if any
-	ld	d, meta_NAME
-	call	vect_file_meta_find
-	ccf
-	ret	nc
-	
-	push	hl
-	
-	; skip field length and type (zero terminated string...)
-	;add	a, 2
-	; go to field contents
-	offset_hl
-	ld	b, (hl)
-	inc	hl
-	inc	hl
-	dec	b
-	
-	; truncate filename if length > 8
-	ld	a, b
-	cp	9
-	jr	c, $+4
-	ld	b, 8
-	
-	; get back pointer to metadata
-	ex	(sp), hl
-	
-	; update hl to go past meta data
-	ld	a, (hl)
-	inc	a
-	offset_hl
-	
-	in	a, (map_bankB_port)
-	
-	; get address beyond last entry : new entry
-	push	ix
-	
-	ld	ix, (pTemp - $4000)
-	ld	de, - $4000
-	add	ix, de
-	push	ix
-	pop	de
-	
-	; pretend all files are appvars (we won't have TIOS progs anyway...)
-	ld	(ix - 0), tAppvar
-	ld	(ix - 1), 0
-	ld	(ix - 2), 0
-	ld	(ix - 3), l
-	ld	(ix - 4), h
-	ld	(ix - 5), a
-	ld	(ix - 6), b
-	
-	pop	ix
-	
-	ld	hl, -7
-	add	hl, de
-	ex	de, hl
-	
-	pop	hl
-	
-	; hl -> pointer to file name
-	; de -> pointer to name field of VAT entry
-	; b -> size of file name (truncated if necessary...)
-	
-	; copy name
-compat.mkvat.nl:
-	ld	a, (hl)
-	inc	hl
-	ld	(de), a
-	dec	de
-	djnz	compat.mkvat.nl
-	
-	; set last entry address
-	ld	hl, $4000
-	add	hl, de
-	ld	(pTemp - $4000), hl
-	
-	;call	zp.dump_hl
-	
-	or	a
-	ret
+compat.vatdump:	.export compat.vatdump
+	.db "vat-dump", 0
 
 compat.tios.rst08:
 	; OP1toOP2

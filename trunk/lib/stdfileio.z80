@@ -41,10 +41,14 @@
 ; brief : Open a file and setup a FILE object to access it using high level file I/O API
 ; input : hl -> filename
 ; output : CF set on failure, hl -> FILE object pointer (allocated on heap)
-; destroys : a, bc, de, ix, iy
+; destroys : a, bc, de
 vect_fopen:
+	push	ix
+	push	iy
 	ld	ix, fopen.cb
 	call	zp.file_find
+	pop	iy
+	pop	ix
 	
 	ld	hl, (os.fopen.out)
 	
@@ -448,7 +452,7 @@ vect_fgrow.skip3:
 ; brief : set the file data pointer to a given position
 ; input : hl -> pointer to FILE object, de -> offset in file
 ; output : none
-; destroys : 
+; destroys : a, bc, de
 ; note :
 vect_fseek:
 	push	hl
