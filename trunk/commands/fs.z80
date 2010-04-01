@@ -429,7 +429,7 @@ cmd_XVAT.down:
 cmd_XVAT.new:
 	push	hl
 	
-	call	get_filename
+	call	get_filename_vat
 	call	get_size
 	
 	bcall($4E6A) ; CreateAppVar
@@ -440,7 +440,7 @@ cmd_XVAT.new:
 cmd_XVAT.delete:
 	push	hl
 	
-	call	get_filename
+	call	get_filename_vat
 	bcall($42F1) ; ChkFindSym
 	jr	c, $+5
 	bcall($4351) ; DelVar
@@ -451,7 +451,7 @@ cmd_XVAT.delete:
 cmd_XVAT.insmem:
 	push	hl
 	
-	call	get_filename
+	call	get_filename_vat
 	call	get_size
 	push	hl
 	
@@ -490,7 +490,7 @@ cmd_XVAT.insmem:
 cmd_XVAT.delmem:
 	push	hl
 	
-	call	get_filename
+	call	get_filename_vat
 	call	get_size
 	push	hl
 	
@@ -531,11 +531,8 @@ cmd_XVAT.load:
 	
 	bcall($5606) ; XOS : VATClean
 	
-	ld	hl, compat.vatdump
-	ld	de, os.scrap
-	ld	bc, 9
-	ldir
-	ld	hl, os.scrap
+	call	get_filename
+	ld	hl, os.command
 	bcall($5600) ; XOS : VATLoad
 	
 	pop	hl
@@ -544,20 +541,20 @@ cmd_XVAT.load:
 cmd_XVAT.save:
 	push	hl
 	
-	ld	hl, compat.vatdump
-	ld	de, os.scrap
-	ld	bc, 9
-	ldir
-	ld	hl, os.scrap
+	call	get_filename
+	ld	hl, os.command
 	bcall($5603) ; XOS : VATSave
 	
 	pop	hl
-	jp	cmd_XVAT.poll
+	jp	cmd_XVAT.refresh
 
 get_filename:
 	ld	ix, 0
 	ld	hl, str_entry_name
-	call	vect_cmd_cgets.default
+	jp	vect_cmd_cgets.default
+	
+get_filename_vat:
+	call	get_filename
 	
 	ld	a, tAppvar
 	ld	($8478), a
@@ -569,6 +566,7 @@ get_filename:
 	ret
 
 get_size:
+	ld	ix, 0
 	ld	hl, str_entry_size
 	call	vect_cmd_cgets.default
 	
@@ -577,14 +575,8 @@ get_size:
 	jp	zp.atoh
 
 str_xvat_hdr:	.db "VAT Explorer", 0
-str_entry_name:	.db "Entry name?", 0
+str_entry_name:	.db "File name?", 0
 str_entry_size:	.db "Size?", 0
-
-
-vat.test.dummyappv:
-	.db tAppvar, "dummyav", 0
-vat.test.dummyprog:
-	.db tLockedProg, "dummyprg", 0
 
 ; brief : displays a string in the message pane and accepts user input in command pane
 ; input : hl -> string to display, (de -> command buffer, a -> command buffer size), ix -> cgets callback

@@ -158,7 +158,7 @@ vect_compat_stop:
 	
 	ret
 
-compat.vatdump:	.export compat.vatdump
+compat.vatdump:
 	.db "vat-dump", 0
 
 compat.tios.rst08:

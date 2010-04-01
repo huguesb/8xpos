@@ -1,4 +1,3 @@
-compat.vatdump   .EQU  $2358
 os.version       .EQU  $0064
 os.firstboot     .EQU  $0078
 os.rampages      .EQU  $0079

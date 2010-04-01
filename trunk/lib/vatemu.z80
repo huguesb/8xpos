@@ -1,0 +1,968 @@
+.nolist
+; Copyright (c) 2009, Luc BRUANT aka fullmetalcoder.
+; 
+; Permission is hereby granted, free of charge, to any person
+; obtaining a copy of this software and associated documentation
+; files (the "Software"), to deal in the Software without
+; restriction, including without limitation the rights to use,
+; copy, modify, merge, publish, distribute, sublicense, and/or sell
+; copies of the Software, and to permit persons to whom the
+; Software is furnished to do so, subject to the following
+; conditions:
+; 
+; The above copyright notice and this permission notice shall be
+; included in all copies or substantial portions of the Software.
+; 
+; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+; EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+; OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+; NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+; HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+; WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+; FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+; OTHER DEALINGS IN THE SOFTWARE.
+.list
+
+;pTemp                =  982Eh = vat_end
+;progPtr              =  9830h = vat_start
+
+vat_end = pTemp
+vat_start = progPtr
+vat_FILE = fontHookPtr ; not gonna emulate hooks anyway so better use it...
+
+; VAT dump struct :
+;
+;	* word : number of entries
+;	* list of entries	
+;
+;	entry {
+;		byte : type (as in VAT entry)
+;		word : size of data
+;		size bytes : data
+;		byte : name length
+;		nl bytes : name
+;	}
+
+; brief : fill VAT from a file and copy variable data to heap
+; input : hl -> filename
+; output : CF set if file not found
+; destroys : a, bc, de, hl
+vect_vat_load:
+	; init VAT pointers
+	push	hl
+	ld	hl, $BFFF
+	ld	(vat_start), hl
+	ld	(vat_end), hl
+	pop	hl
+	
+	; try to open dump file
+	call	zp.fopen
+	ret	c
+	
+	; skip size bytes
+	ld	de, 2
+	call	zp.fseek
+	
+	; get number of entries
+	call	zp.fgetc
+	ld	c, a
+	call	zp.fgetc
+	ld	b, a
+	
+	or	c
+	jr	z, vect_vat_load.end
+	
+vect_vat_load.loop:
+	push	bc
+	push	hl
+	
+	; get variable type
+	call	zp.fgetc
+	
+	; start writing VAT entry
+	ld	hl, (vat_end)
+	
+	ld	(hl), a
+	dec	hl
+	xor	a
+	ld	(hl), a
+	dec	hl
+	ld	(hl), a
+	dec	hl
+	
+	ex	(sp), hl
+	
+	; get data size
+	call	zp.fgetc
+	ld	c, a
+	call	zp.fgetc
+	ld	b, a
+	
+	ex	(sp), hl
+	
+	; alloc variable space
+	push	hl
+	call	zp.malloc
+	pop	de
+	ex	de, hl
+	
+	; write data address in VAT entry
+	ld	(hl), e
+	dec	hl
+	ld	(hl), d
+	dec	hl
+	ld	(hl), 0
+	dec	hl
+	
+	ex	(sp), hl
+	
+	; read data and write it into allocated space
+	call	zp.fread
+	
+	; get name length and write it into VAT entry
+	call	zp.fgetc
+	cp	9
+	jr	c, $+4
+	ld	a, 8
+	
+	ld	b, a
+	ex	(sp), hl
+	ld	(hl), a
+	dec	hl
+	
+	; get name and write it into VAT entry
+	ex	(sp), hl
+	call	zp.fgetc
+	ex	(sp), hl
+	ld	(hl), a
+	dec	hl
+	djnz	$-7
+	
+	; update VAT end ptr
+	ld	(vat_end), hl
+	
+	pop	hl
+	pop	bc
+	
+	dec	bc
+	ld	a, b
+	or	c
+	jr	nz, vect_vat_load.loop
+	
+vect_vat_load.end:
+	; close VAT file
+	jp	zp.fclose
+	
+vect_vat_store.cb:
+	ret
+
+
+dump_vat_entry:
+	; beg debug :::
+	push	af
+	push	bc
+	push	de
+	push	hl
+	ld	b, 6
+	ld	de, os.scrap
+	
+	call	zp.memdump
+	dec	hl
+	djnz	$-4
+	
+	ld	a, ':'
+	ld	(de), a
+	inc	de
+	
+	ld	b, (hl)
+	dec	hl
+	
+	ld	a, (hl)
+	ld	(de), a
+	inc	de
+	dec	hl
+	djnz	$-4
+	
+	xor	a
+	ld	(de), a
+	
+	push	hl
+	ld	hl, os.scrap
+	call	zp.cputs
+	call	zp.cdisp
+	call	zp.getch
+	pop	hl
+	
+	pop	hl
+	pop	de
+	pop	bc
+	pop	af
+	; end debug :::
+	ret
+
+; brief : store VAT data into a file and release VAT memory
+; input : hl -> filename to use
+; output : none
+; destroys : a, bc, de, hl
+vect_vat_store:
+	; try open file
+	push	hl
+	call	zp.fopen
+	pop	de
+	jr	nc, vect_vat_store.exists
+	ex	de, hl
+	push	hl
+	
+	; create the file if it does not exist...
+	; todo : figure out a proper size beforehand
+	ld	bc, 16
+	ld	ix, vect_vat_store.cb
+	call	zp.file_create
+	
+	; primitive error handling
+	call	c, zp.throw_memory
+	
+	pop	hl
+	
+	; open it
+	call	zp.fopen
+	
+	; dummy : size
+	xor	a
+	call	zp.fputc
+	xor	a
+	call	zp.fputc
+	
+	; dummy : number of entries
+	xor	a
+	call	zp.fputc
+	xor	a
+	call	zp.fputc
+	
+	jr	vect_vat_store.open
+	
+vect_vat_store.exists:
+	
+	; move to content
+	ld	de, 4
+	call	zp.fseek
+	
+vect_vat_store.open:
+	ld	(vat_FILE), hl
+	
+	ld	bc, 0
+	ld	hl, (vat_start)
+	
+vect_vat_store.loop:
+	; check for VAT end
+	ld	de, (vat_end)
+	ex	de, hl
+	cmp_hlde
+	ex	de, hl
+	jr	nc, vect_vat_store.end
+	
+	push	bc
+	
+	;call	dump_vat_entry
+	
+	; get type
+	ld	b, (hl)
+	dec	hl
+	
+	; skip T2 and Version fields
+	dec	hl
+	dec	hl
+	
+	; get data ptr
+	ld	e, (hl)
+	dec	hl
+	ld	d, (hl)
+	dec	hl
+	
+	; check for archived var
+	ld	a, (hl)
+	dec	hl
+	or	a
+	jr	z, vect_vat_store.noarch
+	
+	; skip archived...
+	ld	b, (hl)
+	dec	hl
+	
+	dec	hl
+	djnz	$-1
+	
+	pop	bc
+	jr	vect_vat_store.loop
+	
+vect_vat_store.noarch:
+	; put FILE ptr into top stack
+	push	hl
+	ld	hl, (vat_FILE)
+	
+	; write type
+	ld	a, b
+	push	de
+	call	zp.fputc
+	pop	de
+	ex	(sp), hl
+	
+	; get data size
+	push	hl
+	ex	de, hl
+	dec	hl
+	dec	hl
+	call	zp.block_size
+	ld	b, h
+	ld	c, l
+	pop	hl
+	
+	ex	(sp), hl
+	
+	push	de
+	push	de
+	; write size
+	ld	a, c
+	call	zp.fputc
+	ld	a, b
+	call	zp.fputc
+	
+	; write data
+	pop	de
+	call	zp.fwrite
+	pop	de
+	
+	ex	(sp), hl
+	
+	; release variable memory (moved to vat_clean)
+; 	push	hl
+; 	ex	de, hl
+; 	call	zp.free
+; 	pop	hl
+	
+	; get name length
+	ld	a, (hl)
+	dec	hl
+	
+	; bounds checking
+	cp	9
+	jr	c, $+4
+	ld	a, 8
+	
+	; write name length
+	ld	b, a
+	ex	(sp), hl
+	call	zp.fputc
+	ex	(sp), hl
+	
+	; copy name of entry
+	ld	a, (hl)
+	dec	hl
+	ex	(sp), hl
+	call	zp.fputc
+	ex	(sp), hl
+	djnz	$-7
+	
+	; discard FILE ptr for now
+	pop	af
+	
+	pop	bc
+	inc	bc
+	jr	vect_vat_store.loop
+	
+vect_vat_store.end:
+	ld	hl, (vat_FILE)
+	
+	push	bc
+	ld	de, 2
+	call	zp.fseek
+	pop	bc
+	
+	; write number of entries
+	ld	a, c
+	call	zp.fputc
+	ld	a, b
+	call	zp.fputc
+	
+	; clear variable
+	ld	de, 0
+	ld	(vat_FILE), de
+	
+	jp	zp.fclose
+
+; brief : find a variable in VAT
+; input : hl -> variable id (type + name)
+; output : CF set on failure, a -> type | flags, hl -> VAT entry, b:de -> data ptr
+; destroys : a, bc, de, hl
+vect_vat_find:
+	; save ix and load hl into ix
+	push	hl
+	ex	(sp), ix
+	
+	ld	hl, (vat_start)
+	ld	de, (vat_end)
+	ld	bc, -6
+	
+vect_vat_find.loop:
+	; check for VAT end
+	cmp_hlde
+	jr	z, $+4
+	jr	nc, $+6
+	pop	ix
+	scf
+	ret
+	
+	; check for matching var type
+	ld	a, (ix)
+	cp	(hl)
+	jr	nz, vect_vat_find.invalid
+	
+	push	hl
+	
+	; move to name and get length
+	add	hl, bc
+	ld	b, (hl)
+	
+	push	de
+	
+	; get back variable id
+	push	ix
+	pop	de
+	inc	de
+	
+	; check for matching name
+vect_vat_find.cmp:
+	ld	a, (de)
+	inc	de
+	dec	hl
+	cp	(hl)
+	jr	nz, vect_vat_find.skip
+	djnz	vect_vat_find.cmp
+	
+	pop	de
+	pop	hl
+	
+	push hl
+	
+	; get type byte
+	ld	a, (hl)
+	; mask type byte and clear carry
+	and	$1F
+	
+	; skip T2 and Version
+	dec	hl
+	dec	hl
+	
+	; get data ptr
+	dec	hl
+	ld	e, (hl)
+	dec	hl
+	ld	d, (hl)
+	dec	hl
+	ld	b, (hl)
+	
+	pop	hl
+	
+	pop	ix
+	;or	a
+	ret
+	
+vect_vat_find.skip:
+	pop	de
+	pop	hl
+	
+	; restore name offset
+	ld	bc, -6
+	
+vect_vat_find.invalid:
+	add	hl, bc
+	
+	; skip name
+	scf
+	ld	a, l
+	sbc	a, (hl)
+	ld	l, a
+	jr	nc, vect_vat_find.loop
+	dec	h
+	jr	vect_vat_find.loop
+
+; brief : create a variable in VAT and allocate memory
+; input : hl -> variable id (type + name), bc -> size
+; output : hl -> VAT entry, de -> data ptr
+; destroys : a, bc
+vect_vat_create:
+	ld	de, (vat_end)
+	
+	push	de
+	
+	; write type byte in VAT entry
+	ld	a, (hl)
+	inc	hl
+	ex	de, hl
+	ld	(hl), a
+	dec	hl
+	
+	; write T2 and Version bytes
+	xor	a
+	ld	(hl), a
+	dec	hl
+	ld	(hl), a
+	dec	hl
+	
+	push	de
+	push	hl
+	
+	; alloc memory
+	inc	bc
+	inc	bc
+	call	zp.malloc
+	
+	; minimalistic error handling
+	call	c, zp.throw_memory
+	
+	; init size bytes
+	dec	bc
+	dec	bc
+	ld	(hl), c
+	inc	hl
+	ld	(hl), b
+	dec	hl
+	
+	ex	de, hl
+	pop	hl
+	
+	; write data address in VAT entry
+	ld	(hl), e
+	dec	hl
+	ld	(hl), d
+	dec	hl
+	ld	(hl), 0
+	dec	hl
+	
+	;; ex (sp), de
+	ex	de, hl
+	ex	(sp), hl
+; 	ex	de, hl
+; 	
+; 	ex	de, hl
+	
+	; compute name length
+	call	zp.strlen
+	
+	;write name length
+	ld	a, c
+	
+	; size check
+	cp	9
+	jr	c, $+4
+	ld	a, 8
+	
+	ld	(de), a
+	dec	de
+	
+	ld	b, a
+	
+	; write name to VAT entry
+	ld	a, (hl)
+	inc	hl
+	ld	(de), a
+	dec	de
+	djnz	$-4
+	
+	ld	(vat_end), de
+	
+	; get back outputs
+	pop	de
+	pop	hl
+	ret
+
+; brief : removes a variable from VAT and release related memory
+; input : hl -> VAT entry, b:de -> data ptr
+; output : none
+; destroys : a, bc, de, hl
+vect_vat_del:
+	; check for archive
+	ld	a, b
+	or	a
+	ret	nz
+	
+	; release data
+	push	hl
+	ex	de, hl
+	call	zp.free
+	pop	hl
+	
+	; now update VAT (fill the gap in entries)
+	
+	push	hl
+	
+	; move to name length
+	ld	bc, -6
+	add	hl, bc
+	
+	; move to next entry : negative offset_hl (with carry)
+	ld	a, (hl)
+	cpl
+	ld	c, a
+	add	hl, bc
+	
+	; determine size of data to move
+	push	hl
+	ld	de, (vat_end)
+	or	a
+	sbc	hl, de
+	ld	b, h
+	ld	c, l
+	pop	hl
+	
+	pop	de
+	
+	; removed entry is last : nothing to copy
+	jr	z, $+4
+	
+	; move data
+	lddr
+	
+	; update VAT end ptr
+	ld	(vat_end), de
+	ret
+
+; brief : release all data allocated in the VAT
+; input : none
+; output : none
+; destroys : a, bc, de, hl
+; note : this does NOT alter the VAT itself.
+;        it must be reinitialized before being used again
+vect_vat_clean:
+	ld	hl, (vat_start)
+	ld	de, (vat_end)
+	
+vect_vat_clean.loop:
+	; check for VAT end
+	ex	de, hl
+	cmp_hlde
+	ex	de, hl
+	ret	nc
+	
+	; skip type, T2 and Ver fields
+	ld	bc, -3
+	add	hl, bc
+	
+	push	de
+	
+	; get data location
+	ld	e, (hl)
+	dec	hl
+	ld	d, (hl)
+	dec	hl
+	ld	a, (hl)
+	dec	hl
+	
+	push	hl
+	
+	; release data, unless archived
+	ex	de, hl
+	or	a
+	call	z, zp.free
+	
+	pop	hl
+	pop	de
+	
+	; skip name field
+	ld	a, (hl)
+	cpl
+	ld	c, a
+	add	hl, bc
+	
+	jr	vect_vat_clean.loop
+
+; brief : insert memory in an existing variable's data
+; input : hl -> size, de -> address within var data
+; output : none
+; destroys : a, bc, hl
+vect_vat_insmem:
+	; 1st : figure out where data start to realloc it...
+	push	hl
+	call	vect_find_chunk
+	
+	call	c, zp.throw_memory
+	
+	; stack top -> insertion size
+	; bc -> size of block
+	; de -> point of insertion
+	; hl -> start of target chunk
+	
+	; turn insertion address into offset
+	ex	de, hl
+	or	a
+	sbc	hl, de
+	ex	de, hl
+	
+	; construct proper stack frame and compute new block size
+	pop	af
+	push	bc
+	push	af
+	push	de
+	push	af
+	ex	(sp), hl
+	add	hl, bc
+	ld	b, h
+	ld	c, l
+	pop	hl
+	
+	; stack : ... | blk_sz | ins_sz | ins_off 
+	; hl -> start of chunk
+	; bc -> new size
+	
+	; realloc memory
+	push	hl
+	call	zp.realloc
+	pop	de
+	
+	call	c, zp.throw_memory
+	
+	cmp_hlde
+	call	nz, vect_vat_update_entry
+	
+	; move data (de -> de + bc)
+	
+	; get back copy parameters
+	pop	de
+	pop	bc
+	
+	; number of bytes to displace = old size - insertion offset
+	ex	(sp), hl
+	or	a
+	sbc	hl, de
+	ex	(sp), hl
+	
+	; src = start of chunk + insertion offset
+	add	hl, de
+	ld	d, h
+	ld	e, l
+	
+	; dst = src + insertion size
+	add	hl, bc
+	ex	de, hl
+	
+	; get back number of bytes to displace
+	pop	bc
+	
+	; save point of insertion
+	push	hl
+	
+	; copy data
+	ldir
+	
+	; get back point of insertion
+	pop	de
+	
+	ret
+
+; brief : removes memory from an existing variable's data
+; input : hl -> address whithin var data, de -> amount to delete
+; output : bc -> amount deleted
+; destroys : a, hl
+vect_vat_delmem:
+	; 1st : figure out where data start to realloc it...
+	push	de
+	push	de
+	
+	ex	de, hl
+	push	hl
+	call	vect_find_chunk
+	
+	call c, zp.throw_memory
+	
+	; stack top -> size of insertion
+	; bc -> size of chunk
+	; de -> point of removal
+	; hl -> start of target chunk
+	
+	; TODO : cap size of removed chunk...
+	
+	; turn removal address into offset
+	ex	de, hl
+	or	a
+	sbc	hl, de
+	ex	de, hl
+	
+	; construct proper stack frame and compute new block size
+	pop	af
+	push	bc
+	push	af
+	push	de
+	push	af
+	ex	(sp), hl
+	ld	a, h
+	cpl
+	ld	h, a
+	ld	a, l
+	cpl
+	ld	l, a
+	inc	hl
+	add	hl, bc
+	ld	b, h
+	ld	c, l
+	pop	hl
+	
+	; stack : ... | blk_sz | ins_sz | ins_off 
+	; hl -> start of chunk
+	; bc -> new size
+	
+	; realloc memory
+	push	hl
+	call	zp.realloc
+	pop	de
+	
+	call	c, zp.throw_memory
+	
+	cmp_hlde
+	call	nz, vect_vat_update_entry
+	
+	; move data (de + bc -> de)
+	
+	; get back copy parameters
+	pop	de
+	pop	bc
+	
+	; number of bytes to displace = old size - insertion offset - size to remove
+	ex	(sp), hl
+	or	a
+	sbc	hl, de
+	or	a
+	sbc	hl, bc
+	ex	(sp), hl
+	
+	; dst = start of chunk + insertion offset
+	add	hl, de
+	ld	d, h
+	ld	e, l
+	
+	; src = dst + removal size
+	add	hl, bc
+	
+	; get back number of bytes to displace
+	pop	bc
+	
+	; copy data
+	ldir
+	
+	pop	de
+	pop	bc
+	ret
+
+; brief : find start of a memory chunk (in heap)
+; input : de -> address within chunk
+; output : CF set on failure, hl -> chunk start (realloc/free suitable), bc -> chunk size
+; destroys : a
+vect_find_chunk:
+	ld	hl, (os.malloc.mp_start)
+	
+vect_find_chunk.loop:
+	push	de
+	call	zp.block_size
+	ld	b, h
+	ld	c, l
+	pop	hl
+	
+	; hl -> expected
+	; de -> chunk start
+	; bc -> chunk size
+	
+	push	af
+	; check for input_addr >= chunk_start
+	cmp_hlde
+	jr	c, vect_find_chunk.fail
+	
+	; check for input_addr < chunk_start + chunk_size
+	ex	de, hl
+	add	hl, bc
+	cmp_hlde
+	jr	nc, vect_find_chunk.ok
+	
+	pop	af
+	
+	; loop if not at end
+	jr	nc, vect_find_chunk.loop
+	ret
+	
+vect_find_chunk.fail:
+	pop	af
+	scf
+	ret
+
+vect_find_chunk.ok:
+	; adjust output
+	or	a
+	sbc	hl, bc
+	
+	pop	af
+	or	a
+	ret
+
+; brief : update a VAT entry after data realloc
+; input : hl -> data, de -> old data
+; output : CF set on failure (no matching VAT entry found)
+; destroys : a, bc, de
+vect_vat_update_entry:
+	push	hl
+	push	de
+	
+	ld	hl, (vat_start)
+	
+vect_vat_update_entry.loop:
+	; check for VAT end
+	ld	de, (vat_end)
+	ex	de, hl
+	cmp_hlde
+	ex	de, hl
+	jr	c, $+6
+	pop	de
+	pop	hl
+	scf
+	ret
+	
+	; skip type, T2 and Ver fields
+	ld	bc, -3
+	add	hl, bc
+	
+	; get data location
+	ld	e, (hl)
+	dec	hl
+	ld	d, (hl)
+	dec	hl
+	ld	a, (hl)
+	dec	hl
+	
+	; skip archived
+	or	a
+	jr	nz, vect_vat_update_entry.cont
+	
+	; compare against old data pointer
+	ex	(sp), hl
+	cmp_hlde
+	ex	(sp), hl
+	
+	jr	nz, vect_vat_update_entry.cont
+	pop	de
+	pop	de
+	; write value of new data pointer
+	inc	hl
+	inc	hl
+	ld	(hl), d
+	inc	hl
+	ld	(hl), e
+	ex	de, hl
+	; CF already reset by comparision since Z set...
+	;or	a
+	ret
+vect_vat_update_entry.cont:
+	
+	; skip name field
+	ld	a, (hl)
+	cpl
+	ld	c, a
+	add	hl, bc
+	
+	jr	vect_vat_update_entry.loop
