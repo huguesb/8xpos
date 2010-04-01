@@ -45,6 +45,7 @@ init:
 	ld	a, $1C
 	call	zp.setflashpage
 	
+	; model-dependent init
 	call	zp.hw_version
 	add	a, a
 	ld	d, 0
@@ -68,6 +69,7 @@ init.jmp_table:
 init.lcd_out	.db	$18, $01, default.contrast, $40, $05
 init.str_clear	.db	"Mem Cleared", 0
 init.str_soft	.db	"Soft restart", 0
+init.str_first	.db "First Boot", 0
 
 init.83pBE:
 	; map RAM page 1 to memory bank B ($8000)
@@ -159,9 +161,6 @@ init.SEcommon:
 	; initialization of protected ports (flash exec boundary...)
 	call	zp.flash_exec_init_se
 	
-	; enable link assist
-	call	zp.enableLA
-	
 ; all models
 init.common:
 	; interrupt setup
@@ -182,6 +181,7 @@ init.lcd_loop:
 	out	(lcd_cmd_port), a
 	djnz	init.lcd_loop
 	
+	
 	; reset RAM
 	
 	; clear sys RAM
@@ -190,13 +190,6 @@ init.lcd_loop:
 	ld	bc, $8000 - 1
 	ld	(hl), 0
 	ldir
-	
-	ld	a, (os.firstboot)
-	or	a
-	call	nz, init.firstboot
-	
-	; init filesystem
-	call	zp.file_initfs
 	
 	; init memory allocator
 	ld	hl, os.malloc.pool
@@ -231,11 +224,10 @@ init.lcd_loop:
 	ld	(os.contrast), a
 	
 	; reset OS flags
-	;ld	a, fmask( bitmask(calc_on) | bitmask(aps_on) | bitmask(debug_on) )
 	ld	a, fmask( bitmask(calc_on) | bitmask(aps_on) )
 	ld	(os.flags), a
 	
-	;ld	a, bitmask(proto_dump_on)
+	; enable silent link
 	ld	a, fmask( bitmask(silent_on) )
 	ld	(os.flags + osf.silentlink), a
 	
@@ -250,37 +242,73 @@ init.lcd_loop:
 	xor	a
 	ld	(os.command_mem + 2), a
 	
+	; init link assist on SE calcs (must be done after memory init)
+	in	a, (hw_port)
+	rlca
+	call	c, zp.enableLA
+	
+	; init filesystem
+	call	zp.file_initfs
+	
+	; some delay
 	in	a, (irq_stat_port)
 	and	$08
 	jr	nz, $-4
 	
-; 	ld	hl, os.flags
-; 	res	calc_on, (hl)
-; 	call	isr.shut_down
-; 	
 	call	isr.force_off
 	
-	; boot screen (mem cleared)
+init.boot0:
+	; start displaying console
 	call	zp.cclear
 	call	zp.credraw
-	call	zp.vbufdisp
+	
+init.boot1:
+	ld	a, (os.firstboot)
+	or	a
+	jr	z, init.boot2
+	inc	a
+	call	nz, zp.throw
+	
+	; display "First Boot" message
+	ld	hl, init.str_first
+	call	zp.cputs
+	call	zp.cdisp
+	
+	; unlock flash
+	call	zp.flash_unlock
+	
+	; check RAM availability
+	call	vect_ram_check
+	
+	; write RAM config
+	xor	a
+	ld	hl, os.rampages
+	call	zp.flash_put
+	
+	; mark first boot done
+	xor	a
+	ld	hl, os.firstboot
+	ld	b, a
+	call	zp.flash_put
+	
+	; relock flash
+	call	zp.flash_lock
+	
+init.boot2:
+	; boot screen (mem cleared)
 	ld	hl, init.str_clear
 	call	zp.cputs
 	call	zp.cdisp
 	
 	jp	zp.console
 
-init.firstboot:
-	cp	$FF
-	call	nz, zp.throw
-	
-	call	zp.flash_unlock
-	
+vect_ram_check:
 	in	a, (hw_port)
 	rlca
-	jr	nc, init.firstboot.BE
-
-init.firstboot.SE
+	ld	b, %00000011
+	ret	nc
+	
+vect_ram_check.SE:
 	; SE only : check for screwed RAM
 	
 	; save
@@ -320,36 +348,5 @@ b_loop:
 	pop	af
 	out	(map_bankB_port), a
 	
-	; write RAM config
-	xor	a
 	ld	b, d
-	
-	ld	hl, os.rampages
-	call	zp.flash_put
-	;ld	de, os.rampages
-	; WriteAByte
-	;bcall($8021)
-	
-	jr	init.firstbootend
-	
-init.firstboot.BE:
-	; not much choice of RAM availability here
-	xor	a
-	ld	b, %00000011
-	ld	hl, os.rampages
-	call	zp.flash_put
-	;ld	de, os.rampages
-	; WriteAByte
-	;bcall($8021)
-
-init.firstbootend:
-	; mark first boot done
-	xor	a
-	ld	hl, os.firstboot
-	ld	b, a
-	call	zp.flash_put
-	;ld	de, os.firstboot
-	; WriteAByte
-	;bcall($8021)
-	
-	jp	zp.flash_lock
+	ret

@@ -347,3 +347,11 @@ vect_app_find.cb.continue:
 	or	a
 	ret
 
+
+; brief : find room for a flash app
+; input : ? -> number of pages needed
+; output : CF set on failure, a -> first app page
+; destroys : a, bc, de, hl
+vect_app_find_free:
+	
+	ret

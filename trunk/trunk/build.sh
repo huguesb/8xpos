@@ -25,7 +25,7 @@ mkdir -p build
 
 # build this before as we need to export some symbols
 # for use by the OS basecode in page00
-wine tools/tasm -80 -c -o20 -fC7 -y -e page1C.z80 build/page1C.hex &> /dev/null
+wine tools/tasm -80 -c -o20 -fC7 -y -e page1C.z80 build/page1C.hex &> 1C.log
 
 if [ $? != 0 ]
 then
@@ -61,28 +61,28 @@ then
 	exit 1
 fi
 
-tools/multihex 00 build/page00.hex 01 build/page01.hex 1C build/page1C.hex | tools/encdos build/xos.hex
+tools/multihex 00 build/page00.hex 01 build/page01.hex 1C build/page1C.hex | tools/encdos build/xos.hex &> hex.log
 
-tools/packxxu -v 0.1 -h 255 build/xos.hex -t 83p -q 0A -o build/xos.8xu &> /dev/null
+tools/packxxu -v 0.1 -h 255 build/xos.hex -t 83p -q 0A -o build/xos.8xu &> pack.log
 
-rabbitsign -t 8xu -k tools/0A.key build/xos.8xu -o xos.8xu &> /dev/null
+rabbitsign -t 8xu -k tools/0A.key build/xos.8xu -o xos.8xu &> sign.log
 
 # create rom dump
-tools/rom8x 84PBE -1 tools/D84PBE1.8xv -2 tools/D84PBE2.8xv -u xos.8xu
+tools/rom8x 84PBE -1 tools/D84PBE1.8xv -2 tools/D84PBE2.8xv -u xos.8xu &> rom.log
 
 # build apps
 
-for filename in apps/*.z80
-do
-	name=`basename $filename | sed s,\.z80$,,`
-	
-	wine tools/tasm -80 -b -c -fC7 -y apps/$name.z80 apps/$name.bin
-
-	if [ $? != 0 ]
-	then
-		echo "errors..."
-		exit 1
-	fi
-
-	tools/bin8x -i apps/$name.bin -o $name.8xp -n $name -83p &> /dev/null
-done
+# for filename in apps/*.z80
+# do
+# 	name=`basename $filename | sed s,\.z80$,,`
+# 	
+# 	wine tools/tasm -80 -b -c -fC7 -y apps/$name.z80 apps/$name.bin
+# 
+# 	if [ $? != 0 ]
+# 	then
+# 		echo "errors..."
+# 		exit 1
+# 	fi
+# 
+# 	tools/bin8x -i apps/$name.bin -o $name.8xp -n $name -83p &> /dev/null
+# done

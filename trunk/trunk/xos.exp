@@ -1,3 +1,4 @@
+compat.vatdump   .EQU  $2358
 os.version       .EQU  $0064
 os.firstboot     .EQU  $0078
 os.rampages      .EQU  $0079
@@ -226,4 +227,3 @@ zp.block_size    .EQU  $0769
 zp.block_size_iy .EQU  $076c
 zp.ram_page_count .EQU  $076f
 zp.ram_page_available .EQU  $0772
-zp.end           .EQU  $0775

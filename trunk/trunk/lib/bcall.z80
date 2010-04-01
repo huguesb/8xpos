@@ -272,7 +272,7 @@ zp.setflashpage:
 
 ; brief : adjust a flash page number in BE range to match calc model
 ; input : a -> flash page (00-1F)
-; output : adjusted flash page (00-7F), CF set if no adjustment required, reset otherwise
+; output : a -> adjusted flash page (00-7F), CF set if no adjustment required, reset otherwise
 ; destroys : none
 vect_flashpage_adjust:
 	;; Set local page corresponding to given BE page

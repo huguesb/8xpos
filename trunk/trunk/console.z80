@@ -28,7 +28,7 @@
 ; commands. Much attention must be devoted to the part of the OS to
 ; polish it enough to avoid scaring users away...
 ;
-; first area of important : the command edition. the cgets method from
+; first area of importance : the command edition. the cgets method from
 ; CSX was limited and buggy so I fixed and improved it (by adding cursor
 ; movement and cursor display among other things). besides, it is always
 ; a pain to type the same commands again and again so a bash-like command

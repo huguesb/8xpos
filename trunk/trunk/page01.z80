@@ -4947,11 +4947,15 @@ _NZIf83Plus:		; equ $50E0
 ; XOS bcalls
 .org	$5600
 	
-
-; page0 compat calls are beyond the syscall jump table but not exported
-; current  valid values :
-;	0 : mkvatnode (hl : file address, de : file size)
-#define ccall(n) call zp.end + (3*n)
+; VATLoad equ $5600
+	.dw vect_vat_load
+	.db $00
+; VATSave equ $5603
+	.dw vect_vat_store
+	.db $00
+; VATClean equ $5606
+	.dw vect_vat_clean
+	.db $00
 
 
 compat.grbufcpy:
@@ -5087,75 +5091,9 @@ compat.ipoint.return:
 
 compat.chkfindsym:
 	; data in OP1
-	scf
-	ret
+	ld	hl, OP1
+	jp	vect_vat_find
 	
-; 	ld	hl, (progPtr)
-; 	ld	de, (pTemp)
-; 	ld	bc, -6
-; 	
-; compat.cfs.loop:
-; 	ex	de, hl
-; 	cmp_hlde
-; 	ex	de, hl
-; 	ccf
-; 	ret	c
-; 	
-; 	ld	a, (OP1)
-; 	cp	(hl)
-; 	jr	nz, compat.cfs.invalid
-; 	add	hl, bc
-; 	ld	b, (hl)
-; 	
-; 	push	hl
-; 	push	de
-; 	
-; 	dec	hl
-; 	ld	de, OP1 + 1
-; 	
-; compat.cfs.cmp:
-; 	ld	a, (de)
-; 	inc	de
-; 	cp	(hl)
-; 	dec	hl
-; 	jr	nz, compat.cfs.skip
-; 	djnz	compat.cfs.cmp
-; 	
-; 	pop	de
-; 	pop	hl
-; 	
-; 	push	hl
-; 	
-; 	dec	hl
-; 	dec	hl
-; 	ld	e, (hl)
-; 	dec	hl
-; 	ld	d, (hl)
-; 	dec	hl
-; 	ld	a, (hl)
-; 	
-; 	pop	hl
-; 	or	a
-; 	ret
-; 	
-; compat.cfs.skip:
-; 	pop	de
-; 	pop	hl
-; 	
-; 	jr	$+3
-; 	
-; compat.cfs.invalid:
-; 	add	hl, bc
-; 	
-; 	; skip name
-; 	ld	a, (hl)
-; 	ld	a, l
-; 	sub	(hl)
-; 	ld	l, a
-; 	jr	nc, compat.cfs.loop
-; 	dec	h
-; 	jr	compat.cfs.loop
-
 compat.findsym:
 	scf
 	ret
@@ -5167,7 +5105,7 @@ compat.memchk:
 	ret
 
 compat.insertmem:
-	ret
+	jp	vect_vat_insmem
 	
 compat.enoughmem:
 	call	zp.file_meminfo
@@ -5179,72 +5117,22 @@ compat.enoughmem:
 	ret
 
 compat.delvar:
-	ret
+	jp	vect_vat_del
+	
 compat.delmem:
-	ret
+	jp	vect_vat_delmem
 
 compat.arc_unarc:
-	; OP1 = $8478
-; 	call	compat.chkfindsym
-; 	ret	c
-; 	
-; 	push	hl
-; 	pop	ix
-; 	
-; 	in	a, (map_bankB_port)
-; 	push	af
-; 	ld	a, b
-; 	out	(map_bankB_port), a
-; 	
-; 	ex	de, hl
-; 	ld	c, (hl)
-; 	inc	hl
-; 	ld	b, (hl)
-; 	dec	hl
-; 	
-; 	; todo copy data to some free space...
-; 	
-; 	pop	af
-; 	out	(map_bankB_port), a
-	
 	scf
 	ret
 
 compat.createappvar:
-	; data in OP1
-	scf
-	ret
-	
-; 	push	ix
-; 	push	iy
-; 	
-; 	ld	b, h
-; 	ld	c, l
-; 	ld	hl, OP1 + 1
-; 	ld	ix, compat.cav.cb
-; 	call	zp.file_create
-; 	
-; 	push	hl
-; 	push	de
-; 	; create VAT entry
-; 	ccall(0)
-; 	pop	de
-; 	pop	hl
-; 	
-; 	pop	iy
-; 	pop	ix
-	
-	ret
-
-compat.cav.cb:
-	; update VAT
-	ex	de, hl
-	call	zp.file_node_info
-	;call	compat.mkvat
-	ret
-
 compat.createprotprog:
-	ret
+	; data in OP1, size in hl
+	ld	b, h
+	ld	c, l
+	ld	hl, OP1
+	jp	vect_vat_create
 
 compat.putmap:
 	push	bc
@@ -5281,6 +5169,9 @@ compat.putc:
 	call	zp.putch_6x8
 	push	hl
 	ld	hl, curRow
+	srl	b
+	srl	b
+	srl	b
 	ld	(hl), b
 	inc	hl
 	ld	(hl), c
@@ -5305,6 +5196,9 @@ compat.puts:
 	call	zp.puts_6x8
 	push	hl
 	ld	hl, curRow
+	srl	b
+	srl	b
+	srl	b
 	ld	(hl), b
 	inc	hl
 	ld	(hl), c
@@ -5407,8 +5301,7 @@ compat.getkey:
 	ld	(os.keymap.alpha), hl
 	pop	hl
 	
-	call	zp.getch
-	ret
+	jp	zp.getch
 
 ; getcsc -> getkey mapping
 ; sk_null
@@ -5566,7 +5459,7 @@ compat.setexspeed:
 	ret
 
 compat.getbasever:
-	; pretend to be last known OS version...
+	; pretend to be last known (non MP) OS version...
 	ld	a, 2
 	ld	b, 43
 	
@@ -6566,6 +6459,7 @@ compat.popreal.end:
 	pop	af
 	ret
 
+#include "lib/vatemu.z80"
 
 #if $ > $8000
 !!!

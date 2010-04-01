@@ -47,7 +47,7 @@ zp.host.loop
 zp.host.str:
 	.db "Entering host mode...", 0
 
-zp.tilp:
+zp.tilp:	.export	zp.tilp
 	call	zp.get_command
 	
 zp.tilp.silent_entry:	.export	zp.tilp.silent_entry
@@ -979,7 +979,39 @@ tilp.RTS.cb.checksum:
 	or	a
 	ret
 
-tilp.preVAR:
+; Flash packet receiving (first goes here directly)
+tilp.VAR:
+	; determine where to store the app
+	; garbage collect if needed
+	push	hl
+	
+	; get number of pages
+	
+; 	ld	de, $8081
+; 	call	zp.find_app_field
+; 	jr	nz, tilp.VAR.fail
+	
+; 	ld	de, 
+; 	add	hl, de
+; 	
+; 	; find room for the app
+; 	ld	b, (hl)
+; 	call	zp.app_find_free
+; 	jr	c, tilp.VAR.fail
+	
+	pop	hl
+	; free var header
+	call	zp.free
+	
+	jr	tilp.flash_common
+
+tilp.VAR.fail:
+	pop	hl
+	call	zp.free
+	ret
+
+; APP packet receiving (1..n)
+tilp.flash_loop:
 	; get VAR header
 	ld	a, b
 	or	c
@@ -990,21 +1022,11 @@ tilp.preVAR:
 	ld	d, link_ACK
 	call	zp.send_command_nodata
 	
-tilp.VAR:
-	; determine where to store the app
-	; garbage collect if needed
-	push	hl
-	
-	pop	hl
-	; free var header
-	call	zp.free
-	
-	
-tilp.VAR.CTS:
+tilp.flash_common:
 	;
 	; BEHOLD the shit : linking proto expects
 	; a CTS with a size field set to 10 (0A00)
-	; but without nay data (i.e a boggus pakcet)
+	; but without any data (i.e a boggus pakcet)
 	;
 	
 	; allow transfer to start
@@ -1024,6 +1046,8 @@ tilp.VAR.CTS:
 	
 	; store packet data
 	call	zp.get_data
+	
+	
 	call	zp.free
 	
 	; acknowledge data packet
@@ -1033,7 +1057,7 @@ tilp.VAR.CTS:
 	; move on : either new VAR packet or EOT
 	call	zp.get_command
 	cp	link_VAR
-	jr	z, tilp.preVAR
+	jr	z, tilp.flash_loop
 	cp	link_EOT
 	call	nz, zp.throw_link
 	

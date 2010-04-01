@@ -304,12 +304,12 @@ vect_file_list_page.nocount:
 ;			a = 0 : exit forced by callback
 ;			a != 0 ($FE to be precise) : hardware compat check failed (file I/O require SE calc)
 ;		(if counting enabled) de -> number of callbacks
-; destroys : a, b, hl
+; destroys : a, b, de, hl
 ; note : no metadata processing -> left to the callback
 vect_file_list:
 	; check for hardware compat (SE only...)
 	in	a, (hw_port)
-	or	$7F	; make sure a is not nul if we are to abort
+	or	$7F	; make sure a is not null if we are to abort
 	rlca
 	ccf
 	ret	c

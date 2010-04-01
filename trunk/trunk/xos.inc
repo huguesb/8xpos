@@ -571,6 +571,12 @@ sk_x = sk_sto
 sk_y = sk_1
 sk_z = sk_2
 
+sk_f1 = sk_yequ
+sk_f2 = sk_window
+sk_f3 = sk_zoom
+sk_f4 = sk_trace
+sk_f5 = sk_graph
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Special getch ASCII codes
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

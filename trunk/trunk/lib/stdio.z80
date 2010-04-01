@@ -27,7 +27,7 @@ check_text_inverse:
 	; check text inverse flags when TIOS emulation is on...
 	ld	a, (os.flags + osf.general)
 	bit	tios_emulation, a
-	jr	z, $+2+4
+	ret	z
 	bit	3, (iy+5)
 	
 	ret
